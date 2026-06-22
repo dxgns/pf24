@@ -1,38 +1,40 @@
+import Navbar from "@/components/Navbar";
+import Hero from "@/components/Hero";
+import FeatureCard from "@/components/FeatureCard";
+import Footer from "@/components/Footer";
+
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-      <section className="flex min-h-screen items-center justify-center px-6 text-center">
-        <div className="max-w-4xl">
-          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.3em] text-sky-400">
-            Project Flight Spanish Community
-          </p>
+    <main className="min-h-screen bg-[#050816] text-white">
+      <Navbar />
+      <Hero />
 
-          <h1 className="text-5xl font-bold md:text-7xl">
-            PF24 <span className="text-sky-400">Español</span>
-          </h1>
+      <section id="features" className="px-6 py-28">
+        <div className="section-container">
+          <h2 className="mb-14 text-center text-4xl font-extrabold">
+            Herramientas de PF24 Español
+          </h2>
 
-          <p className="mt-6 text-lg text-slate-300">
-            Plataforma web para pilotos, controladores ATC y operaciones
-            virtuales de la comunidad hispana de Project Flight.
-          </p>
+          <div className="grid gap-6 md:grid-cols-3">
+            <FeatureCard
+              title="Planes de Vuelo"
+              text="Gestión completa de planes IFR, VFR, YFR y ZFR."
+            />
 
-          <div className="mt-8 flex flex-col justify-center gap-4 sm:flex-row">
-            <a
-              href="/piloto"
-              className="rounded-xl bg-sky-500 px-6 py-3 font-semibold hover:bg-sky-400"
-            >
-              Portal Piloto
-            </a>
+            <FeatureCard
+              title="ATIS y METAR"
+              text="Información meteorológica y operacional actualizada."
+            />
 
-            <a
-              href="/atc"
-              className="rounded-xl border border-white/20 px-6 py-3 font-semibold hover:bg-white/10"
-            >
-              Portal ATC
-            </a>
+            <FeatureCard
+              title="ATC Online"
+              text="Posiciones ATC activas y operaciones en tiempo real."
+            />
           </div>
         </div>
       </section>
+
+      <Footer />
     </main>
   );
 }
