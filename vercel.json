@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/finish-inactive-flights",
-      "schedule": "*/10 * * * *"
-    }
-  ]
-}
+{}
