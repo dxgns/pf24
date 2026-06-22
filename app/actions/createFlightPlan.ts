@@ -13,23 +13,68 @@ export async function createFlightPlan(formData: FormData) {
 
   const pilotId = session.user?.email ?? session.user?.name ?? "unknown";
 
-  const callsign = String(formData.get("callsign") ?? "").toUpperCase().trim();
+  const callsign = String(formData.get("callsign") ?? "")
+    .toUpperCase()
+    .trim();
+
   const aircraftType = String(formData.get("aircraftType") ?? "");
   const flightRules = String(formData.get("flightRules") ?? "");
-  const departure = String(formData.get("departure") ?? "");
-  const arrival = String(formData.get("arrival") ?? "");
-  const route = String(formData.get("route") ?? "").toUpperCase().trim();
-  const flightLevel = String(formData.get("flightLevel") ?? "").toUpperCase().trim();
+
+  const departure = String(formData.get("departure") ?? "")
+    .toUpperCase()
+    .trim();
+
+  const arrival = String(formData.get("arrival") ?? "")
+    .toUpperCase()
+    .trim();
+
+  const route = String(formData.get("route") ?? "")
+    .toUpperCase()
+    .trim();
+
+  const flightLevel = String(formData.get("flightLevel") ?? "")
+    .replace(/\D/g, "")
+    .slice(0, 3);
+
   const notes = String(formData.get("notes") ?? "");
 
-  const { data: existing } = await supabase
+  if (!callsign || !aircraftType || !flightRules || !departure || !arrival || !route || !flightLevel) {
+    throw new Error("Faltan datos obligatorios");
+  }
+
+  if (flightLevel.length > 3) {
+    throw new Error("El FL debe tener máximo 3 números");
+  }
+
+  const { data: activePilotFlights, error: activeError } = await supabase
+    .from("flight_plans")
+    .select("id")
+    .eq("created_by", pilotId)
+    .neq("status", "FINISHED")
+    .limit(1);
+
+  if (activeError) {
+    console.error(activeError);
+    throw new Error("No se pudo verificar vuelos activos");
+  }
+
+  if (activePilotFlights && activePilotFlights.length > 0) {
+    throw new Error("Ya tienes un vuelo activo. Finalízalo antes de crear otro.");
+  }
+
+  const { data: existingCallsign, error: callsignError } = await supabase
     .from("flight_plans")
     .select("id")
     .eq("callsign", callsign)
     .neq("status", "FINISHED")
     .limit(1);
 
-  if (existing && existing.length > 0) {
+  if (callsignError) {
+    console.error(callsignError);
+    throw new Error("No se pudo verificar el callsign");
+  }
+
+  if (existingCallsign && existingCallsign.length > 0) {
     throw new Error("Callsign ya está en uso");
   }
 
@@ -44,6 +89,8 @@ export async function createFlightPlan(formData: FormData) {
     notes,
     created_by: pilotId,
     transponder: flightRules === "VFR" ? "7000" : "2000",
+    status: "PENDING",
+    sector_status: "STUP",
   });
 
   if (error) {

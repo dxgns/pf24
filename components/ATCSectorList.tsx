@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 
 type FlightPlan = {
@@ -63,15 +64,15 @@ export default function ATCSectorList({
   controllerName: string;
 }) {
   const [plans, setPlans] = useState(initialPlans);
+  const [activeSessions, setActiveSessions] = useState<ATCSession[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [position, setPosition] = useState("");
   const [shiftStart, setShiftStart] = useState<Date | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [now, setNow] = useState(new Date());
   const [searchSector, setSearchSector] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [activeSessions, setActiveSessions] = useState<ATCSession[]>([]);
-const [sectorError, setSectorError] = useState("");
+  const [sectorError, setSectorError] = useState("");
 
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -84,75 +85,45 @@ const [sectorError, setSectorError] = useState("");
     const savedShift = localStorage.getItem("pf24_atc_shift_start");
     const savedSessionId = localStorage.getItem("pf24_atc_session_id");
 
-    if (savedSessionId) setSessionId(savedSessionId);
     if (savedPosition) setPosition(savedPosition);
     if (savedShift) setShiftStart(new Date(savedShift));
+    if (savedSessionId) setSessionId(savedSessionId);
   }, []);
 
   useEffect(() => {
-    function closeShiftOnUnload() {
-        const savedSessionId = localStorage.getItem("pf24_atc_session_id");
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-        if (!savedSessionId) return;
-
-        const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/atc_sessions?id=eq.${savedSessionId}`;
-
-        navigator.sendBeacon(
-        url,
-        new Blob(
-            [
-            JSON.stringify({
-                is_active: false,
-                ended_at: new Date().toISOString(),
-            }),
-            ],
-            {
-            type: "application/json",
-            }
-        )
-        );
-
-        localStorage.removeItem("pf24_atc_position");
-        localStorage.removeItem("pf24_atc_shift_start");
-        localStorage.removeItem("pf24_atc_session_id");
-    }
-
-    window.addEventListener("beforeunload", closeShiftOnUnload);
-
-    return () => {
-        window.removeEventListener("beforeunload", closeShiftOnUnload);
-    };
-    }, []);
-  
   useEffect(() => {
     async function loadSessions() {
-        const { data } = await supabase
+      const { data, error } = await supabase
         .from("atc_sessions")
         .select("*")
         .eq("is_active", true);
 
-        setActiveSessions(data ?? []);
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      setActiveSessions(data ?? []);
     }
 
     loadSessions();
 
     const channel = supabase
-        .channel("atc-active-sessions")
-        .on(
+      .channel("atc-active-sessions")
+      .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "atc_sessions" },
         () => loadSessions()
-        )
-        .subscribe();
+      )
+      .subscribe();
 
     return () => {
-        supabase.removeChannel(channel);
+      supabase.removeChannel(channel);
     };
-    }, []);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -166,13 +137,30 @@ const [sectorError, setSectorError] = useState("");
           const oldPlan = payload.old as FlightPlan;
 
           if (payload.eventType === "INSERT") {
-            setPlans((current) => [newPlan, ...current]);
+            if (newPlan.status !== "FINISHED") {
+              setPlans((current) => [newPlan, ...current]);
+            }
           }
 
           if (payload.eventType === "UPDATE") {
-            setPlans((current) =>
-              current.map((plan) => (plan.id === newPlan.id ? newPlan : plan))
-            );
+            if (newPlan.status === "FINISHED") {
+              setPlans((current) =>
+                current.filter((plan) => plan.id !== newPlan.id)
+              );
+              return;
+            }
+
+            setPlans((current) => {
+              const exists = current.some((plan) => plan.id === newPlan.id);
+
+              if (!exists) {
+                return [newPlan, ...current];
+              }
+
+              return current.map((plan) =>
+                plan.id === newPlan.id ? newPlan : plan
+              );
+            });
           }
 
           if (payload.eventType === "DELETE") {
@@ -189,65 +177,176 @@ const [sectorError, setSectorError] = useState("");
     };
   }, []);
 
-async function selectPosition(value: string) {
-  setSectorError("");
+  useEffect(() => {
+    function closeShiftOnUnload() {
+      const savedSessionId = localStorage.getItem("pf24_atc_session_id");
+      const savedPosition = localStorage.getItem("pf24_atc_position");
 
-  const occupied = activeSessions.find(
-    (session) => session.position === value && session.is_active
-  );
+      if (!savedSessionId) return;
 
-  if (occupied) {
-    setSectorError(`Sector ocupado por ${occupied.controller_name}`);
-    return;
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+      if (!supabaseUrl || !supabaseKey) return;
+
+      fetch(`${supabaseUrl}/rest/v1/atc_sessions?id=eq.${savedSessionId}`, {
+        method: "PATCH",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          is_active: false,
+          ended_at: new Date().toISOString(),
+        }),
+      });
+
+      if (savedPosition) {
+        fetch(
+          `${supabaseUrl}/rest/v1/flight_plans?assumed_by=eq.${encodeURIComponent(
+            savedPosition
+          )}&status=neq.FINISHED`,
+          {
+            method: "PATCH",
+            keepalive: true,
+            headers: {
+              "Content-Type": "application/json",
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+              Prefer: "return=minimal",
+            },
+            body: JSON.stringify({
+              assumed_by: null,
+              updated_at: new Date().toISOString(),
+            }),
+          }
+        );
+      }
+
+      localStorage.removeItem("pf24_atc_position");
+      localStorage.removeItem("pf24_atc_shift_start");
+      localStorage.removeItem("pf24_atc_session_id");
+    }
+
+    window.addEventListener("pagehide", closeShiftOnUnload);
+    window.addEventListener("beforeunload", closeShiftOnUnload);
+
+    return () => {
+      window.removeEventListener("pagehide", closeShiftOnUnload);
+      window.removeEventListener("beforeunload", closeShiftOnUnload);
+    };
+  }, []);
+
+  function playTone(type: "connect" | "disconnect" | "error") {
+    try {
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+
+      if (!AudioContextClass) return;
+
+      const audio = new AudioContextClass();
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+
+      oscillator.connect(gain);
+      gain.connect(audio.destination);
+
+      oscillator.type = "sine";
+      oscillator.frequency.value =
+        type === "connect" ? 880 : type === "disconnect" ? 440 : 220;
+
+      gain.gain.setValueAtTime(0.08, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.22);
+
+      oscillator.start();
+      oscillator.stop(audio.currentTime + 0.22);
+    } catch {
+      // El sonido no es crítico para la operación.
+    }
   }
 
-  const start = new Date();
+  async function selectPosition(value: string) {
+    setSectorError("");
 
-  const { data, error } = await supabase
-    .from("atc_sessions")
-    .insert({
-      controller_name: controllerName,
-      position: value,
-      started_at: start.toISOString(),
-      is_active: true,
-    })
-    .select()
-    .single();
+    const occupied = activeSessions.find(
+      (session) => session.position === value && session.is_active
+    );
 
-  if (error) {
-    console.error(error);
-    setSectorError("No se pudo abrir el sector. Puede que ya esté ocupado.");
-    return;
-  }
+    if (occupied) {
+      setSectorError(`Sector ocupado por ${occupied.controller_name}`);
+      playTone("error");
+      return;
+    }
 
-  setPosition(value);
-  setShiftStart(start);
-  setSessionId(data.id);
+    const start = new Date();
 
-  localStorage.setItem("pf24_atc_position", value);
-  localStorage.setItem("pf24_atc_shift_start", start.toISOString());
-  localStorage.setItem("pf24_atc_session_id", data.id);
-}
-
-async function endShift() {
-  if (sessionId) {
-    await supabase
+    const { data, error } = await supabase
       .from("atc_sessions")
-      .update({
-        is_active: false,
-        ended_at: new Date().toISOString(),
+      .insert({
+        controller_name: controllerName,
+        position: value,
+        started_at: start.toISOString(),
+        is_active: true,
       })
-      .eq("id", sessionId);
+      .select()
+      .single();
+
+    if (error) {
+      console.error(error);
+      setSectorError("No se pudo abrir el sector. Puede que ya esté ocupado.");
+      playTone("error");
+      return;
+    }
+
+    setPosition(value);
+    setShiftStart(start);
+    setSessionId(data.id);
+
+    localStorage.setItem("pf24_atc_position", value);
+    localStorage.setItem("pf24_atc_shift_start", start.toISOString());
+    localStorage.setItem("pf24_atc_session_id", data.id);
+
+    playTone("connect");
   }
 
-  localStorage.removeItem("pf24_atc_position");
-  localStorage.removeItem("pf24_atc_shift_start");
-  localStorage.removeItem("pf24_atc_session_id");
+  async function endShift() {
+    if (sessionId) {
+      await supabase
+        .from("atc_sessions")
+        .update({
+          is_active: false,
+          ended_at: new Date().toISOString(),
+        })
+        .eq("id", sessionId);
+    }
 
-  setPosition("");
-  setShiftStart(null);
-  setSessionId(null);
-}
+    if (position) {
+      await supabase
+        .from("flight_plans")
+        .update({
+          assumed_by: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("assumed_by", position)
+        .neq("status", "FINISHED");
+    }
+
+    localStorage.removeItem("pf24_atc_position");
+    localStorage.removeItem("pf24_atc_shift_start");
+    localStorage.removeItem("pf24_atc_session_id");
+
+    setPosition("");
+    setShiftStart(null);
+    setSessionId(null);
+    setOpenId(null);
+
+    playTone("disconnect");
+  }
 
   function getShiftTime() {
     if (!shiftStart) return "00:00:00";
@@ -295,7 +394,20 @@ async function endShift() {
     );
   }
 
+  function canEditPlan(plan: FlightPlan) {
+    return plan.assumed_by === position && plan.status !== "FINISHED";
+  }
+
   function autoSave(id: string, field: keyof FlightPlan, value: string) {
+    const targetPlan = plans.find((plan) => plan.id === id);
+
+    if (!targetPlan) return;
+
+    if (!canEditPlan(targetPlan)) {
+      alert("No puedes modificar este tráfico porque no está asumido por tu sector.");
+      return;
+    }
+
     setPlans((current) =>
       current.map((plan) =>
         plan.id === id ? { ...plan, [field]: value } : plan
@@ -312,9 +424,14 @@ async function endShift() {
           [field]: value,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", id);
+        .eq("id", id)
+        .eq("assumed_by", position);
 
-      if (error) console.error(error);
+      if (error) {
+        console.error(error);
+        alert("No se pudo guardar. Puede que el tráfico ya no esté bajo tu sector.");
+      }
+
       setSavingId(null);
     }, 500);
   }
@@ -322,6 +439,15 @@ async function endShift() {
   async function assumeFlight(id: string) {
     if (!position) {
       alert("Selecciona una posición ATC antes de asumir tráfico.");
+      return;
+    }
+
+    const targetPlan = plans.find((plan) => plan.id === id);
+
+    if (!targetPlan) return;
+
+    if (targetPlan.assumed_by && targetPlan.assumed_by !== position) {
+      alert(`Este tráfico ya está asumido por ${targetPlan.assumed_by}.`);
       return;
     }
 
@@ -334,13 +460,27 @@ async function endShift() {
         status: "ACTIVE",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", id);
+      .eq("id", id)
+      .or(`assumed_by.is.null,assumed_by.eq.${position}`);
 
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      alert("No se pudo asumir el tráfico. Puede que otro sector lo haya asumido.");
+    }
+
     setSavingId(null);
   }
 
   async function unassumeFlight(id: string) {
+    const targetPlan = plans.find((plan) => plan.id === id);
+
+    if (!targetPlan) return;
+
+    if (targetPlan.assumed_by !== position) {
+      alert("No puedes desasumir un tráfico que no está asumido por tu sector.");
+      return;
+    }
+
     setSavingId(id);
 
     const { error } = await supabase
@@ -349,9 +489,53 @@ async function endShift() {
         assumed_by: null,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("assumed_by", position);
 
-    if (error) console.error(error);
+    if (error) {
+      console.error(error);
+      alert("No se pudo desasumir el tráfico.");
+    }
+
+    setSavingId(null);
+  }
+
+  async function finishFlight(id: string) {
+    const targetPlan = plans.find((plan) => plan.id === id);
+
+    if (!targetPlan) return;
+
+    if (targetPlan.assumed_by !== position) {
+      alert("No puedes finalizar un tráfico que no está asumido por tu sector.");
+      return;
+    }
+
+    const confirmed = confirm(`¿Finalizar vuelo ${targetPlan.callsign}?`);
+
+    if (!confirmed) return;
+
+    setSavingId(id);
+
+    const { error } = await supabase
+      .from("flight_plans")
+      .update({
+        status: "FINISHED",
+        sector_status: "PARKED",
+        assumed_by: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("assumed_by", position);
+
+    if (error) {
+      console.error(error);
+      alert("No se pudo finalizar el vuelo.");
+      setSavingId(null);
+      return;
+    }
+
+    setPlans((current) => current.filter((plan) => plan.id !== id));
+    setOpenId(null);
     setSavingId(null);
   }
 
@@ -360,333 +544,396 @@ async function endShift() {
   const assumedCount = plans.filter((p) => p.assumed_by === position).length;
   const totalVisible = plans.length;
 
+  const header = (
+    <div className="panel rounded-3xl p-8">
+      <p className="mono text-xs uppercase tracking-[0.3em] text-sky-300/70">
+        PF24 Español / ATC Operations
+      </p>
+
+      <h1 className="mt-4 text-4xl font-extrabold">
+        Sector List
+      </h1>
+
+      {!position && (
+        <p className="mt-4 max-w-3xl text-slate-300">
+          Selecciona tu posición de control, visualiza planes activos y gestiona
+          tráfico con guardado automático en tiempo real.
+        </p>
+      )}
+    </div>
+  );
+
   if (!position) {
     return (
-      <div className="mx-auto mt-16 max-w-3xl rounded-3xl border border-sky-500/20 bg-slate-950 p-8">
-        <h2 className="text-3xl font-extrabold">Selección de Sector</h2>
+      <>
+        {header}
 
-        <p className="mt-3 text-slate-400">
-          Busca y selecciona la posición ATC que vas a controlar.
-        </p>
+        <div className="mx-auto mt-16 max-w-3xl rounded-3xl border border-sky-500/20 bg-slate-950 p-8">
+          <h2 className="text-3xl font-extrabold">Selección de Sector</h2>
 
-        <input
-          type="text"
-          value={searchSector}
-          onChange={(e) => setSearchSector(e.target.value)}
-          placeholder="Ej: MDPC, EGKK, APP, CTR..."
-          className="mt-6 w-full rounded-xl border border-white/10 bg-slate-900 p-4 text-white outline-none focus:border-sky-400"
-        />
+          <p className="mt-3 text-slate-400">
+            Busca y selecciona la posición ATC que vas a controlar.
+          </p>
 
-        <div className="mt-6 max-h-[400px] overflow-y-auto rounded-2xl border border-white/10">
-          {filteredPositions.length === 0 ? (
-            <div className="p-6 text-center text-slate-400">
-              No se encontró ninguna posición ATC.
-            </div>
-          ) : (
-            filteredPositions.map((sector) => (
-              <button
-                key={sector}
-                onClick={() => selectPosition(sector)}
-                className="flex w-full items-center justify-between border-b border-white/5 px-5 py-4 text-left transition hover:bg-sky-500/10"
-              >
-                <span className="font-mono font-bold text-sky-300">
-                  {sector}
-                </span>
+          <input
+            type="text"
+            value={searchSector}
+            onChange={(e) => setSearchSector(e.target.value)}
+            placeholder="Ej: MDPC, EGKK, APP, CTR..."
+            className="mt-6 w-full rounded-xl border border-white/10 bg-slate-900 p-4 text-white outline-none focus:border-sky-400"
+          />
 
-                <span className="text-xs text-slate-500">
-                  Seleccionar
-                </span>
-              </button>
-            ))
+          {sectorError && (
+            <p className="mt-3 rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-300">
+              {sectorError}
+            </p>
           )}
+
+          <div className="mt-6 max-h-[400px] overflow-y-auto rounded-2xl border border-white/10">
+            {filteredPositions.length === 0 ? (
+              <div className="p-6 text-center text-slate-400">
+                No se encontró ninguna posición ATC.
+              </div>
+            ) : (
+              filteredPositions.map((sector) => {
+                const occupied = activeSessions.find(
+                  (session) => session.position === sector && session.is_active
+                );
+
+                return (
+                  <button
+                    key={sector}
+                    onClick={() => {
+                      if (!occupied) selectPosition(sector);
+                      if (occupied) {
+                        setSectorError(`Sector ocupado por ${occupied.controller_name}`);
+                        playTone("error");
+                      }
+                    }}
+                    disabled={!!occupied}
+                    className={`flex w-full items-center justify-between border-b border-white/5 px-5 py-4 text-left transition ${
+                      occupied
+                        ? "cursor-not-allowed opacity-50"
+                        : "hover:bg-sky-500/10"
+                    }`}
+                  >
+                    <span className="font-mono font-bold text-sky-300">
+                      {sector}
+                    </span>
+
+                    <span className="text-xs text-slate-500">
+                      {occupied ? `Ocupado por ${occupied.controller_name}` : "Seleccionar"}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
-filteredPositions.map((sector) => {
-  const occupied = activeSessions.find(
-    (session) => session.position === sector && session.is_active
-  );
-
   return (
-    <button
-      key={sector}
-      onClick={() => {
-        if (!occupied) selectPosition(sector);
-      }}
-      disabled={!!occupied}
-      className={`flex w-full items-center justify-between border-b border-white/5 px-5 py-4 text-left transition ${
-        occupied
-          ? "cursor-not-allowed opacity-50"
-          : "hover:bg-sky-500/10"
-      }`}
-    >
-      <span className="font-mono font-bold text-sky-300">
-        {sector}
-      </span>
+    <>
+      {header}
 
-      <span className="text-xs text-slate-500">
-        {occupied ? `Ocupado por ${occupied.controller_name}` : "Seleccionar"}
-      </span>
-    </button>
-  );
-})
+      <div className="mt-8">
+        <div className="mb-6 grid gap-4 rounded-3xl border border-white/10 bg-slate-900 p-6 md:grid-cols-4">
+          <Info label="Controlador" value={controllerName} />
+          <Info label="Sector activo" value={position} />
+          <Info label="Tiempo en turno" value={getShiftTime()} />
+          <Info label="Hora UTC" value={`${now.toISOString().slice(11, 19)}Z`} />
+          <Info label="Tráfico asumido" value={String(assumedCount)} />
+          <Info label="Pendientes" value={String(pendingCount)} />
+          <Info label="Activos" value={String(activeCount)} />
+          <Info label="Total visible" value={String(totalVisible)} />
 
-{sectorError && (
-  <p className="mt-3 rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-300">
-    {sectorError}
-  </p>
-)}
+          <div className="md:col-span-4">
+            <button
+              onClick={endShift}
+              className="w-full rounded-xl border border-red-400 px-4 py-3 font-semibold text-red-300 hover:bg-red-500 hover:text-white"
+            >
+              Terminar turno
+            </button>
+          </div>
+        </div>
 
-  return (
-    <div className="mt-8">
-      <div className="mb-6 grid gap-4 rounded-3xl border border-white/10 bg-slate-900 p-6 md:grid-cols-4">
-        <Info label="Controlador" value={controllerName} />
-        <Info label="Sector activo" value={position} />
-        <Info label="Tiempo en turno" value={getShiftTime()} />
-        <Info label="Hora UTC" value={now.toISOString().slice(11, 19)} />
-        <Info label="Tráfico asumido" value={String(assumedCount)} />
-        <Info label="Pendientes" value={String(pendingCount)} />
-        <Info label="Activos" value={String(activeCount)} />
-        <Info label="Total visible" value={String(totalVisible)} />
+        <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1000px] text-left text-sm">
+              <thead className="bg-slate-800 text-slate-300">
+                <tr>
+                  <th className="p-4">CALLSIGN</th>
+                  <th className="p-4">A/C</th>
+                  <th className="p-4">DEP</th>
+                  <th className="p-4">ARR</th>
+                  <th className="p-4">RULES</th>
+                  <th className="p-4">FL</th>
+                  <th className="p-4">XPDR</th>
+                  <th className="p-4">STATUS</th>
+                  <th className="p-4">ESTADO</th>
+                  <th className="p-4">SECTOR</th>
+                </tr>
+              </thead>
 
-        <button
-        onClick={endShift}
-        className="mt-3 w-full rounded-xl border border-red-400 px-4 py-3 font-semibold text-red-300 hover:bg-red-500 hover:text-white"
-        >
-        Terminar turno
-        </button>
-
-      </div>
-
-      <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px] text-left text-sm">
-            <thead className="bg-slate-800 text-slate-300">
-              <tr>
-                <th className="p-4">CALLSIGN</th>
-                <th className="p-4">A/C</th>
-                <th className="p-4">DEP</th>
-                <th className="p-4">ARR</th>
-                <th className="p-4">RULES</th>
-                <th className="p-4">FL</th>
-                <th className="p-4">XPDR</th>
-                <th className="p-4">STATUS</th>
-                <th className="p-4">SECTOR</th>
-                <th className="p-4">ATC</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {plans.map((plan) => (
-                <>
-                  <tr key={plan.id} className="border-t border-white/10">
-                    <td className="p-4">
-                      <button
-                        onClick={() =>
-                          setOpenId(openId === plan.id ? null : plan.id)
-                        }
-                        className="font-bold text-sky-400 hover:underline"
-                      >
-                        {plan.callsign}
-                      </button>
+              <tbody>
+                {plans.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="p-8 text-center text-slate-400">
+                      No hay planes de vuelo visibles.
                     </td>
-
-                    <td className="p-4">{plan.aircraft_type}</td>
-                    <td className="p-4">{plan.departure_icao}</td>
-                    <td className="p-4">{plan.arrival_icao}</td>
-                    <td className="p-4">{plan.flight_rules}</td>
-                    <td className="p-4">{plan.flight_level}</td>
-                    <td className="p-4 font-mono">{plan.transponder}</td>
-                    <td className="p-4">{badge(plan.status, statusClass(plan.status))}</td>
-                    <td className="p-4">{badge(plan.sector_status, sectorClass(plan.sector_status))}</td>
-                    <td className="p-4">{plan.assumed_by ?? "-"}</td>
                   </tr>
+                ) : (
+                  plans.map((plan) => {
+                    const controlledByMe = plan.assumed_by === position;
+                    const controlledByOther =
+                      !!plan.assumed_by && plan.assumed_by !== position;
+                    const editable = canEditPlan(plan);
 
-                  {openId === plan.id && (
-                    <tr className="border-t border-white/10 bg-[#050816]">
-                      <td colSpan={10} className="p-6">
-                        <div className="grid gap-6 lg:grid-cols-3">
-                          <div className="lg:col-span-2">
-                            <h2 className="text-2xl font-extrabold text-sky-400">
+                    return (
+                      <Fragment key={plan.id}>
+                        <tr className="border-t border-white/10">
+                          <td className="p-4">
+                            <button
+                              onClick={() =>
+                                setOpenId(openId === plan.id ? null : plan.id)
+                              }
+                              className="font-bold text-sky-400 hover:underline"
+                            >
                               {plan.callsign}
-                            </h2>
+                            </button>
+                          </td>
 
-                            <p className="mt-2 text-slate-400">
-                              {plan.departure_icao} → {plan.arrival_icao} ·{" "}
-                              {plan.aircraft_type} · {plan.flight_rules}
-                            </p>
+                          <td className="p-4">{plan.aircraft_type}</td>
+                          <td className="p-4">{plan.departure_icao}</td>
+                          <td className="p-4">{plan.arrival_icao}</td>
+                          <td className="p-4">{plan.flight_rules}</td>
+                          <td className="p-4">{plan.flight_level}</td>
+                          <td className="p-4 font-mono">{plan.transponder}</td>
+                          <td className="p-4">
+                            {badge(plan.status, statusClass(plan.status))}
+                          </td>
+                          <td className="p-4">
+                            {badge(plan.sector_status, sectorClass(plan.sector_status))}
+                          </td>
+                          <td className="p-4">{plan.assumed_by ?? "-"}</td>
+                        </tr>
 
-                            <div className="mt-4 flex flex-wrap gap-3">
-                              {badge(plan.status, statusClass(plan.status))}
-                              {badge(plan.sector_status, sectorClass(plan.sector_status))}
-                              {badge(
-                                plan.assumed_by
-                                  ? `Controlado por ${plan.assumed_by}`
-                                  : "Sin asumir",
-                                "bg-white/10 text-white border-white/20"
-                              )}
-                              {badge(
-                                `XPDR ${plan.transponder}`,
-                                "bg-sky-400/10 text-sky-300 border-sky-400/30"
-                              )}
-                            </div>
+                        {openId === plan.id && (
+                          <tr className="border-t border-white/10 bg-[#050816]">
+                            <td colSpan={10} className="p-6">
+                              <div className="grid gap-6 lg:grid-cols-3">
+                                <div className="lg:col-span-2">
+                                  <h2 className="text-2xl font-extrabold text-sky-400">
+                                    {plan.callsign}
+                                  </h2>
 
-                            <div className="mt-6 grid gap-4 md:grid-cols-2">
-                              <Field label="Transponder">
-                                <input
-                                  value={plan.transponder}
-                                  maxLength={4}
-                                  onChange={(e) =>
-                                    autoSave(plan.id, "transponder", e.target.value)
-                                  }
-                                  className="w-full rounded-xl bg-slate-800 p-3 font-mono"
-                                />
-                              </Field>
+                                  <p className="mt-2 text-slate-400">
+                                    {plan.departure_icao} → {plan.arrival_icao} ·{" "}
+                                    {plan.aircraft_type} · {plan.flight_rules}
+                                  </p>
 
-                              <Field label="Flight Level">
-                                <input
-                                  value={plan.flight_level}
-                                  onChange={(e) =>
-                                    autoSave(
-                                      plan.id,
-                                      "flight_level",
-                                      e.target.value.toUpperCase()
-                                    )
-                                  }
-                                  className="w-full rounded-xl bg-slate-800 p-3"
-                                />
-                              </Field>
+                                  <div className="mt-4 flex flex-wrap gap-3">
+                                    {badge(plan.status, statusClass(plan.status))}
+                                    {badge(plan.sector_status, sectorClass(plan.sector_status))}
+                                    {badge(
+                                      plan.assumed_by
+                                        ? `Controlado por ${plan.assumed_by}`
+                                        : "Sin asumir",
+                                      controlledByMe
+                                        ? "bg-green-400/10 text-green-300 border-green-400/30"
+                                        : controlledByOther
+                                          ? "bg-red-400/10 text-red-300 border-red-400/30"
+                                          : "bg-white/10 text-white border-white/20"
+                                    )}
+                                    {badge(
+                                      `XPDR ${plan.transponder}`,
+                                      "bg-sky-400/10 text-sky-300 border-sky-400/30"
+                                    )}
+                                  </div>
 
-                              <Field label="Status">
-                                <select
-                                  value={plan.status}
-                                  onChange={(e) =>
-                                    autoSave(plan.id, "status", e.target.value)
-                                  }
-                                  className="w-full rounded-xl bg-slate-800 p-3"
-                                >
-                                  {STATUS.map((status) => (
-                                    <option key={status} value={status}>
-                                      {status}
-                                    </option>
-                                  ))}
-                                </select>
-                              </Field>
+                                  {controlledByOther && (
+                                    <p className="mt-4 rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-300">
+                                      Este tráfico está asumido por {plan.assumed_by}.
+                                      No puedes modificarlo ni desasumirlo.
+                                    </p>
+                                  )}
 
-                              <Field label="Sector Status">
-                                <select
-                                  value={plan.sector_status}
-                                  onChange={(e) =>
-                                    autoSave(
-                                      plan.id,
-                                      "sector_status",
-                                      e.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-xl bg-slate-800 p-3"
-                                >
-                                  {SECTOR_STATUS.map((status) => (
-                                    <option key={status} value={status}>
-                                      {status}
-                                    </option>
-                                  ))}
-                                </select>
-                              </Field>
+                                  {!plan.assumed_by && (
+                                    <p className="mt-4 rounded-xl border border-yellow-400/30 bg-yellow-400/10 p-3 text-sm text-yellow-300">
+                                      Este tráfico aún no está asumido. Debes asumirlo
+                                      antes de modificarlo.
+                                    </p>
+                                  )}
 
-                              <Field label="Ruta">
-                                <input
-                                  value={plan.route}
-                                  onChange={(e) =>
-                                    autoSave(
-                                      plan.id,
-                                      "route",
-                                      e.target.value.toUpperCase()
-                                    )
-                                  }
-                                  className="w-full rounded-xl bg-slate-800 p-3"
-                                />
-                              </Field>
+                                  <div className="mt-6 grid gap-4 md:grid-cols-2">
+                                    <Field label="Transponder">
+                                      <input
+                                        value={plan.transponder}
+                                        maxLength={4}
+                                        disabled={!editable}
+                                        onChange={(e) =>
+                                          autoSave(plan.id, "transponder", e.target.value)
+                                        }
+                                        className="w-full rounded-xl bg-slate-800 p-3 font-mono disabled:cursor-not-allowed disabled:opacity-50"
+                                      />
+                                    </Field>
 
-                              <Field label="Sector asignado">
-                                <input
-                                  value={plan.assumed_by ?? ""}
-                                  onChange={(e) =>
-                                    autoSave(plan.id, "assumed_by", e.target.value)
-                                  }
-                                  className="w-full rounded-xl bg-slate-800 p-3"
-                                />
-                              </Field>
-                            </div>
+                                    <Field label="Flight Level">
+                                      <input
+                                        value={plan.flight_level}
+                                        disabled={!editable}
+                                        onChange={(e) =>
+                                          autoSave(
+                                            plan.id,
+                                            "flight_level",
+                                            e.target.value.toUpperCase()
+                                          )
+                                        }
+                                        className="w-full rounded-xl bg-slate-800 p-3 disabled:cursor-not-allowed disabled:opacity-50"
+                                      />
+                                    </Field>
 
-                            <Field label="Notas adicionales">
-                              <textarea
-                                value={plan.notes ?? ""}
-                                onChange={(e) =>
-                                  autoSave(plan.id, "notes", e.target.value)
-                                }
-                                className="mt-2 w-full rounded-xl bg-slate-800 p-3"
-                              />
-                            </Field>
-                          </div>
+                                    <Field label="Status">
+                                      <select
+                                        value={plan.status}
+                                        disabled={!editable}
+                                        onChange={(e) =>
+                                          autoSave(plan.id, "status", e.target.value)
+                                        }
+                                        className="w-full rounded-xl bg-slate-800 p-3 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {STATUS.map((status) => (
+                                          <option key={status} value={status}>
+                                            {status}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </Field>
 
-                          <aside className="rounded-3xl border border-white/10 bg-slate-900 p-6">
-                            <h3 className="text-xl font-bold">Acciones ATC</h3>
+                                    <Field label="Sector Status">
+                                      <select
+                                        value={plan.sector_status}
+                                        disabled={!editable}
+                                        onChange={(e) =>
+                                          autoSave(
+                                            plan.id,
+                                            "sector_status",
+                                            e.target.value
+                                          )
+                                        }
+                                        className="w-full rounded-xl bg-slate-800 p-3 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {SECTOR_STATUS.map((status) => (
+                                          <option key={status} value={status}>
+                                            {status}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </Field>
 
-                            <div className="mt-5 grid gap-3">
-                              <button
-                                onClick={() => assumeFlight(plan.id)}
-                                className="rounded-xl bg-sky-500 px-4 py-3 font-semibold hover:bg-sky-400"
-                              >
-                                {plan.assumed_by
-                                  ? `Reasumir con ${position}`
-                                  : `Asumir con ${position}`}
-                              </button>
+                                    <Field label="Ruta">
+                                      <input
+                                        value={plan.route}
+                                        disabled={!editable}
+                                        onChange={(e) =>
+                                          autoSave(
+                                            plan.id,
+                                            "route",
+                                            e.target.value.toUpperCase()
+                                          )
+                                        }
+                                        className="w-full rounded-xl bg-slate-800 p-3 disabled:cursor-not-allowed disabled:opacity-50"
+                                      />
+                                    </Field>
 
-                              <button
-                                onClick={() => unassumeFlight(plan.id)}
-                                className="rounded-xl border border-yellow-400 px-4 py-3 font-semibold text-yellow-300 hover:bg-yellow-400 hover:text-black"
-                              >
-                                Desasumir
-                              </button>
+                                    <Field label="Sector asignado">
+                                      <input
+                                        value={plan.assumed_by ?? ""}
+                                        disabled
+                                        className="w-full cursor-not-allowed rounded-xl bg-slate-800 p-3 opacity-60"
+                                      />
+                                    </Field>
+                                  </div>
 
-                              <button
-                                onClick={() =>
-                                  autoSave(plan.id, "transponder", "7700")
-                                }
-                                className="rounded-xl border border-red-400 px-4 py-3 font-semibold text-red-300 hover:bg-red-500 hover:text-white"
-                              >
-                                Declarar 7700
-                              </button>
+                                  <Field label="Notas adicionales">
+                                    <textarea
+                                      value={plan.notes ?? ""}
+                                      disabled={!editable}
+                                      onChange={(e) =>
+                                        autoSave(plan.id, "notes", e.target.value)
+                                      }
+                                      className="mt-2 w-full rounded-xl bg-slate-800 p-3 disabled:cursor-not-allowed disabled:opacity-50"
+                                    />
+                                  </Field>
+                                </div>
 
-                              <button
-                                onClick={() =>
-                                  autoSave(plan.id, "status", "FINISHED")
-                                }
-                                className="rounded-xl border border-white/10 px-4 py-3 font-semibold text-slate-300 hover:bg-white/10"
-                              >
-                                Finalizar vuelo
-                              </button>
-                            </div>
+                                <aside className="rounded-3xl border border-white/10 bg-slate-900 p-6">
+                                  <h3 className="text-xl font-bold">Acciones ATC</h3>
 
-                            <p className="mt-6 text-sm text-slate-400">
-                              {savingId === plan.id
-                                ? "Guardando cambios..."
-                                : "Guardado automático activo"}
-                            </p>
-                          </aside>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </>
-              ))}
-            </tbody>
-          </table>
+                                  <div className="mt-5 grid gap-3">
+                                    <button
+                                      onClick={() => assumeFlight(plan.id)}
+                                      disabled={controlledByOther || controlledByMe}
+                                      className="rounded-xl bg-sky-500 px-4 py-3 font-semibold hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {controlledByMe
+                                        ? "Asumido por tu sector"
+                                        : controlledByOther
+                                          ? `Ocupado por ${plan.assumed_by}`
+                                          : `Asumir con ${position}`}
+                                    </button>
+
+                                    <button
+                                      onClick={() => unassumeFlight(plan.id)}
+                                      disabled={!controlledByMe}
+                                      className="rounded-xl border border-yellow-400 px-4 py-3 font-semibold text-yellow-300 hover:bg-yellow-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-yellow-300"
+                                    >
+                                      Desasumir
+                                    </button>
+
+                                    <button
+                                      onClick={() =>
+                                        autoSave(plan.id, "transponder", "7700")
+                                      }
+                                      disabled={!editable}
+                                      className="rounded-xl border border-red-400 px-4 py-3 font-semibold text-red-300 hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-red-300"
+                                    >
+                                      Declarar 7700
+                                    </button>
+
+                                    <button
+                                      onClick={() => finishFlight(plan.id)}
+                                      disabled={!controlledByMe}
+                                      className="rounded-xl border border-white/10 px-4 py-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      Finalizar vuelo
+                                    </button>
+                                  </div>
+
+                                  <p className="mt-6 text-sm text-slate-400">
+                                    {savingId === plan.id
+                                      ? "Guardando cambios..."
+                                      : editable
+                                        ? "Guardado automático activo"
+                                        : "Solo lectura"}
+                                  </p>
+                                </aside>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -704,7 +951,7 @@ function Field({
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <label className="block">
