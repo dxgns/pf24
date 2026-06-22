@@ -31,7 +31,7 @@ export default async function Navbar() {
               Herramientas
             </a>
 
-            <a href="/#discord" className="text-white/80 transition hover:text-white">
+            <a href="https://discord.gg/DD7yeDDyPY" className="text-white/80 transition hover:text-white">
               Discord
             </a>
 
