@@ -15,7 +15,7 @@ export default function HomePage() {
           }}
         />
 
-        <div className="absolute inset-0 bg-black/70" />
+        <div className="absolute inset-0 bg-black/10" />
 
         <div className="section-container relative z-10">
           <div className="max-w-3xl">
@@ -29,7 +29,7 @@ export default function HomePage() {
 
             <p className="mt-8 max-w-2xl text-lg leading-8 text-white/85">
               PF24 Español es una comunidad de simulación aérea realista
-              inspirada en el espacio aéreo español y europeo, donde pilotos y
+              inspirada en el espacio aéreo mundial, donde pilotos y
               controladores recrean operaciones reales y vuelos multijugador en
               Project Flight y Discord.
             </p>
