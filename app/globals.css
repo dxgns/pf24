@@ -48,3 +48,38 @@ body {
 .btn-secondary:hover {
   background: rgba(255, 255, 255, 0.08);
 }
+
+.panel {
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.96));
+  box-shadow: 0 0 40px rgba(56, 189, 248, 0.06);
+}
+
+.panel-header {
+  border-bottom: 1px solid rgba(56, 189, 248, 0.14);
+  background: rgba(2, 6, 23, 0.6);
+}
+
+.mono {
+  font-family: "Courier New", monospace;
+  letter-spacing: 0.04em;
+}
+
+.radar-grid {
+  background-image:
+    linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.input-control {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: #020617;
+  color: white;
+}
+
+.input-control:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.8);
+}

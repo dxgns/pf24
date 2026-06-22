@@ -1,9 +1,18 @@
 "use server";
 
+import { auth } from "@/auth";
 import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 
 export async function createFlightPlan(formData: FormData) {
+  const session = await auth();
+
+  if (!session) {
+    throw new Error("No autenticado");
+  }
+
+  const pilotId = session.user?.email ?? session.user?.name ?? "unknown";
+
   const callsign = String(formData.get("callsign") ?? "").toUpperCase().trim();
   const aircraftType = String(formData.get("aircraftType") ?? "");
   const flightRules = String(formData.get("flightRules") ?? "");
@@ -33,6 +42,7 @@ export async function createFlightPlan(formData: FormData) {
     route,
     flight_level: flightLevel,
     notes,
+    created_by: pilotId,
     transponder: flightRules === "VFR" ? "7000" : "2000",
   });
 
