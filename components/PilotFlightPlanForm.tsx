@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { createFlightPlan } from "@/app/actions/createFlightPlan";
 
 const AIRCRAFT_TYPES = [
@@ -14,6 +15,34 @@ const AIRPORTS = [
 ];
 
 export default function PilotFlightPlanForm() {
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    setError("");
+    setSuccess("");
+    setIsSubmitting(true);
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    const result = await createFlightPlan(formData);
+
+    setIsSubmitting(false);
+
+    if (!result.ok) {
+      const message = result.error ?? "Ocurrió un error al crear el plan.";
+      setError(message);
+      return;
+    }
+
+    setSuccess("Plan de vuelo creado correctamente.");
+    form.reset();
+  }
+
   return (
     <div className="panel mt-8 rounded-3xl p-8">
       <h2 className="text-2xl font-bold text-sky-300">
@@ -25,12 +54,24 @@ export default function PilotFlightPlanForm() {
         antes de crear uno nuevo.
       </p>
 
-      <form action={createFlightPlan} className="mt-6 grid gap-4">
+      {error && (
+        <div className="mt-5 rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="mt-5 rounded-xl border border-green-400/30 bg-green-400/10 p-4 text-sm text-green-300">
+          {success}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
         <input
           name="callsign"
           placeholder="Callsign"
           onChange={(e) => {
-            e.target.value = e.target.value.toUpperCase();
+            e.target.value = e.target.value.toUpperCase().replace(/\s/g, "");
           }}
           className="input-control rounded-xl p-3"
           required
@@ -117,9 +158,10 @@ export default function PilotFlightPlanForm() {
 
         <button
           type="submit"
-          className="rounded-xl bg-sky-500 p-3 font-semibold hover:bg-sky-400"
+          disabled={isSubmitting}
+          className="rounded-xl bg-sky-500 p-3 font-semibold hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Crear Plan de Vuelo
+          {isSubmitting ? "Creando..." : "Crear Plan de Vuelo"}
         </button>
       </form>
     </div>

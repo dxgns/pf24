@@ -38,7 +38,10 @@ export default function PilotFlightPlans({
   initialPlans: FlightPlan[];
   pilotId: string;
 }) {
-  const [plans, setPlans] = useState(initialPlans);
+  const [plans, setPlans] = useState(
+    initialPlans.filter((plan) => plan.status !== "FINISHED")
+  );
+
   const [saving, setSaving] = useState<string | null>(null);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -52,22 +55,37 @@ export default function PilotFlightPlans({
           const newPlan = payload.new as FlightPlan;
           const oldPlan = payload.old as FlightPlan;
 
-          if (payload.eventType === "INSERT" && newPlan.created_by === pilotId) {
-            setPlans((current) => [newPlan, ...current]);
+          if (payload.eventType === "INSERT") {
+            if (
+              newPlan.created_by === pilotId &&
+              newPlan.status !== "FINISHED"
+            ) {
+              setPlans((current) => [newPlan, ...current]);
+            }
           }
 
-          if (payload.eventType === "UPDATE" && newPlan.created_by === pilotId) {
+          if (payload.eventType === "UPDATE") {
+            if (newPlan.created_by !== pilotId) return;
+
             if (newPlan.status === "FINISHED") {
-                setPlans((current) =>
+              setPlans((current) =>
                 current.filter((plan) => plan.id !== newPlan.id)
-                );
-                return;
+              );
+              return;
             }
 
-            setPlans((current) =>
-                current.map((plan) => (plan.id === newPlan.id ? newPlan : plan))
-            );
-            }
+            setPlans((current) => {
+              const exists = current.some((plan) => plan.id === newPlan.id);
+
+              if (!exists) {
+                return [newPlan, ...current];
+              }
+
+              return current.map((plan) =>
+                plan.id === newPlan.id ? newPlan : plan
+              );
+            });
+          }
 
           if (payload.eventType === "DELETE") {
             setPlans((current) =>
@@ -84,7 +102,11 @@ export default function PilotFlightPlans({
   }, [pilotId]);
 
   function normalizeField(field: keyof FlightPlan, value: string) {
-    if (field === "callsign" || field === "route") {
+    if (field === "callsign") {
+      return value.toUpperCase().replace(/\s/g, "");
+    }
+
+    if (field === "route") {
       return value.toUpperCase();
     }
 
@@ -116,7 +138,8 @@ export default function PilotFlightPlans({
           updated_at: new Date().toISOString(),
         })
         .eq("id", id)
-        .eq("created_by", pilotId);
+        .eq("created_by", pilotId)
+        .neq("status", "FINISHED");
 
       if (error) {
         console.error(error);
@@ -142,20 +165,22 @@ export default function PilotFlightPlans({
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
-      .eq("created_by", pilotId);
+      .eq("created_by", pilotId)
+      .neq("status", "FINISHED");
 
     if (error) {
       console.error(error);
       return;
     }
 
+    setPlans((current) => current.filter((plan) => plan.id !== id));
     window.location.href = "/dashboard";
   }
 
   if (plans.length === 0) {
     return (
       <div className="panel mt-10 rounded-3xl p-8 text-slate-300">
-        Todavía no has creado planes de vuelo.
+        No tienes vuelos activos actualmente. Puedes crear un nuevo plan de vuelo.
       </div>
     );
   }
@@ -166,10 +191,7 @@ export default function PilotFlightPlans({
         const isFinished = plan.status === "FINISHED";
 
         return (
-          <div
-            key={plan.id}
-            className="panel rounded-3xl p-6"
-          >
+          <div key={plan.id} className="panel rounded-3xl p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <input

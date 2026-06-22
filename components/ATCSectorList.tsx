@@ -461,7 +461,7 @@ export default function ATCSectorList({
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
-      .or(`assumed_by.is.null,assumed_by.eq.${position}`);
+      .is("assumed_by", null);
 
     if (error) {
       console.error(error);
@@ -604,19 +604,20 @@ export default function ATCSectorList({
                   <button
                     key={sector}
                     onClick={() => {
-                      if (!occupied) selectPosition(sector);
-                      if (occupied) {
+                        if (occupied) {
                         setSectorError(`Sector ocupado por ${occupied.controller_name}`);
                         playTone("error");
-                      }
+                        return;
+                        }
+
+                        selectPosition(sector);
                     }}
-                    disabled={!!occupied}
                     className={`flex w-full items-center justify-between border-b border-white/5 px-5 py-4 text-left transition ${
-                      occupied
-                        ? "cursor-not-allowed opacity-50"
+                        occupied
+                        ? "cursor-not-allowed bg-red-500/5 opacity-60"
                         : "hover:bg-sky-500/10"
                     }`}
-                  >
+                >
                     <span className="font-mono font-bold text-sky-300">
                       {sector}
                     </span>
