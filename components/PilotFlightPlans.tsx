@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { getDefaultTransponder } from "@/lib/flightRules";
 
 const AIRCRAFT_TYPES = [
   "A220", "A320", "A330", "A350", "B717", "B727", "B737",
-  "B757", "B777", "B778", "MD11", "SW3", "C550",
+  "B757", "B777", "B787", "MD11", "SW3", "C550",
   "C150", "DH8D", "F100", "HAWK", "EUFI", "TBM9", "BE58", "PA46",
 ];
 
@@ -232,9 +233,13 @@ export default function PilotFlightPlans({
               <select
                 value={plan.flight_rules}
                 disabled={isFinished}
-                onChange={(e) =>
-                  autoSave(plan.id, "flight_rules", e.target.value)
-                }
+                onChange={(e) => {
+                  const newRules = e.target.value;
+
+                  autoSave(plan.id, "flight_rules", newRules);
+                  autoSave(plan.id, "transponder", getDefaultTransponder(newRules));
+                }}
+                
                 className="input-control rounded-xl p-3 disabled:opacity-60"
               >
                 <option value="IFR">IFR</option>

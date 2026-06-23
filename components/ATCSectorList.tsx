@@ -139,6 +139,7 @@ export default function ATCSectorList({
           if (payload.eventType === "INSERT") {
             if (newPlan.status !== "FINISHED") {
               setPlans((current) => [newPlan, ...current]);
+              playTone("traffic");
             }
           }
 
@@ -240,7 +241,7 @@ export default function ATCSectorList({
     };
   }, []);
 
-  function playTone(type: "connect" | "disconnect" | "error") {
+  function playTone(type: "connect" | "disconnect" | "error" | "traffic") {
     try {
       const AudioContextClass =
         window.AudioContext ||
@@ -258,7 +259,13 @@ export default function ATCSectorList({
 
       oscillator.type = "sine";
       oscillator.frequency.value =
-        type === "connect" ? 880 : type === "disconnect" ? 440 : 220;
+        type === "connect"
+          ? 880
+          : type === "disconnect"
+            ? 440
+            : type === "traffic"
+              ? 660
+              : 220;
 
       gain.gain.setValueAtTime(0.08, audio.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.22);
@@ -396,6 +403,14 @@ export default function ATCSectorList({
 
   function canEditPlan(plan: FlightPlan) {
     return plan.assumed_by === position && plan.status !== "FINISHED";
+  }
+
+  function generateRandomTransponder() {
+    const digits = ["0", "1", "2", "3", "4", "5", "6", "7"];
+
+    return Array.from({ length: 4 }, () => {
+      return digits[Math.floor(Math.random() * digits.length)];
+    }).join("");
   }
 
   function autoSave(id: string, field: keyof FlightPlan, value: string) {
@@ -763,8 +778,7 @@ export default function ATCSectorList({
 
                                   {!plan.assumed_by && (
                                     <p className="mt-4 rounded-xl border border-yellow-400/30 bg-yellow-400/10 p-3 text-sm text-yellow-300">
-                                      Este tráfico aún no está asumido. Debes asumirlo
-                                      antes de modificarlo.
+                                      Este tráfico aún no está asumido.
                                     </p>
                                   )}
 
@@ -896,12 +910,35 @@ export default function ATCSectorList({
 
                                     <button
                                       onClick={() =>
-                                        autoSave(plan.id, "transponder", "7700")
+                                        autoSave(plan.id, "transponder", generateRandomTransponder())
                                       }
+                                      disabled={!editable}
+                                      className="rounded-xl border border-sky-400 px-4 py-3 font-semibold text-sky-300 hover:bg-sky-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-sky-300"
+                                    >
+                                      Generar XPDR
+                                    </button>
+
+                                    <button
+                                      onClick={() => {
+                                        const emergencyCode = prompt(
+                                          "Selecciona el tipo de emergencia:\n\n7500 - Interferencia ilícita\n7600 - Falla de comunicaciones\n7700 - Emergencia general\n\nEscribe 7500, 7600 o 7700:"
+                                        );
+
+                                        if (
+                                          emergencyCode !== "7500" &&
+                                          emergencyCode !== "7600" &&
+                                          emergencyCode !== "7700"
+                                        ) {
+                                          alert("Código de emergencia inválido.");
+                                          return;
+                                        }
+
+                                        autoSave(plan.id, "transponder", emergencyCode);
+                                      }}
                                       disabled={!editable}
                                       className="rounded-xl border border-red-400 px-4 py-3 font-semibold text-red-300 hover:bg-red-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-red-300"
                                     >
-                                      Declarar 7700
+                                      Declarar emergencia
                                     </button>
 
                                     <button

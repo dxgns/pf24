@@ -3,6 +3,7 @@
 import { auth } from "@/auth";
 import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
+import { getDefaultTransponder } from "@/lib/flightRules";
 
 type CreateFlightPlanResult = {
   ok: boolean;
@@ -69,13 +70,6 @@ export async function createFlightPlan(
     return {
       ok: false,
       error: "El callsign debe tener al menos 2 caracteres.",
-    };
-  }
-
-  if (departure === arrival) {
-    return {
-      ok: false,
-      error: "El aeropuerto de salida y llegada no pueden ser el mismo.",
     };
   }
 
@@ -163,19 +157,23 @@ export async function createFlightPlan(
     };
   }
 
-  if (routeWords.length < 2) {
+  if (routeWords.length < 2 && route !== "LCL") {
     return {
       ok: false,
-      error: "La ruta debe tener al menos dos puntos o segmentos.",
+      error:
+        "La ruta debe tener al menos dos puntos o segmentos, o utilizar LCL.",
     };
   }
 
-  const repeatedSameWord = routeWords.every((word) => word === routeWords[0]);
+  const repeatedSameWord =
+    routeWords.length > 1 &&
+    routeWords.every((word) => word === routeWords[0]);
 
   if (repeatedSameWord) {
     return {
       ok: false,
-      error: "La ruta no puede repetir el mismo punto en todos los segmentos.",
+      error:
+        "La ruta no puede repetir el mismo punto en todos los segmentos.",
     };
   }
 
@@ -235,7 +233,7 @@ export async function createFlightPlan(
     flight_level: flightLevel,
     notes,
     created_by: pilotId,
-    transponder: flightRules === "VFR" ? "7000" : "2000",
+    transponder: getDefaultTransponder(flightRules),
     status: "PENDING",
     sector_status: "STUP",
   });
