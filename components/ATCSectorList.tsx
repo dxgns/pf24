@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import { ATC_FREQUENCIES } from "@/lib/atcFrequencies";
 
 type FlightPlan = {
   id: string;
@@ -43,7 +44,7 @@ const ATC_POSITIONS = [
   "MDST_APP", "MDST_TWR", "MDST_GND", "MDAB_I_TWR",
 ];
 
-const STATUS = ["PENDING", "APPROVED", "ACTIVE", "FINISHED", "REJECTED"];
+const STATUS = ["PENDING", "APPROVED", "FINISHED"];
 
 const SECTOR_STATUS = [
   "STUP",
@@ -55,6 +56,8 @@ const SECTOR_STATUS = [
   "TAXI_IN",
   "PARKED",
 ];
+
+
 
 export default function ATCSectorList({
   initialPlans,
@@ -144,6 +147,13 @@ export default function ATCSectorList({
           }
 
           if (payload.eventType === "UPDATE") {
+            if (
+              isEmergencyTransponder(newPlan.transponder) &&
+              newPlan.transponder !== oldPlan.transponder
+            ) {
+              playEmergencyAlarm();
+            }
+
             if (newPlan.status === "FINISHED") {
               setPlans((current) =>
                 current.filter((plan) => plan.id !== newPlan.id)
@@ -154,9 +164,7 @@ export default function ATCSectorList({
             setPlans((current) => {
               const exists = current.some((plan) => plan.id === newPlan.id);
 
-              if (!exists) {
-                return [newPlan, ...current];
-              }
+              if (!exists) return [newPlan, ...current];
 
               return current.map((plan) =>
                 plan.id === newPlan.id ? newPlan : plan
@@ -241,6 +249,56 @@ export default function ATCSectorList({
     };
   }, []);
 
+  function isEmergencyTransponder(code: string) {
+    return code === "7600" || code === "7700";
+  }
+
+  function emergencyClass(code: string) {
+    return isEmergencyTransponder(code)
+      ? "border border-red-400 bg-red-500/20 text-red-300 animate-pulse"
+      : "";
+  }
+
+  function playEmergencyAlarm() {
+    try {
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+
+      if (!AudioContextClass) return;
+
+      const audio = new AudioContextClass();
+      const startTime = audio.currentTime;
+      const duration = 5;
+      const beepLength = 0.22;
+      const gap = 0.38;
+
+      for (let t = 0; t < duration; t += gap) {
+        const oscillator = audio.createOscillator();
+        const gain = audio.createGain();
+
+        oscillator.connect(gain);
+        gain.connect(audio.destination);
+
+        oscillator.type = "square";
+        oscillator.frequency.setValueAtTime(880, startTime + t);
+
+        gain.gain.setValueAtTime(0.0001, startTime + t);
+        gain.gain.exponentialRampToValueAtTime(0.08, startTime + t + 0.03);
+        gain.gain.exponentialRampToValueAtTime(
+          0.0001,
+          startTime + t + beepLength
+        );
+
+        oscillator.start(startTime + t);
+        oscillator.stop(startTime + t + beepLength);
+      }
+    } catch {
+      // El sonido no es crítico.
+    }
+  }
+
   function playTone(type: "connect" | "disconnect" | "error" | "traffic") {
     try {
       const AudioContextClass =
@@ -257,7 +315,7 @@ export default function ATCSectorList({
       oscillator.connect(gain);
       gain.connect(audio.destination);
 
-      oscillator.type = "sine";
+      oscillator.type = type === "error" ? "square" : "sine";
       oscillator.frequency.value =
         type === "connect"
           ? 880
@@ -268,13 +326,43 @@ export default function ATCSectorList({
               : 220;
 
       gain.gain.setValueAtTime(0.08, audio.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.22);
+      gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.25);
 
       oscillator.start();
-      oscillator.stop(audio.currentTime + 0.22);
+      oscillator.stop(audio.currentTime + 0.25);
     } catch {
-      // El sonido no es crítico para la operación.
+      // El sonido no es crítico.
     }
+  }
+
+  async function contactPilot(plan: FlightPlan) {
+    if (!position) return;
+
+    const frequency = ATC_FREQUENCIES[position];
+
+    if (!frequency) {
+      alert(`No hay frecuencia configurada para ${position}.`);
+      return;
+    }
+
+    const message = `Contacte ${position} en ${frequency}`;
+
+    const { error } = await supabase.from("contact_messages").insert({
+      flight_plan_id: plan.id,
+      callsign: plan.callsign,
+      pilot_id: plan.created_by,
+      controller_position: position,
+      frequency,
+      message,
+    });
+
+    if (error) {
+      console.error(error);
+      alert("No se pudo enviar el Contact Me.");
+      return;
+    }
+
+    alert(`Mensaje enviado: ${message}`);
   }
 
   async function selectPosition(value: string) {
@@ -423,6 +511,11 @@ export default function ATCSectorList({
       return;
     }
 
+    if (field === "transponder" && value === "7500") {
+      alert("El código 7500 no está disponible.");
+      return;
+    }
+
     setPlans((current) =>
       current.map((plan) =>
         plan.id === id ? { ...plan, [field]: value } : plan
@@ -472,7 +565,7 @@ export default function ATCSectorList({
       .from("flight_plans")
       .update({
         assumed_by: position,
-        status: "ACTIVE",
+        status: "PENDING",
         updated_at: new Date().toISOString(),
       })
       .eq("id", id)
@@ -561,13 +654,28 @@ export default function ATCSectorList({
 
   const header = (
     <div className="panel rounded-3xl p-8">
-      <p className="mono text-xs uppercase tracking-[0.3em] text-sky-300/70">
-        PF24 Español / ATC Operations
-      </p>
+      <div className="mb-6 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={async () => {
+            if (position) {
+              await endShift();
+              return;
+            }
 
-      <h1 className="mt-4 text-4xl font-extrabold">
-        Sector List
-      </h1>
+            window.location.href = "/dashboard";
+          }}
+          className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300"
+        >
+          ← Regresar
+        </button>
+
+        <div className="mono text-sm tracking-[0.25em] text-slate-400">
+          PF24
+        </div>
+      </div>
+
+      <h1 className="mt-4 text-4xl font-extrabold">Sector List</h1>
 
       {!position && (
         <p className="mt-4 max-w-3xl text-slate-300">
@@ -619,20 +727,20 @@ export default function ATCSectorList({
                   <button
                     key={sector}
                     onClick={() => {
-                        if (occupied) {
+                      if (occupied) {
                         setSectorError(`Sector ocupado por ${occupied.controller_name}`);
                         playTone("error");
                         return;
-                        }
+                      }
 
-                        selectPosition(sector);
+                      selectPosition(sector);
                     }}
                     className={`flex w-full items-center justify-between border-b border-white/5 px-5 py-4 text-left transition ${
-                        occupied
+                      occupied
                         ? "cursor-not-allowed bg-red-500/5 opacity-60"
                         : "hover:bg-sky-500/10"
                     }`}
-                >
+                  >
                     <span className="font-mono font-bold text-sky-300">
                       {sector}
                     </span>
@@ -726,7 +834,15 @@ export default function ATCSectorList({
                           <td className="p-4">{plan.arrival_icao}</td>
                           <td className="p-4">{plan.flight_rules}</td>
                           <td className="p-4">{plan.flight_level}</td>
-                          <td className="p-4 font-mono">{plan.transponder}</td>
+                          <td className="p-4 font-mono">
+                            <span
+                              className={`rounded-lg px-2 py-1 ${
+                                emergencyClass(plan.transponder)
+                              }`}
+                            >
+                              {plan.transponder}
+                            </span>
+                          </td>
                           <td className="p-4">
                             {badge(plan.status, statusClass(plan.status))}
                           </td>
@@ -765,7 +881,9 @@ export default function ATCSectorList({
                                     )}
                                     {badge(
                                       `XPDR ${plan.transponder}`,
-                                      "bg-sky-400/10 text-sky-300 border-sky-400/30"
+                                      isEmergencyTransponder(plan.transponder)
+                                        ? "bg-red-500/20 text-red-300 border-red-400 animate-pulse"
+                                        : "bg-sky-400/10 text-sky-300 border-sky-400/30"
                                     )}
                                   </div>
 
@@ -788,10 +906,31 @@ export default function ATCSectorList({
                                         value={plan.transponder}
                                         maxLength={4}
                                         disabled={!editable}
-                                        onChange={(e) =>
-                                          autoSave(plan.id, "transponder", e.target.value)
-                                        }
-                                        className="w-full rounded-xl bg-slate-800 p-3 font-mono disabled:cursor-not-allowed disabled:opacity-50"
+                                        onChange={(e) => {
+                                          const value = e.target.value
+                                            .replace(/[^0-7]/g, "")
+                                            .slice(0, 4);
+
+                                          setPlans((current) =>
+                                            current.map((p) =>
+                                              p.id === plan.id
+                                                ? { ...p, transponder: value }
+                                                : p
+                                            )
+                                          );
+
+                                          if (value === "7500") {
+                                            alert("El código 7500 no está disponible.");
+                                            return;
+                                          }
+
+                                          if (value.length === 4) {
+                                            autoSave(plan.id, "transponder", value);
+                                          }
+                                        }}
+                                        className={`w-full rounded-xl bg-slate-800 p-3 font-mono disabled:cursor-not-allowed disabled:opacity-50 ${
+                                          emergencyClass(plan.transponder)
+                                        }`}
                                       />
                                     </Field>
 
@@ -814,9 +953,22 @@ export default function ATCSectorList({
                                       <select
                                         value={plan.status}
                                         disabled={!editable}
-                                        onChange={(e) =>
-                                          autoSave(plan.id, "status", e.target.value)
-                                        }
+                                        onChange={(e) => {
+                                          const newStatus = e.target.value;
+
+                                          if (newStatus === "FINISHED") {
+                                            const confirmed = confirm(`¿Finalizar vuelo ${plan.callsign}?`);
+
+                                            if (!confirmed) {
+                                              return;
+                                            }
+
+                                            autoSave(plan.id, "sector_status", "PARKED");
+                                            autoSave(plan.id, "assumed_by", "");
+                                          }
+
+                                          autoSave(plan.id, "status", newStatus);
+                                        }}
                                         className="w-full rounded-xl bg-slate-800 p-3 disabled:cursor-not-allowed disabled:opacity-50"
                                       >
                                         {STATUS.map((status) => (
@@ -921,11 +1073,10 @@ export default function ATCSectorList({
                                     <button
                                       onClick={() => {
                                         const emergencyCode = prompt(
-                                          "Selecciona el tipo de emergencia:\n\n7500 - Interferencia ilícita\n7600 - Falla de comunicaciones\n7700 - Emergencia general\n\nEscribe 7500, 7600 o 7700:"
+                                          "Selecciona el tipo de emergencia:\n\n7600 - Falla de comunicaciones\n7700 - Emergencia general\n\nEscribe 7600 o 7700:"
                                         );
 
                                         if (
-                                          emergencyCode !== "7500" &&
                                           emergencyCode !== "7600" &&
                                           emergencyCode !== "7700"
                                         ) {
@@ -942,13 +1093,15 @@ export default function ATCSectorList({
                                     </button>
 
                                     <button
-                                      onClick={() => finishFlight(plan.id)}
+                                      onClick={() => contactPilot(plan)}
                                       disabled={!controlledByMe}
-                                      className="rounded-xl border border-white/10 px-4 py-3 font-semibold text-slate-300 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                      className="rounded-xl border border-green-400 px-4 py-3 font-semibold text-green-300 hover:bg-green-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-green-300"
                                     >
-                                      Finalizar vuelo
+                                      Contact Me
                                     </button>
+
                                   </div>
+
 
                                   <p className="mt-6 text-sm text-slate-400">
                                     {savingId === plan.id

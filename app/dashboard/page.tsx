@@ -3,6 +3,11 @@ import { redirect } from "next/navigation";
 import LogoutButton from "@/components/LogoutButton";
 import UserAvatar from "@/components/UserAvatar";
 import UtcClock from "@/components/UtcClock";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Dashboard | PF24",
+};
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -12,24 +17,34 @@ export default async function DashboardPage() {
   }
 
   return (
-    <main className="radar-grid min-h-screen bg-[#020617] px-6 py-24 text-white">
+    <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
       <section className="section-container max-w-7xl">
         <div className="panel rounded-3xl p-8">
+
+          <div className="mb-6 flex items-center justify-between">
+            <a
+              href="/"
+              className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300"
+            >
+              ← Inicio
+            </a>
+
+            <div className="mono text-sm tracking-[0.25em] text-slate-400">
+              PF24
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-6">
             <div className="flex items-center gap-4">
               <UserAvatar image={session.user?.image} name={session.user?.name} />
 
               <div>
-                <p className="mono text-xs uppercase tracking-[0.3em] text-sky-300/70">
-                  PF24 Español / Operations Center
-                </p>
-
                 <h1 className="mt-2 text-4xl font-extrabold">
-                  Dashboard
+                  Bienvenido, {session.user?.name ?? "usuario"}.
                 </h1>
 
                 <p className="mt-2 text-slate-400">
-                  Bienvenido, {session.user?.name ?? "usuario"}.
+                  Dashboard
                 </p>
               </div>
             </div>
@@ -38,11 +53,10 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-4">
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
           <InfoCard label="Usuario" value={session.user?.name ?? "N/A"} />
           <InfoCard label="Hora UTC" value={<UtcClock />} />
           <InfoCard label="Sistema" value="ONLINE" accent="green" />
-          <InfoCard label="Modo" value="PF24 OPS" />
         </div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-3">
@@ -68,36 +82,6 @@ export default async function DashboardPage() {
           />
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
-          <div className="panel rounded-3xl p-8">
-            <p className="mono text-xs uppercase tracking-[0.25em] text-sky-300/70">
-              Plataforma
-            </p>
-
-            <h2 className="mt-3 text-2xl font-bold">
-              Estado operacional
-            </h2>
-
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <StatusLine label="Discord OAuth" value="Activo" />
-              <StatusLine label="Supabase Database" value="Activo" />
-              <StatusLine label="Realtime" value="Activo" />
-              <StatusLine label="Auto finish cron" value="Externo" />
-            </div>
-          </div>
-
-          <div className="panel rounded-3xl p-8">
-            <p className="mono text-xs uppercase tracking-[0.25em] text-sky-300/70">
-              Accesos rápidos
-            </p>
-
-            <div className="mt-6 grid gap-3">
-              <QuickLink href="/piloto" label="Nuevo plan de vuelo" />
-              <QuickLink href="/atc" label="Abrir Sector List" />
-              <QuickLink href="/" label="Volver al inicio público" />
-            </div>
-          </div>
-        </div>
       </section>
     </main>
   );

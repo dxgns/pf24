@@ -10,14 +10,14 @@ export default async function Navbar() {
         <a href="/" className="flex items-center gap-3">
           <Image
             src="/logo.png"
-            alt="PF24 Español"
+            alt="PF24"
             width={40}
             height={40}
             priority
           />
 
           <div className="text-[1.4rem] font-extrabold">
-            PF24 <span className="text-sky-400">Español</span>
+            PF<span className="text-sky-400">24</span>
           </div>
         </a>
 
@@ -35,19 +35,20 @@ export default async function Navbar() {
               Discord
             </a>
 
+            <a href="https://drive.google.com/drive/folders/1WfNHMsjxodzZ2uNCT0-QZHOJV_eBWmxl" className="text-white/80 transition hover:text-white">
+              Charts
+            </a>
+
+            <a href="https://trello.com/b/CXt0oq24/pf24-espanol-actualizaciones" className="text-white/80 transition hover:text-white">
+              Trello
+            </a>
+
+            <a href="/ayuda" className="text-white/80 transition hover:text-white">
+              Ayuda
+            </a>
+
             {session && (
               <>
-                <a href="/dashboard" className="text-white/80 transition hover:text-white">
-                  Dashboard
-                </a>
-
-                <a href="/piloto" className="text-white/80 transition hover:text-white">
-                  Piloto
-                </a>
-
-                <a href="/atc" className="text-white/80 transition hover:text-white">
-                  ATC
-                </a>
               </>
             )}
           </nav>
@@ -57,7 +58,7 @@ export default async function Navbar() {
               href="/dashboard"
               className="rounded-xl border border-sky-400 px-4 py-2 font-medium text-sky-400 transition hover:bg-sky-400 hover:text-white"
             >
-              Mi cuenta
+              Dashboard
             </a>
           ) : (
             <a

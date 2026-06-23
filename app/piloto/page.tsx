@@ -5,6 +5,12 @@ import PilotFlightPlanForm from "@/components/PilotFlightPlanForm";
 import PilotFlightPlans from "@/components/PilotFlightPlans";
 import OnlineATCPanel from "@/components/OnlineATCPanel";
 import UtcClock from "@/components/UtcClock";
+import ContactMeReceiver from "@/components/ContactMeReceiver";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Portal Piloto | PF24",
+};
 
 export default async function PilotPage() {
   const session = await auth();
@@ -31,10 +37,23 @@ export default async function PilotPage() {
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-24 text-white">
       <section className="section-container max-w-6xl">
+
+        <ContactMeReceiver pilotId={pilotId} />
+
         <div className="panel rounded-3xl p-8">
-          <p className="mono text-xs uppercase tracking-[0.3em] text-sky-300/70">
-            PF24 Español / Pilot Operations
-          </p>
+
+          <div className="mb-6 flex items-center justify-between">
+            <a
+              href="/dashboard"
+              className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300"
+            >
+              ← Regresar
+            </a>
+
+            <div className="mono text-sm tracking-[0.25em] text-slate-400"> 
+              PF24
+            </div>
+          </div>
 
           <h1 className="mt-4 text-4xl font-extrabold">
             Portal Piloto
@@ -46,7 +65,7 @@ export default async function PilotPage() {
           </p>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-4">
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
           <div className="panel rounded-2xl p-5">
             <p className="mono text-xs text-sky-300/70">PILOTO</p>
             <p className="mono mt-2 text-xl font-bold">
@@ -68,12 +87,6 @@ export default async function PilotPage() {
             </p>
           </div>
 
-          <div className="panel rounded-2xl p-5">
-            <p className="mono text-xs text-sky-300/70">MODO</p>
-            <p className="mono mt-2 text-xl font-bold">
-              PILOT OPS
-            </p>
-          </div>
         </div>
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">

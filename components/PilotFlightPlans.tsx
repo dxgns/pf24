@@ -42,8 +42,8 @@ export default function PilotFlightPlans({
   const [plans, setPlans] = useState(
     initialPlans.filter((plan) => plan.status !== "FINISHED")
   );
-
   const [saving, setSaving] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
@@ -57,16 +57,20 @@ export default function PilotFlightPlans({
           const oldPlan = payload.old as FlightPlan;
 
           if (payload.eventType === "INSERT") {
-            if (
-              newPlan.created_by === pilotId &&
-              newPlan.status !== "FINISHED"
-            ) {
+            if (newPlan.created_by === pilotId && newPlan.status !== "FINISHED") {
               setPlans((current) => [newPlan, ...current]);
             }
           }
 
           if (payload.eventType === "UPDATE") {
             if (newPlan.created_by !== pilotId) return;
+
+            if (
+              isEmergencyTransponder(newPlan.transponder) &&
+              newPlan.transponder !== oldPlan.transponder
+            ) {
+              playEmergencyAlarm();
+            }
 
             if (newPlan.status === "FINISHED") {
               setPlans((current) =>
@@ -78,9 +82,7 @@ export default function PilotFlightPlans({
             setPlans((current) => {
               const exists = current.some((plan) => plan.id === newPlan.id);
 
-              if (!exists) {
-                return [newPlan, ...current];
-              }
+              if (!exists) return [newPlan, ...current];
 
               return current.map((plan) =>
                 plan.id === newPlan.id ? newPlan : plan
@@ -102,9 +104,59 @@ export default function PilotFlightPlans({
     };
   }, [pilotId]);
 
+  function isEmergencyTransponder(code: string) {
+    return code === "7600" || code === "7700";
+  }
+
+  function emergencyClass(code: string) {
+    return isEmergencyTransponder(code)
+      ? "border border-red-400 bg-red-500/20 text-red-300 animate-pulse"
+      : "";
+  }
+
+  function playEmergencyAlarm() {
+    try {
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+
+      if (!AudioContextClass) return;
+
+      const audio = new AudioContextClass();
+      const startTime = audio.currentTime;
+      const duration = 5;
+      const beepLength = 0.22;
+      const gap = 0.38;
+
+      for (let t = 0; t < duration; t += gap) {
+        const oscillator = audio.createOscillator();
+        const gain = audio.createGain();
+
+        oscillator.connect(gain);
+        gain.connect(audio.destination);
+
+        oscillator.type = "square";
+        oscillator.frequency.setValueAtTime(880, startTime + t);
+
+        gain.gain.setValueAtTime(0.0001, startTime + t);
+        gain.gain.exponentialRampToValueAtTime(0.08, startTime + t + 0.03);
+        gain.gain.exponentialRampToValueAtTime(
+          0.0001,
+          startTime + t + beepLength
+        );
+
+        oscillator.start(startTime + t);
+        oscillator.stop(startTime + t + beepLength);
+      }
+    } catch {
+      // El sonido no es crítico.
+    }
+  }
+
   function normalizeField(field: keyof FlightPlan, value: string) {
     if (field === "callsign") {
-      return value.toUpperCase().replace(/\s/g, "");
+      return value.toUpperCase().replace(/\s/g, "").slice(0, 12);
     }
 
     if (field === "route") {
@@ -115,11 +167,22 @@ export default function PilotFlightPlans({
       return value.replace(/\D/g, "").slice(0, 3);
     }
 
+    if (field === "transponder") {
+      return value.replace(/[^0-7]/g, "").slice(0, 4);
+    }
+
     return value;
   }
 
   function autoSave(id: string, field: keyof FlightPlan, value: string) {
     const cleanValue = normalizeField(field, value);
+
+    if (field === "transponder" && cleanValue === "7500") {
+      setError("El código 7500 no está disponible.");
+      return;
+    }
+
+    setError("");
 
     setPlans((current) =>
       current.map((plan) =>
@@ -144,6 +207,7 @@ export default function PilotFlightPlans({
 
       if (error) {
         console.error(error);
+        setError("No se pudo guardar el cambio.");
       }
 
       setSaving(null);
@@ -151,9 +215,7 @@ export default function PilotFlightPlans({
   }
 
   async function finishFlight(id: string) {
-    const confirmed = confirm(
-      "¿Finalizar este vuelo y volver al dashboard?"
-    );
+    const confirmed = confirm("¿Finalizar este vuelo y volver al dashboard?");
 
     if (!confirmed) return;
 
@@ -171,6 +233,7 @@ export default function PilotFlightPlans({
 
     if (error) {
       console.error(error);
+      setError("No se pudo finalizar el vuelo.");
       return;
     }
 
@@ -188,6 +251,12 @@ export default function PilotFlightPlans({
 
   return (
     <div className="mt-10 grid gap-6">
+      {error && (
+        <div className="rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
       {plans.map((plan) => {
         const isFinished = plan.status === "FINISHED";
 
@@ -198,6 +267,7 @@ export default function PilotFlightPlans({
                 <input
                   value={plan.callsign}
                   disabled={isFinished}
+                  maxLength={12}
                   onChange={(e) =>
                     autoSave(plan.id, "callsign", e.target.value)
                   }
@@ -205,7 +275,14 @@ export default function PilotFlightPlans({
                 />
 
                 <p className="mt-1 text-sm text-slate-400">
-                  XPDR {plan.transponder} · {plan.status} · {plan.sector_status}
+                  <span
+                    className={`rounded-lg px-2 py-1 ${
+                      emergencyClass(plan.transponder)
+                    }`}
+                  >
+                    XPDR {plan.transponder}
+                  </span>{" "}
+                  · {plan.status} · {plan.sector_status}
                 </p>
               </div>
 
@@ -237,9 +314,12 @@ export default function PilotFlightPlans({
                   const newRules = e.target.value;
 
                   autoSave(plan.id, "flight_rules", newRules);
-                  autoSave(plan.id, "transponder", getDefaultTransponder(newRules));
+                  autoSave(
+                    plan.id,
+                    "transponder",
+                    getDefaultTransponder(newRules)
+                  );
                 }}
-                
                 className="input-control rounded-xl p-3 disabled:opacity-60"
               >
                 <option value="IFR">IFR</option>
@@ -292,10 +372,42 @@ export default function PilotFlightPlans({
                 disabled={isFinished}
                 inputMode="numeric"
                 maxLength={3}
+                placeholder="FL"
                 onChange={(e) =>
                   autoSave(plan.id, "flight_level", e.target.value)
                 }
                 className="input-control rounded-xl p-3 disabled:opacity-60"
+              />
+
+              <input
+                value={plan.transponder}
+                disabled={isFinished}
+                inputMode="numeric"
+                maxLength={4}
+                placeholder="XPDR"
+                onChange={(e) => {
+                  const value = e.target.value
+                    .replace(/[^0-7]/g, "")
+                    .slice(0, 4);
+
+                  setPlans((current) =>
+                    current.map((p) =>
+                      p.id === plan.id ? { ...p, transponder: value } : p
+                    )
+                  );
+
+                  if (value === "7500") {
+                    setError("El código 7500 no está disponible.");
+                    return;
+                  }
+
+                  if (value.length === 4) {
+                    autoSave(plan.id, "transponder", value);
+                  }
+                }}
+                className={`input-control rounded-xl p-3 disabled:opacity-60 ${
+                  emergencyClass(plan.transponder)
+                }`}
               />
             </div>
 
@@ -311,9 +423,18 @@ export default function PilotFlightPlans({
 
             <div className="mt-4 rounded-2xl border border-white/10 bg-[#020617] p-4 text-sm text-slate-300">
               <p>Sector asignado: {plan.assumed_by ?? "Sin asumir"}</p>
-              <p>Estado administrativo: {plan.status}</p>
+              <p>Estado de plan de vuelo: {plan.status}</p>
               <p>Estado operativo: {plan.sector_status}</p>
-              <p>Transponder: {plan.transponder}</p>
+              <p>
+                Transponder:{" "}
+                <span
+                  className={`rounded-lg px-2 py-1 ${
+                    emergencyClass(plan.transponder)
+                  }`}
+                >
+                  {plan.transponder}
+                </span>
+              </p>
             </div>
 
             {!isFinished && (

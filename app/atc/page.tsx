@@ -2,6 +2,11 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import ATCSectorList from "@/components/ATCSectorList";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Portal ATC | PF24",
+};
 
 export default async function ATCPage() {
   const session = await auth();

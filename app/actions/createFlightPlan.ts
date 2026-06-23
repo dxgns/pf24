@@ -73,6 +73,13 @@ export async function createFlightPlan(
     };
   }
 
+  if (callsign.length > 12) {
+    return {
+      ok: false,
+      error: "El callsign no puede superar los 12 caracteres.",
+    };
+  }
+
   if (flightLevel.length < 1 || flightLevel.length > 3) {
     return {
       ok: false,

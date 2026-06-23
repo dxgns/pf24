@@ -1,59 +1,68 @@
 import Navbar from "@/components/Navbar";
+import { auth } from "@/auth";
+import type { Metadata } from "next";
 
-export default function HomePage() {
-  return (
-    <main className="min-h-screen bg-[#050612] text-white">
-      <Navbar />
+export const metadata: Metadata = {
+  title: "Home | PF24",
+};
 
-      {/* HERO */}
-      <section className="relative flex min-h-screen items-center overflow-hidden px-6 pt-24">
-        <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-          style={{
-            backgroundImage:
-              "url('https://framerusercontent.com/images/lKs77AFnsbHG3ATgS3hBMy8iCOw.png')",
-          }}
-        />
 
-        <div className="absolute inset-0 bg-black/10" />
+export default async function HomePage() {
+  const session = await auth();
+    return (
+      <main className="min-h-screen bg-[#050612] text-white">
+        <Navbar />
 
-        <div className="section-container relative z-10">
-          <div className="max-w-3xl">
-            <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#8095ff]">
-              Project Flight Spanish Community
-            </p>
+        {/* HERO */}
+        <section className="relative flex min-h-screen items-center overflow-hidden px-6 pt-24">
+          <div
+            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+            style={{
+              backgroundImage:
+                "url('https://framerusercontent.com/images/lKs77AFnsbHG3ATgS3hBMy8iCOw.png')",
+            }}
+          />
 
-            <h1 className="text-6xl font-extrabold leading-[0.95] tracking-tight text-white md:text-8xl">
-              PF24 Español
-            </h1>
+          <div className="absolute inset-0 bg-black/10" />
 
-            <p className="mt-8 max-w-2xl text-lg leading-8 text-white/85">
-              PF24 Español es una comunidad de simulación aérea realista
-              inspirada en el espacio aéreo mundial, donde pilotos y
-              controladores recrean operaciones reales y vuelos multijugador en
-              Project Flight y Discord.
-            </p>
+          <div className="section-container relative z-10">
+            <div className="max-w-3xl">
+              <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#8095ff]">
+                Project Flight Spanish Community
+              </p>
 
-            <div className="mt-10 flex flex-wrap gap-4">
-              <a
-                href="https://discord.gg/DD7yeDDyPY"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-2xl bg-[#8095ff] px-10 py-4 text-xl font-semibold text-white transition hover:bg-[#6f84ff]"
-              >
-                Unirse al Discord
-              </a>
+              <h1 className="text-6xl font-extrabold leading-[0.95] tracking-tight text-white md:text-8xl">
+                PF<span className="text-sky-400">24</span>
+              </h1>
 
-              <a
-                href="/login"
-                className="rounded-2xl border border-white/20 px-10 py-4 text-xl font-semibold text-white transition hover:bg-white/10"
-              >
-                Iniciar sesión
-              </a>
+              <p className="mt-8 max-w-2xl text-lg leading-8 text-white/85">
+                PF24 es una comunidad de simulación aérea realista
+                inspirada en el espacio aéreo mundial, donde pilotos y
+                controladores recrean operaciones reales y vuelos multijugador en
+                Project Flight y Discord.
+              </p>
+
+              <div className="mt-10 flex flex-wrap gap-4">
+                <a
+                  href="https://discord.gg/DD7yeDDyPY"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-2xl bg-[#8095ff] px-10 py-4 text-xl font-semibold text-white transition hover:bg-[#6f84ff]"
+                >
+                  Unirse al Discord
+                </a>
+
+                <a
+                  href={session ? "/dashboard" : "/login"}
+                  className="rounded-2xl border border-white/20 px-10 py-4 text-xl font-semibold text-white transition hover:bg-white/10"
+                >
+                  {session ? "Ir al Dashboard" : "Iniciar sesión"}
+                </a>
+
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
       {/* STATS */}
       <section className="border-y border-white/10 bg-[#080b18] px-6 py-10">
@@ -100,7 +109,7 @@ export default function HomePage() {
       <section className="px-6 pb-28">
         <div className="section-container rounded-[2rem] border border-white/10 bg-slate-900 p-12 text-center">
           <h2 className="text-4xl font-extrabold">
-            Únete a PF24 Español
+            Únete a PF24
           </h2>
 
           <p className="mx-auto mt-4 max-w-2xl text-slate-400">

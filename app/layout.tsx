@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PF24 Español",
+  title: "PF24",
   description: "La comunidad hispana más grande de Project Flight.",
 };
 

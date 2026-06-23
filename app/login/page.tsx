@@ -1,3 +1,9 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Login | PF24",
+};
+
 export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#050816] px-6 text-white">
