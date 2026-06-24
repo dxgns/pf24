@@ -4,12 +4,27 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { buildAtisText } from "@/lib/buildAtis";
 
-const AIRPORTS = ["MDPC", "MDST", "MDAB", "LCLK", "LCPH", "LCRA", "EGKK", "EGHI", "LEMH", "GCLP", "EFKT"];
+const AIRPORTS = [
+  "MDPC",
+  "MDST",
+  "MDAB",
+  "LCLK",
+  "LCPH",
+  "LCRA",
+  "EGKK",
+  "EGHI",
+  "LEMH",
+  "GCLP",
+  "EFKT",
+];
 
 function nextInfoLetter(last?: string) {
   if (!last) return "A";
+
   const code = last.charCodeAt(0);
+
   if (code >= 90) return "A";
+
   return String.fromCharCode(code + 1);
 }
 
@@ -44,7 +59,11 @@ export default function AtisCreator({
   }, [airport]);
 
   async function publishAtis() {
-    if (!runway.trim()) {
+    const runwayFormatted = runway.trim().toUpperCase();
+    const extraInfoFormatted = extraInfo.trim().toUpperCase();
+    const remarksFormatted = remarks.trim().toUpperCase();
+
+    if (!runwayFormatted) {
       alert("Debes ingresar una pista.");
       return;
     }
@@ -62,9 +81,9 @@ export default function AtisCreator({
         metar,
         approachPrimary,
         approachOptional,
-        runway,
-        extraInfo,
-        remarks,
+        runway: runwayFormatted,
+        extraInfo: extraInfoFormatted,
+        remarks: remarksFormatted,
       });
 
       const { error } = await supabase.from("atis_messages").insert({
@@ -73,9 +92,9 @@ export default function AtisCreator({
         metar,
         approach_primary: approachPrimary,
         approach_optional: approachOptional || null,
-        runway,
-        extra_info: extraInfo || null,
-        remarks: remarks || null,
+        runway: runwayFormatted,
+        extra_info: extraInfoFormatted || null,
+        remarks: remarksFormatted || null,
         full_text: fullText,
         created_by: controllerPosition,
       });
@@ -87,7 +106,11 @@ export default function AtisCreator({
       }
 
       alert(`ATIS ${airport} INFO ${infoLetter} publicado.`);
+
       setInfoLetter(nextInfoLetter(infoLetter));
+      setRunway("");
+      setExtraInfo("");
+      setRemarks("");
     } finally {
       setLoading(false);
     }
@@ -98,35 +121,70 @@ export default function AtisCreator({
       <h2 className="text-2xl font-extrabold">ATIS</h2>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <select value={airport} onChange={(e) => setAirport(e.target.value)} className="rounded-xl bg-slate-800 p-3">
+        <select
+          value={airport}
+          onChange={(e) => setAirport(e.target.value)}
+          className="rounded-xl bg-slate-800 p-3"
+        >
           {AIRPORTS.map((airport) => (
             <option key={airport}>{airport}</option>
           ))}
         </select>
 
-        <input value={`INFO ${infoLetter}`} disabled className="rounded-xl bg-slate-800 p-3 opacity-70" />
+        <input
+          value={`INFO ${infoLetter}`}
+          disabled
+          className="rounded-xl bg-slate-800 p-3 opacity-70"
+        />
 
-        <select value={approachPrimary} onChange={(e) => setApproachPrimary(e.target.value)} className="rounded-xl bg-slate-800 p-3">
+        <select
+          value={approachPrimary}
+          onChange={(e) => setApproachPrimary(e.target.value)}
+          className="rounded-xl bg-slate-800 p-3"
+        >
           <option value="ILS">ILS</option>
           <option value="RNP">RNP</option>
           <option value="VISUAL">VISUAL</option>
         </select>
 
-        <select value={approachOptional} onChange={(e) => setApproachOptional(e.target.value)} className="rounded-xl bg-slate-800 p-3">
+        <select
+          value={approachOptional}
+          onChange={(e) => setApproachOptional(e.target.value)}
+          className="rounded-xl bg-slate-800 p-3"
+        >
           <option value="">Sin opcional</option>
           <option value="ILS">ILS</option>
           <option value="RNP">RNP</option>
           <option value="VISUAL">VISUAL</option>
         </select>
 
-        <input value={runway} onChange={(e) => setRunway(e.target.value.toUpperCase())} placeholder="Pista, ej: 08" className="rounded-xl bg-slate-800 p-3" />
+        <input
+          value={runway}
+          onChange={(e) => setRunway(e.target.value.toUpperCase())}
+          placeholder="Pista, ej: 08"
+          className="rounded-xl bg-slate-800 p-3 uppercase"
+        />
 
-        <input value={extraInfo} onChange={(e) => setExtraInfo(e.target.value)} placeholder="Información adicional" className="rounded-xl bg-slate-800 p-3" />
+        <input
+          value={extraInfo}
+          onChange={(e) => setExtraInfo(e.target.value.toUpperCase())}
+          placeholder="Información adicional"
+          className="rounded-xl bg-slate-800 p-3 uppercase"
+        />
       </div>
 
-      <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="RMK" className="mt-4 w-full rounded-xl bg-slate-800 p-3" />
+      <textarea
+        value={remarks}
+        onChange={(e) => setRemarks(e.target.value.toUpperCase())}
+        placeholder="RMK"
+        className="mt-4 w-full rounded-xl bg-slate-800 p-3 uppercase"
+      />
 
-      <button onClick={publishAtis} disabled={loading} className="mt-4 w-full rounded-xl bg-sky-500 p-3 font-semibold hover:bg-sky-400">
+      <button
+        onClick={publishAtis}
+        disabled={loading}
+        className="mt-4 w-full rounded-xl bg-sky-500 p-3 font-semibold hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
+      >
         {loading ? "Publicando..." : "Publicar ATIS"}
       </button>
     </div>

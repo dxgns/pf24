@@ -70,14 +70,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               });
             }
           } else {
-            token.discordRoles = [];
-            token.permissions = getPermissionsFromRoles([]);
+            console.error("No se pudieron obtener roles Discord:", response.status);
           }
-        } catch (error) {
-          console.error("Discord role fetch/login log error:", error);
 
-          token.discordRoles = [];
-          token.permissions = getPermissionsFromRoles([]);
+        } catch (error) {
+           console.error("Discord role fetch/login log error:", error);
         }
       }
 

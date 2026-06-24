@@ -43,6 +43,14 @@ export default async function DashboardPage() {
                   Bienvenido, {session.user?.name ?? "usuario"}.
                 </h1>
 
+                <pre className="mt-6 rounded-xl bg-black/40 p-4 text-xs text-white">
+                  {JSON.stringify(session.user.permissions, null, 2)}
+                </pre>
+
+                <pre className="mt-6 rounded-xl bg-black/40 p-4 text-xs text-white">
+                  {JSON.stringify(session.user.discordRoles, null, 2)}
+                </pre>
+
                 <p className="mt-2 text-slate-400">
                   Dashboard
                 </p>

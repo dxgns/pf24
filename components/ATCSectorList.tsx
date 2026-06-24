@@ -122,7 +122,29 @@ export default function ATCSectorList({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "atc_sessions" },
-        () => loadSessions()
+        (payload) => {
+          loadSessions();
+
+          const savedSessionId = localStorage.getItem("pf24_atc_session_id");
+          const updatedSession = payload.new as ATCSession;
+
+          if (
+            savedSessionId &&
+            updatedSession?.id === savedSessionId &&
+            !updatedSession.is_active
+          ) {
+            localStorage.removeItem("pf24_atc_position");
+            localStorage.removeItem("pf24_atc_shift_start");
+            localStorage.removeItem("pf24_atc_session_id");
+
+            setPosition("");
+            setShiftStart(null);
+            setSessionId(null);
+            setOpenId(null);
+
+            alert("Tu sesión ATC fue finalizada.");
+          }
+        }
       )
       .subscribe();
 
@@ -431,6 +453,11 @@ export default function ATCSectorList({
         })
         .eq("assumed_by", position)
         .neq("status", "FINISHED");
+
+      await supabase
+        .from("atis_messages")
+        .delete()
+        .eq("created_by", position);
     }
 
     localStorage.removeItem("pf24_atc_position");

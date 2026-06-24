@@ -84,22 +84,32 @@ export default function LatestAtisPanel({
       .channel("latest-atis-panel")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "atis_messages" },
+        { event: "*", schema: "public", table: "atis_messages" },
         (payload) => {
-          const newAtis = payload.new as AtisMessage;
+          if (payload.eventType === "INSERT") {
+            const newAtis = payload.new as AtisMessage;
 
             if (showAlerts) {
-            setAlertAtis(newAtis);
-            playAtisUpdateAlarm();
+              setAlertAtis(newAtis);
+              playAtisUpdateAlarm();
             }
 
             setAtis((current) => {
-            const withoutSameAirport = current.filter(
-              (item) => item.airport_icao !== newAtis.airport_icao
-            );
+              const withoutSameAirport = current.filter(
+                (item) => item.airport_icao !== newAtis.airport_icao
+              );
 
-            return [newAtis, ...withoutSameAirport].slice(0, 8);
-          });
+              return [newAtis, ...withoutSameAirport].slice(0, 8);
+            });
+          }
+
+          if (payload.eventType === "DELETE") {
+            const oldAtis = payload.old as AtisMessage;
+
+            setAtis((current) =>
+              current.filter((item) => item.id !== oldAtis.id)
+            );
+          }
         }
       )
       .subscribe();
