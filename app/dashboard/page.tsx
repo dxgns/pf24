@@ -16,6 +16,14 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
+  if (
+    !session.user?.permissions?.canAccessPilot &&
+    !session.user?.permissions?.canAccessATC &&
+    !session.user?.permissions?.canAccessAdmin
+  ) {
+    redirect("/unregistered");
+  }
+
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
       <section className="section-container max-w-7xl">

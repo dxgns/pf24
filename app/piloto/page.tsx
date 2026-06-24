@@ -6,6 +6,7 @@ import PilotFlightPlans from "@/components/PilotFlightPlans";
 import OnlineATCPanel from "@/components/OnlineATCPanel";
 import UtcClock from "@/components/UtcClock";
 import ContactMeReceiver from "@/components/ContactMeReceiver";
+import LatestAtisPanel from "@/components/LatestAtisPanel";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -15,8 +16,16 @@ export const metadata: Metadata = {
 export default async function PilotPage() {
   const session = await auth();
 
+  if (!session?.user?.permissions?.canAccessPilot) {
+    redirect("/access-denied");
+  }
+
   if (!session) {
     redirect("/login");
+  }
+
+  if (!session.user?.permissions?.canAccessPilot) {
+    redirect("/unregistered");
   }
 
   const pilotId = session.user?.email ?? session.user?.name ?? "unknown";
@@ -33,6 +42,22 @@ export default async function PilotPage() {
     .select("*")
     .eq("is_active", true)
     .order("started_at", { ascending: false });
+
+  const { data: atisMessages } = await supabase
+    .from("atis_messages")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  const latestAtisByAirport = Object.values(
+    (atisMessages ?? []).reduce<Record<string, any>>((acc, atis) => {
+      if (!acc[atis.airport_icao]) {
+        acc[atis.airport_icao] = atis;
+      }
+
+      return acc;
+    }, {})
+  );
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-24 text-white">
@@ -101,6 +126,7 @@ export default async function PilotPage() {
 
           <aside>
             <OnlineATCPanel initialSessions={atcSessions ?? []} />
+            <LatestAtisPanel showAlerts={true} />
           </aside>
         </div>
       </section>

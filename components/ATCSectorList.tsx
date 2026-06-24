@@ -4,6 +4,8 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { ATC_FREQUENCIES } from "@/lib/atcFrequencies";
+import AtisCreator from "@/components/AtisCreator";
+import LatestAtisPanel from "@/components/LatestAtisPanel";
 
 type FlightPlan = {
   id: string;
@@ -783,9 +785,11 @@ export default function ATCSectorList({
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div>
+            <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-left text-sm">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="bg-slate-800 text-slate-300">
                 <tr>
                   <th className="p-4">CALLSIGN</th>
@@ -1122,6 +1126,13 @@ export default function ATCSectorList({
               </tbody>
             </table>
           </div>
+        </div>
+          </div>
+
+          <aside className="grid gap-6 self-start">
+            <AtisCreator controllerPosition={position} />
+            <LatestAtisPanel showAlerts={false} />
+          </aside>
         </div>
       </div>
     </>
