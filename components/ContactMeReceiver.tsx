@@ -16,26 +16,31 @@ export default function ContactMeReceiver({ pilotId }: { pilotId: string }) {
 
   function playContactAlarm() {
     try {
-      const audio = new AudioContext();
-      const start = audio.currentTime;
+      const ctx = new AudioContext();
+      const start = ctx.currentTime;
 
-      for (let i = 0; i < 6; i++) {
-        const osc = audio.createOscillator();
-        const gain = audio.createGain();
+      for (let cycle = 0; cycle < 3; cycle++) {
+        const base = start + cycle * 0.8;
 
-        osc.connect(gain);
-        gain.connect(audio.destination);
+        [1000, 650, 1000, 650].forEach((freq, index) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
 
-        osc.type = "sine";
-        osc.frequency.value = i % 2 === 0 ? 900 : 650;
+          osc.connect(gain);
+          gain.connect(ctx.destination);
 
-        const t = start + i * 0.28;
-        gain.gain.setValueAtTime(0.0001, t);
-        gain.gain.exponentialRampToValueAtTime(0.08, t + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+          osc.type = "square";
+          osc.frequency.value = freq;
 
-        osc.start(t);
-        osc.stop(t + 0.18);
+          const t = base + index * 0.15;
+
+          gain.gain.setValueAtTime(0.0001, t);
+          gain.gain.exponentialRampToValueAtTime(0.20, t + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+
+          osc.start(t);
+          osc.stop(t + 0.12);
+        });
       }
     } catch {}
   }

@@ -132,7 +132,7 @@ export default async function HomePage() {
       <footer className="border-t border-white/10 bg-[#050612] px-6 py-8">
         <div className="section-container flex flex-col items-center justify-between gap-4 text-center text-sm text-slate-400 md:flex-row md:text-left">
           <p>
-            © {new Date().getFullYear()} PF24 Español
+            © {new Date().getFullYear()} PF24
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-4">
