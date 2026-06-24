@@ -16,16 +16,12 @@ export const metadata: Metadata = {
 export default async function PilotPage() {
   const session = await auth();
 
-  if (!session?.user?.permissions?.canAccessPilot) {
-    redirect("/access-denied");
-  }
-
   if (!session) {
     redirect("/login");
   }
 
-  if (!session.user?.permissions?.canAccessPilot) {
-    redirect("/unregistered");
+  if (!session.user?.permissions?.canAccessATC) {
+    redirect("/access-denied");
   }
 
   const pilotId = session.user?.email ?? session.user?.name ?? "unknown";

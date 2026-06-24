@@ -14,14 +14,6 @@ export default async function ATCPage() {
   if (!session) {
     redirect("/login");
   }
-  
-  if (
-    !session.user?.permissions?.canAccessPilot &&
-    !session.user?.permissions?.canAccessATC &&
-    !session.user?.permissions?.canAccessAdmin
-  ) {
-    redirect("/unregistered");
-  }
 
   if (!session.user?.permissions?.canAccessATC) {
     redirect("/access-denied");
