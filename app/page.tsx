@@ -127,6 +127,43 @@ export default async function HomePage() {
           </a>
         </div>
       </section>
+
+            {/* FOOTER */}
+      <footer className="border-t border-white/10 bg-[#050612] px-6 py-8">
+        <div className="section-container flex flex-col items-center justify-between gap-4 text-center text-sm text-slate-400 md:flex-row md:text-left">
+          <p>
+            © {new Date().getFullYear()} PF24 Español
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <a href="/legal/terms" className="transition hover:text-sky-300">
+              Términos y Condiciones
+            </a>
+
+            <span className="text-slate-600">•</span>
+
+            <a href="/legal/privacy" className="transition hover:text-sky-300">
+              Política de Privacidad
+            </a>
+
+            <span className="text-slate-600">•</span>
+
+            <a href="/legal/cookies" className="transition hover:text-sky-300">
+              Política de Cookies
+            </a>
+
+            <span className="text-slate-600">•</span>
+
+              <a
+                href="/about"
+                className="transition hover:text-sky-300"
+              >
+                Créditos
+              </a>
+
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }
