@@ -45,3 +45,19 @@ export const ATC_FREQUENCIES: Record<string, string> = {
   EFKT_TWR: "118.950",
   EFKT_DEL: "123.100",
 };
+
+export const ATC_SECTOR_NAMES: Record<string, string> = {
+  EFIN_D_CTR: "Kittila",
+  EGPX_CTR: "Scottish",
+  EGTT_CTR: "Londres",
+  EGTT_S_CTR: "Londres Sur",
+  GCCC_R6_CTR: "Canarias",
+  LCCC_CTR: "Cyprus Dos",
+  LCCC_S2_CTR: "Cyprus Sur Dos",
+  LCCC_S_CTR: "Cyprus Sur",
+  LCCC_W_CTR: "Cyprus Oeste",
+  LECB_CTR: "Las Palmas",
+  MDCS_CTR: "Santo Domingo",
+  MDCS_E_CTR: "Santo Domingo Este",
+  MDCS_W_CTR: "Santo Domingo Oeste",
+};
