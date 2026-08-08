@@ -46,8 +46,7 @@ function isPanBlocked(target: EventTarget | null) {
   if (!(target instanceof Element)) return false;
   return Boolean(
     isScopeWindowOrFormControl(target) ||
-    target.closest("[data-pf24-traffic-detail='true']") ||
-    target.closest("[data-pf24-traffic-select='true']")
+    target.closest("[data-pf24-traffic-detail='true']")
   );
 }
 
@@ -58,6 +57,8 @@ export default function RadarViewport() {
 
     let viewport = readViewport();
     let panning = false;
+    let movedDuringPan = false;
+    let suppressTrafficClick = false;
     let lastX = 0;
     let lastY = 0;
 
@@ -105,6 +106,7 @@ export default function RadarViewport() {
       if (!wantsPan || isPanBlocked(event.target)) return;
       event.preventDefault();
       panning = true;
+      movedDuringPan = false;
       lastX = event.clientX;
       lastY = event.clientY;
       radar.style.cursor = "grabbing";
@@ -114,6 +116,7 @@ export default function RadarViewport() {
       if (!panning) return;
       const dx = event.clientX - lastX;
       const dy = event.clientY - lastY;
+      if (Math.abs(dx) + Math.abs(dy) > 1) movedDuringPan = true;
       lastX = event.clientX;
       lastY = event.clientY;
       viewport = { ...viewport, panX: viewport.panX + dx, panY: viewport.panY + dy };
@@ -123,8 +126,19 @@ export default function RadarViewport() {
     const stopPan = () => {
       if (!panning) return;
       panning = false;
+      suppressTrafficClick = movedDuringPan;
+      movedDuringPan = false;
       radar.style.cursor = "";
       persist();
+    };
+
+    const onClickCapture = (event: MouseEvent) => {
+      if (!suppressTrafficClick) return;
+      suppressTrafficClick = false;
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest("[data-pf24-traffic-select='true']")) return;
+      event.preventDefault();
+      event.stopPropagation();
     };
 
     const onContextMenu = (event: MouseEvent) => {
@@ -133,6 +147,7 @@ export default function RadarViewport() {
 
     radar.addEventListener("wheel", onWheel, { passive: false });
     radar.addEventListener("mousedown", onMouseDown);
+    radar.addEventListener("click", onClickCapture, true);
     radar.addEventListener("contextmenu", onContextMenu);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", stopPan);
@@ -142,6 +157,7 @@ export default function RadarViewport() {
       window.clearTimeout(initialRetry);
       radar.removeEventListener("wheel", onWheel);
       radar.removeEventListener("mousedown", onMouseDown);
+      radar.removeEventListener("click", onClickCapture, true);
       radar.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", stopPan);
