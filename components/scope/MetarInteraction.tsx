@@ -9,6 +9,31 @@ type RunwaySelection = { active?: boolean; dep?: boolean; arr?: boolean };
 const RUNWAY_STORAGE_KEY = "pf24_scope_runways_v2";
 const REFRESH_MS = 60_000;
 
+const TA_BY_AIRPORT: Record<string, 3000 | 4000> = {
+  EFKT: 3000,
+  EGHI: 3000,
+  EGKK: 3000,
+  GCLP: 3000,
+  LCLK: 4000,
+  LCPH: 4000,
+  LCRA: 4000,
+  LEMH: 3000,
+  MDAB: 3000,
+  MDCR: 3000,
+  MDPC: 3000,
+  MDST: 3000,
+  MTCA: 3000,
+};
+
+const TRANSITION_LEVEL_TABLE = [
+  { min: 942.2, max: 959.4, ta3000: 60, ta4000: 70 },
+  { min: 959.5, max: 977.1, ta3000: 55, ta4000: 65 },
+  { min: 977.2, max: 995.0, ta3000: 50, ta4000: 60 },
+  { min: 995.1, max: 1013.2, ta3000: 45, ta4000: 55 },
+  { min: 1013.3, max: 1031.6, ta3000: 40, ta4000: 50 },
+  { min: 1031.7, max: 1050.3, ta3000: 35, ta4000: 45 },
+] as const;
+
 function getActiveAirports(): string[] {
   try {
     const raw = localStorage.getItem(RUNWAY_STORAGE_KEY);
@@ -25,6 +50,34 @@ function getActiveAirports(): string[] {
   }
 }
 
+function extractQnhHpa(raw: string | null): number | null {
+  if (!raw) return null;
+
+  const qnh = raw.match(/\bQ(\d{4})\b/i)?.[1];
+  if (qnh) {
+    const value = Number(qnh);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const altimeter = raw.match(/\bA(\d{4})\b/i)?.[1];
+  if (!altimeter) return null;
+
+  const value = (Number(altimeter) / 100) * 33.8638866667;
+  return Number.isFinite(value) ? value : null;
+}
+
+function transitionLevel(station: string, raw: string | null): string {
+  const ta = TA_BY_AIRPORT[station];
+  const qnh = extractQnhHpa(raw);
+  if (!ta || qnh === null) return "---";
+
+  const band = TRANSITION_LEVEL_TABLE.find(({ min, max }) => qnh >= min && qnh <= max);
+  if (!band) return "---";
+
+  const level = ta === 4000 ? band.ta4000 : band.ta3000;
+  return String(level).padStart(3, "0");
+}
+
 function compactMetar(station: string, raw: string | null): string {
   if (!raw) return `${station} -----KT Q----`;
 
@@ -32,11 +85,8 @@ function compactMetar(station: string, raw: string | null): string {
   let qnh = raw.match(/\bQ\d{4}\b/i)?.[0]?.toUpperCase() ?? null;
 
   if (!qnh) {
-    const altimeter = raw.match(/\bA(\d{4})\b/i)?.[1];
-    if (altimeter) {
-      const hpa = Math.round((Number(altimeter) / 100) * 33.8638866667);
-      if (Number.isFinite(hpa)) qnh = `Q${String(hpa).padStart(4, "0")}`;
-    }
+    const hpa = extractQnhHpa(raw);
+    if (hpa !== null) qnh = `Q${String(Math.round(hpa)).padStart(4, "0")}`;
   }
 
   return `${station} ${wind} ${qnh ?? "Q----"}`;
@@ -55,14 +105,28 @@ function findFooterForm(): HTMLFormElement | null {
   return document.querySelector<HTMLFormElement>("main.fixed footer form");
 }
 
+function findTransitionLevelValue(): HTMLElement | null {
+  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("main.fixed header button"));
+  const button = buttons.find((item) => item.textContent?.includes("TRANS") && item.textContent?.includes("LVL"));
+  if (!button) return null;
+  const spans = button.querySelectorAll<HTMLElement>("span");
+  return spans.length > 1 ? spans[spans.length - 1] : null;
+}
+
+function setTransitionLevelDisplay(value: string) {
+  const target = findTransitionLevelValue();
+  if (target) target.textContent = value;
+}
+
 export default function MetarInteraction() {
   const [metarHost, setMetarHost] = useState<HTMLElement | null>(null);
   const [footerForm, setFooterForm] = useState<HTMLFormElement | null>(null);
   const [airports, setAirports] = useState<string[]>([]);
   const [metars, setMetars] = useState<Record<string, MetarValue>>({});
-  const [selectedRaw, setSelectedRaw] = useState<string | null>(null);
+  const [selectedStation, setSelectedStation] = useState<string | null>(null);
 
   const airportKey = useMemo(() => airports.join(","), [airports]);
+  const selectedRaw = selectedStation ? metars[selectedStation]?.raw ?? null : null;
 
   const syncHosts = useCallback(() => {
     setMetarHost(findMetarHost());
@@ -96,7 +160,7 @@ export default function MetarInteraction() {
     const onOutsideClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest("[data-pf24-metar-row='true']")) return;
-      setSelectedRaw(null);
+      setSelectedStation(null);
     };
 
     document.addEventListener("click", onOutsideClick, true);
@@ -104,12 +168,26 @@ export default function MetarInteraction() {
   }, []);
 
   useEffect(() => {
+    if (selectedStation && !airports.includes(selectedStation)) setSelectedStation(null);
+  }, [airports, selectedStation]);
+
+  useEffect(() => {
+    if (!selectedStation) {
+      setTransitionLevelDisplay("---");
+      return;
+    }
+
+    setTransitionLevelDisplay(transitionLevel(selectedStation, selectedRaw));
+    return () => setTransitionLevelDisplay("---");
+  }, [selectedRaw, selectedStation]);
+
+  useEffect(() => {
     const stations = airportKey ? airportKey.split(",") : [];
     let cancelled = false;
 
     if (stations.length === 0) {
       setMetars({});
-      setSelectedRaw(null);
+      setSelectedStation(null);
       return;
     }
 
@@ -158,6 +236,8 @@ export default function MetarInteraction() {
     };
   }, [metarHost]);
 
+  useEffect(() => () => setTransitionLevelDisplay("---"), []);
+
   const upper = metarHost ? createPortal(
     <div className="max-h-[96px] overflow-y-auto px-1 py-1 text-[9px] leading-[13px] text-[#00efff]" data-pf24-metar-overlay="true">
       {airports.length === 0 ? (
@@ -177,7 +257,7 @@ export default function MetarInteraction() {
             className="block w-full whitespace-nowrap text-left hover:bg-[#0b302d]"
             onClick={(event) => {
               event.stopPropagation();
-              if (entry?.raw) setSelectedRaw(entry.raw);
+              if (entry?.raw) setSelectedStation(station);
             }}
           >
             {label}
