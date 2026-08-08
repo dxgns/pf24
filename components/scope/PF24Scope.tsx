@@ -149,7 +149,7 @@ export default function PF24Scope({ initialPlans }: Props) {
   return <main className="fixed inset-0 overflow-hidden bg-[#151515] font-mono text-[12px] text-[#d8d8d8] select-none">
     <header className="absolute inset-x-0 top-0 z-50 h-[44px] border-b border-[#202426]">
       <div className="flex h-[21px] items-stretch bg-[#064a40] text-[#e2e2e2]">
-        <button className="scopeTopCell w-[26px] text-[7px] leading-[7px]"><span><span className="mx-auto block w-[20px] border border-[#d9e8e4] text-center text-[5px] leading-[5px]">+ - + -</span>MENU</span></button>
+        <button className="scopeTopCell w-[26px] text-[7px] leading-[7px]"><span className="flex h-full flex-col items-center justify-center"><MenuGlyph/><span className="mt-[1px]">MENU</span></span></button>
         <button onClick={() => setShowConnectDialog(true)} className={`scopeTopCell w-[48px] text-[10px] ${connected ? "scopeConnected" : ""}`}>{connected ? "DISCONNECT" : "CONNECT"}</button>
         <div className="scopeTopCell w-[116px] justify-start px-[5px] text-[10px] tracking-[.3px]">{position ? `${position}  [${facilityShort}]` : ""}</div>
         <div className="scopeTopCell w-[52px] text-[10px] tracking-[.5px]">{connected ? frequency : ""}</div>
@@ -217,11 +217,44 @@ function TextRow({label,value,onChange,type="text",wide=false,maxLength=20}:{lab
 function StaticRow({label,value}:{label:string;value:string}){return <div className="mb-1 grid grid-cols-[82px_1fr] items-center gap-1"><span>{label}</span><div className="connectField truncate">{value}</div></div>}
 function SelectRow({label,value,onChange}:{label:string;value:string;onChange:(v:string)=>void}){return <div className="mb-1 grid grid-cols-[72px_1fr] items-center gap-1"><span>{label}</span><select value={value} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none"><option value=""></option>{FACILITY_LABELS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>}
 
+function MenuGlyph() {
+  return <svg width="21" height="8" viewBox="0 0 100 38" aria-hidden="true">
+    <rect x="3" y="3" width="94" height="32" fill="none" stroke="#e2e2e2" strokeWidth="4"/>
+    <path d="M18 19h13M24.5 12.5v13M38 19h13M44.5 12.5v13M57 19h13M76 19h13M82.5 12.5v13" fill="none" stroke="#e2e2e2" strokeWidth="4" strokeLinecap="square"/>
+  </svg>;
+}
+
 function ToolbarGlyph({kind,active}:{kind:"screen"|"vector"|"dots"|"filter"|"route";active:boolean}) {
-  const s=active?"#ffffff":"#d7e6e2";
-  if(kind==="screen")return <svg width="22" height="19" viewBox="0 0 22 19"><rect x="7" y="2" width="9" height="13" fill="none" stroke={s} strokeWidth=".8"/><path d="M9 13h5M9 11h3M9 15h6" stroke={s} strokeWidth=".7"/></svg>;
-  if(kind==="vector")return <svg width="23" height="19" viewBox="0 0 23 19"><rect x="2" y="10" width="8" height="7" fill="none" stroke={s} strokeWidth=".8"/><path d="M11 10L20 1M17 4h3V1" fill="none" stroke={s} strokeWidth=".8"/></svg>;
-  if(kind==="dots")return <svg width="23" height="19" viewBox="0 0 23 19"><rect x="8" y="1" width="9" height="8" fill="none" stroke={s} strokeWidth=".8"/><circle cx="4" cy="17" r=".8" fill={s}/><circle cx="9" cy="14" r=".7" fill={s}/><circle cx="14" cy="12" r=".7" fill={s}/><circle cx="19" cy="16" r=".8" fill={s}/></svg>;
-  if(kind==="filter")return <svg width="42" height="19" viewBox="0 0 42 19"><path d="M3 3h13l-5 6v6H8V9z" fill={s}/><text x="19" y="7" fontSize="6" fill={s}>FL</text></svg>;
-  return <svg width="46" height="19" viewBox="0 0 46 19"><path d="M4 16L17 3" stroke={s} strokeWidth=".8"/><polygon points="3,16 7,14 5,11" fill="#edc586"/><rect x="16" y="2" width="4" height="4" fill="none" stroke={s} strokeWidth=".7"/><circle cx="27" cy="3" r="1" fill={s}/><rect x="38" y="2" width="4" height="4" fill="none" stroke={s} strokeWidth=".7"/><path d="M25 12h6v4h-6M34 14h4" fill="none" stroke={s} strokeWidth=".7"/><circle cx="43" cy="14" r="1" fill={s}/></svg>;
+  const s=active?"#ffffff":"#e2e2e2";
+  const orange="#ff7433";
+  if(kind==="screen")return <svg width="21" height="19" viewBox="0 0 100 100" aria-hidden="true">
+    <rect x="30" y="7" width="40" height="78" fill="none" stroke={s} strokeWidth="7"/>
+    <text x="50" y="66" textAnchor="middle" fontSize="20" fontFamily="monospace" fill={s}>36</text>
+    <rect x="37" y="70" width="7" height="12" fill={s}/><rect x="49" y="70" width="7" height="12" fill={s}/><rect x="61" y="70" width="7" height="12" fill={s}/><rect x="73" y="70" width="7" height="12" fill={s}/>
+  </svg>;
+  if(kind==="vector")return <svg width="22" height="19" viewBox="0 0 100 100" aria-hidden="true">
+    <rect x="13" y="51" width="37" height="37" fill="none" stroke={s} strokeWidth="7"/>
+    <line x1="59" y1="43" x2="73" y2="29" stroke={s} strokeWidth="7"/>
+    <line x1="81" y1="21" x2="94" y2="8" stroke={s} strokeWidth="7"/>
+  </svg>;
+  if(kind==="dots")return <svg width="22" height="19" viewBox="0 0 100 100" aria-hidden="true">
+    <rect x="57" y="7" width="37" height="37" fill="none" stroke={s} strokeWidth="7"/>
+    <circle cx="13" cy="91" r="4.5" fill={s}/><circle cx="39" cy="85" r="4.5" fill={s}/><circle cx="64" cy="77" r="4.5" fill={s}/><circle cx="77" cy="61" r="4.5" fill={s}/>
+  </svg>;
+  if(kind==="filter")return <svg width="41" height="19" viewBox="0 0 110 100" aria-hidden="true">
+    <polygon points="9,91 30,52 51,91" fill={s}/>
+    <line x1="45" y1="81" x2="74" y2="50" stroke={orange} strokeWidth="5"/>
+    <rect x="72" y="10" width="25" height="25" fill="none" stroke={s} strokeWidth="6"/>
+    <line x1="84.5" y1="42" x2="84.5" y2="55" stroke={s} strokeWidth="6"/>
+    <line x1="84.5" y1="64" x2="84.5" y2="77" stroke={s} strokeWidth="6"/>
+  </svg>;
+  return <svg width="47" height="19" viewBox="0 0 120 100" aria-hidden="true">
+    <circle cx="16" cy="20" r="5" fill={s}/>
+    <rect x="37" y="10" width="25" height="25" fill="none" stroke={s} strokeWidth="6"/>
+    <line x1="53" y1="35" x2="72" y2="78" stroke={orange} strokeWidth="5"/>
+    <rect x="64" y="70" width="25" height="25" fill="none" stroke={s} strokeWidth="6"/>
+    <line x1="72" y1="20" x2="86" y2="20" stroke={s} strokeWidth="6"/><line x1="94" y1="20" x2="108" y2="20" stroke={s} strokeWidth="6"/>
+    <line x1="13" y1="82" x2="27" y2="82" stroke={s} strokeWidth="6"/><line x1="35" y1="82" x2="49" y2="82" stroke={s} strokeWidth="6"/>
+    <circle cx="109" cy="83" r="5" fill={s}/>
+  </svg>;
 }
