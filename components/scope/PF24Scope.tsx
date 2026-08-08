@@ -1,17 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ATC_FREQUENCIES } from "@/lib/atcFrequencies";
-import type { ScopeFlightPlan, ScopeWindowKey, SimAircraft } from "@/lib/scope/types";
+import type { ScopeFlightPlan, SimAircraft } from "@/lib/scope/types";
 
 type Props = {
   initialPlans: ScopeFlightPlan[];
   controllerName: string;
 };
-
-type WindowPos = { x: number; y: number };
-type WindowState = Record<ScopeWindowKey, { open: boolean; pos: WindowPos }>;
 
 type ATCSession = {
   id: string;
@@ -20,46 +17,21 @@ type ATCSession = {
   is_active: boolean;
 };
 
-const DEFAULT_WINDOWS: WindowState = {
-  sector: { open: true, pos: { x: 18, y: 94 } },
-  taxi: { open: true, pos: { x: 18, y: 344 } },
-  holds: { open: true, pos: { x: 315, y: 94 } },
-  timer: { open: true, pos: { x: 590, y: 94 } },
-  metar: { open: true, pos: { x: 18, y: 540 } },
-  atis: { open: false, pos: { x: 780, y: 94 } },
-  atc: { open: true, pos: { x: 980, y: 94 } },
-};
-
 const SIM_SEED: SimAircraft[] = [
   {
     id: "sim-1",
     callsign: "LAN337",
     aircraftType: "A320",
     altitude: 5000,
-    targetAltitude: 7000,
-    heading: 315,
-    targetHeading: 315,
-    groundSpeed: 220,
-    x: 48,
-    y: 57,
-    squawk: "4321",
+    targetAltitude: 5000,
+    heading: 180,
+    targetHeading: 180,
+    groundSpeed: 180,
+    x: 73,
+    y: 39,
+    squawk: "9999",
     departure: "MDPC",
     arrival: "MDST",
-  },
-  {
-    id: "sim-2",
-    callsign: "IBE6421",
-    aircraftType: "A320",
-    altitude: 11000,
-    targetAltitude: 11000,
-    heading: 95,
-    targetHeading: 95,
-    groundSpeed: 280,
-    x: 66,
-    y: 39,
-    squawk: "5162",
-    departure: "GCLP",
-    arrival: "LEMH",
   },
 ];
 
@@ -68,23 +40,31 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
   const [position, setPosition] = useState("MDST_TWR");
   const [connected, setConnected] = useState(false);
   const [now, setNow] = useState(new Date());
-  const [windows, setWindows] = useState<WindowState>(DEFAULT_WINDOWS);
   const [simEnabled, setSimEnabled] = useState(true);
   const [aircraft, setAircraft] = useState<SimAircraft[]>(SIM_SEED);
   const [selectedId, setSelectedId] = useState<string | null>(SIM_SEED[0].id);
-  const [zoom, setZoom] = useState(1);
   const [command, setCommand] = useState("");
   const [consoleLines, setConsoleLines] = useState<string[]>([
-    "PF24 Scope beta — modo simulación activo.",
-    "Escribe .help para ver comandos disponibles.",
+    "129.800: Hola",
+    "118.600: Hola ok",
   ]);
   const [sessions, setSessions] = useState<ATCSession[]>([]);
   const [metarStation, setMetarStation] = useState("MDST");
-  const [metarText, setMetarText] = useState("METAR no cargado. Usa .metar ICAO para seleccionar estación.");
-  const dragRef = useRef<{ key: ScopeWindowKey; dx: number; dy: number } | null>(null);
+  const [metarText, setMetarText] = useState("MDST 12003KT 01015");
+  const [showChat, setShowChat] = useState(true);
+  const [showClock, setShowClock] = useState(true);
+  const [showHolds, setShowHolds] = useState(true);
+  const [showMetar, setShowMetar] = useState(true);
+  const [showAtis, setShowAtis] = useState(true);
+  const [showConnectDialog, setShowConnectDialog] = useState(false);
+  const [toolStates, setToolStates] = useState([false, false, false, false, false, false]);
 
-  const frequency = ATC_FREQUENCIES[position] ?? "---.---";
+  const frequency = ATC_FREQUENCIES[position] ?? "199.998";
   const selected = aircraft.find((item) => item.id === selectedId) ?? null;
+
+  const activePlan = useMemo(() => {
+    return plans.find((p) => p.callsign?.toUpperCase() === "LAN337") ?? plans[0] ?? null;
+  }, [plans]);
 
   const taxiPlans = useMemo(
     () => plans.filter((p) => ["STUP", "PUSH", "TAXI_DEP", "TAXI_IN"].includes(p.sector_status)),
@@ -93,22 +73,12 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
 
   useEffect(() => {
     const stored = localStorage.getItem("pf24_scope_position");
-    const storedWindows = localStorage.getItem("pf24_scope_windows");
     if (stored) setPosition(stored);
-    if (storedWindows) {
-      try {
-        setWindows(JSON.parse(storedWindows) as WindowState);
-      } catch {}
-    }
   }, []);
 
   useEffect(() => {
     localStorage.setItem("pf24_scope_position", position);
   }, [position]);
-
-  useEffect(() => {
-    localStorage.setItem("pf24_scope_windows", JSON.stringify(windows));
-  }, [windows]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -123,7 +93,7 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
     loadSessions();
 
     const channel = supabase
-      .channel("scope-atc-sessions")
+      .channel("scope-atc-sessions-ui")
       .on("postgres_changes", { event: "*", schema: "public", table: "atc_sessions" }, loadSessions)
       .subscribe();
 
@@ -134,7 +104,7 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-flight-plans")
+      .channel("scope-flight-plans-ui")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, (payload) => {
         const next = payload.new as ScopeFlightPlan;
         const old = payload.old as ScopeFlightPlan;
@@ -166,58 +136,31 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
       setAircraft((current) =>
         current.map((a) => {
           const headingRad = (a.heading * Math.PI) / 180;
-          let x = a.x + Math.sin(headingRad) * 0.045;
-          let y = a.y - Math.cos(headingRad) * 0.045;
-          if (x > 97) x = 3;
-          if (x < 3) x = 97;
-          if (y > 94) y = 6;
-          if (y < 6) y = 94;
-          const altStep = Math.sign(a.targetAltitude - a.altitude) * Math.min(100, Math.abs(a.targetAltitude - a.altitude));
-          const hdgDiff = ((((a.targetHeading - a.heading) % 360) + 540) % 360) - 180;
-          const hdgStep = Math.sign(hdgDiff) * Math.min(2, Math.abs(hdgDiff));
-          return {
-            ...a,
-            x,
-            y,
-            altitude: a.altitude + altStep,
-            heading: (a.heading + hdgStep + 360) % 360,
-          };
+          let x = a.x + Math.sin(headingRad) * 0.018;
+          let y = a.y - Math.cos(headingRad) * 0.018;
+          if (x > 95) x = 5;
+          if (x < 5) x = 95;
+          if (y > 88) y = 8;
+          if (y < 8) y = 88;
+          return { ...a, x, y };
         })
       );
     }, 1000);
     return () => window.clearInterval(timer);
   }, [simEnabled]);
 
-  useEffect(() => {
-    const onMove = (event: MouseEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
-      setWindows((current) => ({
-        ...current,
-        [drag.key]: {
-          ...current[drag.key],
-          pos: { x: Math.max(0, event.clientX - drag.dx), y: Math.max(70, event.clientY - drag.dy) },
-        },
-      }));
-    };
-    const onUp = () => {
-      dragRef.current = null;
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, []);
-
-  function startDrag(key: ScopeWindowKey, event: React.MouseEvent<HTMLDivElement>) {
-    const pos = windows[key].pos;
-    dragRef.current = { key, dx: event.clientX - pos.x, dy: event.clientY - pos.y };
+  async function loadMetar(station: string) {
+    try {
+      const response = await fetch(`/api/scope/metar?station=${encodeURIComponent(station)}`);
+      const data = (await response.json()) as { raw?: string | null };
+      if (data.raw) setMetarText(data.raw);
+    } catch {
+      // Keep the last known METAR text.
+    }
   }
 
-  function toggleWindow(key: ScopeWindowKey) {
-    setWindows((current) => ({ ...current, [key]: { ...current[key], open: !current[key].open } }));
+  function toggleTool(index: number) {
+    setToolStates((current) => current.map((value, i) => (i === index ? !value : value)));
   }
 
   function log(line: string) {
@@ -227,178 +170,300 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
   function executeCommand(raw: string) {
     const input = raw.trim();
     if (!input) return;
-    log(`> ${input}`);
+    log(`118.600: ${input}`);
     const [cmd, ...args] = input.split(/\s+/);
     const upper = args.map((item) => item.toUpperCase());
 
     if (cmd === ".help") {
-      log(".fpl CALLSIGN | .metar ICAO | .sim on/off | .hdg CALLSIGN 270 | .alt CALLSIGN 7000 | .clear");
+      log("118.600: .fpl .metar .sim .hdg .alt .clear");
     } else if (cmd === ".sim") {
       const enabled = upper[0] !== "OFF";
       setSimEnabled(enabled);
-      log(`SIM ${enabled ? "ON" : "OFF"}`);
+      log(`118.600: SIM ${enabled ? "ON" : "OFF"}`);
     } else if (cmd === ".fpl") {
       const callsign = upper[0];
       const plan = plans.find((p) => p.callsign.toUpperCase() === callsign);
-      log(plan ? `${plan.callsign} ${plan.aircraft_type} ${plan.departure_icao}>${plan.arrival_icao} FL${plan.flight_level}` : "FPL no encontrado");
+      log(
+        plan
+          ? `118.600: ${plan.callsign} ${plan.aircraft_type} ${plan.departure_icao}>${plan.arrival_icao} FL${plan.flight_level}`
+          : "118.600: FPL no encontrado"
+      );
     } else if (cmd === ".metar") {
       const station = upper[0] || "MDST";
       setMetarStation(station);
-      setMetarText(`${station} — estación seleccionada. Fuente METAR externa pendiente de integrar.`);
-      setWindows((current) => ({ ...current, metar: { ...current.metar, open: true } }));
+      loadMetar(station);
+      setShowMetar(true);
     } else if (cmd === ".hdg") {
-      updateSimTarget(upper[0], "heading", Number(upper[1]));
+      const callsign = upper[0];
+      const value = Number(upper[1]);
+      if (callsign && !Number.isNaN(value)) {
+        setAircraft((current) =>
+          current.map((a) =>
+            a.callsign.toUpperCase() === callsign ? { ...a, heading: value, targetHeading: value } : a
+          )
+        );
+      }
     } else if (cmd === ".alt") {
-      updateSimTarget(upper[0], "altitude", Number(upper[1]));
+      const callsign = upper[0];
+      const value = Number(upper[1]);
+      if (callsign && !Number.isNaN(value)) {
+        setAircraft((current) =>
+          current.map((a) =>
+            a.callsign.toUpperCase() === callsign ? { ...a, altitude: value, targetAltitude: value } : a
+          )
+        );
+      }
     } else if (cmd === ".clear") {
       setConsoleLines([]);
-    } else {
-      log("Comando desconocido. Usa .help");
     }
     setCommand("");
   }
 
-  function updateSimTarget(callsign: string | undefined, field: "heading" | "altitude", value: number) {
-    if (!callsign || Number.isNaN(value)) {
-      log("Parámetros inválidos");
-      return;
-    }
-    let found = false;
-    setAircraft((current) => current.map((a) => {
-      if (a.callsign.toUpperCase() !== callsign) return a;
-      found = true;
-      return field === "heading"
-        ? { ...a, targetHeading: ((value % 360) + 360) % 360 }
-        : { ...a, targetAltitude: Math.max(0, value) };
-    }));
-    log(found ? `${callsign} ${field === "heading" ? "HDG" : "ALT"} ${value}` : "Aeronave simulada no encontrada");
-  }
+  const utc = now.toISOString().slice(11, 19);
+  const stripTime = utc.slice(0, 8);
 
   return (
-    <main className="fixed inset-0 overflow-hidden bg-[#07120d] font-mono text-[12px] text-[#b8d3bc] select-none">
-      <header className="absolute inset-x-0 top-0 z-50 border-b border-[#4d6955] bg-[#ced5cf] text-[#101713] shadow-lg">
-        <div className="flex h-8 items-stretch">
-          <button className="scopeTopButton">MENU</button>
-          <button onClick={() => setConnected((v) => !v)} className={`scopeTopButton font-bold ${connected ? "bg-[#8fbf92]" : "bg-[#e1aaa4]"}`}>
-            {connected ? "CONNECTED" : "CONNECT"}
+    <main className="fixed inset-0 overflow-hidden bg-[#151515] font-mono text-[12px] text-[#b8c8c4] select-none">
+      <header className="absolute inset-x-0 top-0 z-50 h-[44px] border-b border-[#2f3437]">
+        <div className="flex h-[21px] items-stretch bg-[#06443c] text-[#d9e7e2]">
+          <button className="topCell px-1.5 text-[9px]">MENU</button>
+          <button
+            onClick={() => setShowConnectDialog(true)}
+            className="topCell px-2 text-[12px]"
+          >
+            CONNECT
           </button>
-          <select value={position} onChange={(e) => setPosition(e.target.value)} className="border-r border-[#7b877e] bg-[#d9ded9] px-2 font-bold outline-none">
-            {Object.keys(ATC_FREQUENCIES).map((item) => <option key={item}>{item}</option>)}
-          </select>
-          <div className="flex items-center border-r border-[#7b877e] px-3 font-bold">{frequency}</div>
-          <div className="flex flex-1 items-center gap-1 px-2">
-            {(["sector", "taxi", "holds", "metar", "atis", "atc"] as ScopeWindowKey[]).map((key) => (
-              <button key={key} onClick={() => toggleWindow(key)} className="rounded-sm border border-[#7b877e] bg-[#eef1ee] px-2 py-0.5 uppercase hover:bg-white">{key}</button>
+          <select
+            value={position}
+            onChange={(e) => setPosition(e.target.value)}
+            className="topCell bg-transparent px-2 text-[11px] outline-none"
+          >
+            {Object.keys(ATC_FREQUENCIES).map((item) => (
+              <option key={item} className="bg-[#06443c]">{item}</option>
             ))}
-          </div>
-          <div className="flex items-center border-l border-[#7b877e] px-3 font-bold">{now.toISOString().slice(11, 19)}Z</div>
+          </select>
+          <div className="topCell px-2">[{position.split("_").at(-1) ?? "TWR"}]</div>
+          <div className="topCell px-3">{frequency}</div>
+          <button className="topCell w-[44px] leading-[9px] text-[8px]">OPEN<br />SCT</button>
+          <div className="topCell px-2 text-[12px]">{stripTime}</div>
+          <button className="topCell w-[46px] leading-[9px] text-[8px]">QUICK<br />SET</button>
+          {toolStates.map((active, index) => (
+            <button
+              key={index}
+              onClick={() => toggleTool(index)}
+              className={`topCell relative w-[49px] ${active ? "bg-[#0a5b50]" : ""}`}
+              aria-label={`toolbar ${index + 1}`}
+            >
+              <ToolbarGlyph index={index} active={active} />
+            </button>
+          ))}
+          <div className="flex-1" />
+          <button className="topCell w-[30px] text-[18px]">←</button>
         </div>
-        <div className="flex h-7 items-center gap-2 border-t border-[#9ca79e] bg-[#aeb9b0] px-2 text-[11px]">
-          <span className="font-bold">PF24 SCOPE BETA</span>
-          <span>CTRL: {controllerName}</span>
-          <span>MODE: {simEnabled ? "SIM" : "DATA ONLY"}</span>
-          <span className="ml-auto">ZOOM {Math.round(zoom * 100)}%</span>
+
+        <div className="flex h-[23px] items-center bg-[#555c61] px-3 text-[10px] text-[#dedede]">
+          <span className="mr-4">{stripTime}</span>
+          <button onClick={() => setShowChat((v) => !v)} className="mr-4 hover:text-white">CHATBOX</button>
+          <button onClick={() => setShowClock((v) => !v)} className="mr-4 hover:text-white">CLOCK</button>
+          <button onClick={() => setShowHolds((v) => !v)} className="mr-4 hover:text-white">HOLDS</button>
+          <button onClick={() => setShowMetar((v) => !v)} className="mr-4 hover:text-white">METAR</button>
+          <button onClick={() => setShowAtis((v) => !v)} className="hover:text-white">ATIS</button>
         </div>
       </header>
 
-      <section
-        className="absolute inset-x-0 bottom-[116px] top-[57px] overflow-hidden"
-        onWheel={(e) => setZoom((z) => Math.min(2.5, Math.max(0.55, z + (e.deltaY < 0 ? 0.08 : -0.08))))}
-        style={{
-          backgroundImage: "radial-gradient(circle, rgba(109,143,116,.23) 1px, transparent 1px)",
-          backgroundSize: `${28 * zoom}px ${28 * zoom}px`,
-        }}
-      >
-        <div className="absolute left-1/2 top-1/2 h-[64vh] w-[64vh] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#496552]/40" />
-        <div className="absolute left-1/2 top-1/2 h-[32vh] w-[32vh] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#496552]/30" />
-        <div className="absolute left-1/2 top-0 h-full border-l border-[#496552]/25" />
-        <div className="absolute left-0 top-1/2 w-full border-t border-[#496552]/25" />
+      <section className="absolute inset-x-0 bottom-[112px] top-[44px] overflow-hidden bg-[#151515]">
+        <button
+          onClick={() => setConnected((v) => !v)}
+          className="absolute left-[8px] top-[14px] z-20 border border-[#427b70] bg-[#0d1c19] px-1 py-1 text-[8px] text-[#b9d9d1]"
+        >
+          {connected ? "DISCONNECT" : "CONNECT"}
+        </button>
+
+        <Panel className="left-[8px] top-[50px] w-[462px]" title="SECTOR LIST">
+          <div className="px-1 py-1 text-[9px]">
+            <div className="grid grid-cols-[50px_39px_27px_42px_42px_34px_30px_1fr_42px_34px] text-[#d0d3d2]">
+              <span>CALLSIGN</span><span>ATYP</span><span>FR</span><span>DEP</span><span>ARR</span><span>FL</span><span>RWY</span><span>PROCS</span><span>ASSR</span><span>STS</span>
+            </div>
+            <div className="grid grid-cols-[50px_39px_27px_42px_42px_34px_30px_1fr_42px_34px] text-[#00ee00]">
+              <span>{activePlan?.callsign ?? "LAN337"}</span>
+              <span>{activePlan?.aircraft_type ?? "A320"}</span>
+              <span>{activePlan?.flight_rules ?? "I"}</span>
+              <span>{activePlan?.departure_icao ?? "MDPC"}</span>
+              <span>{activePlan?.arrival_icao ?? "MDST"}</span>
+              <span>{activePlan?.flight_level ?? "050"}</span>
+              <span>11X</span>
+              <span className="truncate">PIXE6W-PIXE5-ILSZ-R11X</span>
+              <span>{activePlan?.transponder ?? "9999"}</span>
+              <span>XXX</span>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel className="left-[8px] top-[104px] w-[190px]" title="COMBINED TAXI LIST">
+          <div className="px-1 py-1 text-[9px]">
+            <div className="grid grid-cols-[50px_43px_35px_42px_1fr] text-[#d0d3d2]">
+              <span>CALLSIGN</span><span>ATYP</span><span>STS</span><span>GATE</span><span>WRN</span>
+            </div>
+            <div className="grid grid-cols-[50px_43px_35px_42px_1fr] text-[#00ee00]">
+              <span>{taxiPlans[0]?.callsign ?? activePlan?.callsign ?? "LAN337"}</span>
+              <span>{taxiPlans[0]?.aircraft_type ?? activePlan?.aircraft_type ?? "A320"}</span>
+              <span>XXX</span><span>999X</span><span><span className="text-[#00ee00]">NORM</span><br /><span className="text-[#ff7a00]">PROB</span></span>
+            </div>
+          </div>
+        </Panel>
+
+        {showClock && (
+          <div className="absolute left-[46%] top-[70px] w-[110px] border border-[#c9c9c9] bg-[#454b50] text-center text-[#f0f0f0]">
+            <div className="border-b border-[#c9c9c9] text-[8px] tracking-[.25em]">TIMER</div>
+            <div className="py-2 text-[24px] leading-none">99:99:99</div>
+          </div>
+        )}
+
+        {showHolds && (
+          <div className="absolute left-[54%] top-[58px] w-[144px] border border-[#c9c9c9] bg-[#555b60] text-[#dddddd]">
+            <div className="border-b border-[#c9c9c9] text-center text-[8px]">HOLD LIST</div>
+            <div className="grid grid-cols-[1fr_32px_34px] border-b border-[#c9c9c9] text-center text-[8px]"><span>CALLSIGN</span><span>FL</span><span>AFL</span></div>
+            <div className="grid grid-cols-[1fr_32px_34px] text-center text-[9px] text-[#00ee00]"><span>LAN337</span><span>040</span><span>050</span></div>
+            <div className="h-[54px] border-t border-[#8c8c8c] bg-[linear-gradient(to_bottom,transparent_15px,#8c8c8c_16px,transparent_17px)] bg-[length:100%_16px]" />
+          </div>
+        )}
+
+        <div className="absolute right-[10px] top-[48px] flex gap-3 text-[9px]">
+          <div className="min-w-[134px]">
+            <div className="flex justify-between bg-[#0b443b] px-1 text-[#a9d7ce]"><span>Freq</span><span>⌃×</span></div>
+            <div className="px-1 py-1 text-[#ffff00]">MDCS_CTR&nbsp;&nbsp;199.999</div>
+          </div>
+          {showMetar && (
+            <div className="min-w-[161px]">
+              <div className="flex justify-between bg-[#0b443b] px-1 text-[#a9d7ce]"><span>ATIS&nbsp;&nbsp;&nbsp;&nbsp;Metar</span><span>▢⌃×</span></div>
+              <div className="px-1 py-1 text-[#00f4ff]">X&nbsp;&nbsp;{metarStation}&nbsp;&nbsp;{metarText.replace(metarStation, "").trim()}</div>
+            </div>
+          )}
+        </div>
 
         {simEnabled && aircraft.map((a) => (
           <button
             key={a.id}
             onClick={() => setSelectedId(a.id)}
-            className="absolute z-10 text-left text-[#b7e6bd]"
-            style={{ left: `${a.x}%`, top: `${a.y}%`, transform: `scale(${Math.max(.85, Math.min(1.2, zoom))})` }}
+            className="absolute z-10 text-left text-[#00ee00]"
+            style={{ left: `${a.x}%`, top: `${a.y}%` }}
           >
-            <span className="absolute -left-1 -top-1 block h-2 w-2 rotate-45 border border-current bg-[#07120d]" />
-            <span className={`ml-3 block border-l pl-2 leading-[13px] ${selectedId === a.id ? "bg-[#183520]/80 text-white" : ""}`}>
-              <b>{a.callsign}</b> {a.squawk}<br />
-              {String(Math.round(a.altitude / 100)).padStart(3, "0")} {a.altitude < a.targetAltitude ? "↑" : a.altitude > a.targetAltitude ? "↓" : "="} {a.groundSpeed}<br />
-              H{String(Math.round(a.heading)).padStart(3, "0")} {a.aircraftType}
+            <span className="absolute -left-[12px] -top-[28px] text-[20px]">◇</span>
+            <span className="absolute -left-[35px] -top-[6px] tracking-[3px]">••••</span>
+            <span className="block leading-[13px]">
+              <span className="text-[10px]">I</span><br />
+              <b>{a.callsign}</b><br />
+              A{String(Math.round(a.altitude / 100)).padStart(3, "0")}↓&nbsp;&nbsp;{a.groundSpeed}<br />
+              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{a.arrival}
             </span>
           </button>
         ))}
 
-        {windows.sector.open && <ScopeWindow title="SECTOR LIST" state={windows.sector} onMouseDown={(e) => startDrag("sector", e)} width={280}>
-          <div className="max-h-44 overflow-auto">
-            {plans.length === 0 ? <Muted text="Sin planes activos" /> : plans.slice(0, 12).map((p) => (
-              <div key={p.id} className="grid grid-cols-[70px_46px_1fr_42px] border-b border-[#506653]/40 px-2 py-1 hover:bg-[#1a2c20]">
-                <b className={p.transponder === "7700" ? "text-red-400" : "text-[#c8e2cc]"}>{p.callsign}</b>
-                <span>{p.aircraft_type}</span>
-                <span>{p.departure_icao}→{p.arrival_icao}</span>
-                <span>{p.flight_level}</span>
-              </div>
-            ))}
-          </div>
-        </ScopeWindow>}
-
-        {windows.taxi.open && <ScopeWindow title="COMBINED TAXI LIST" state={windows.taxi} onMouseDown={(e) => startDrag("taxi", e)} width={280}>
-          {taxiPlans.length === 0 ? <Muted text="No traffic" /> : taxiPlans.slice(0, 8).map((p) => <div key={p.id} className="flex justify-between border-b border-[#506653]/40 px-2 py-1"><b>{p.callsign}</b><span>{p.sector_status}</span></div>)}
-        </ScopeWindow>}
-
-        {windows.holds.open && <ScopeWindow title="HOLD LIST" state={windows.holds} onMouseDown={(e) => startDrag("holds", e)} width={255}><Muted text="No aircraft holding" /></ScopeWindow>}
-        {windows.timer.open && <ScopeWindow title="TIMER" state={windows.timer} onMouseDown={(e) => startDrag("timer", e)} width={170}><div className="p-3 text-center text-lg font-bold">{now.toISOString().slice(11, 19)}</div></ScopeWindow>}
-        {windows.metar.open && <ScopeWindow title={`METAR — ${metarStation}`} state={windows.metar} onMouseDown={(e) => startDrag("metar", e)} width={420}><div className="p-2 leading-5">{metarText}</div></ScopeWindow>}
-        {windows.atis.open && <ScopeWindow title="ATIS" state={windows.atis} onMouseDown={(e) => startDrag("atis", e)} width={320}><Muted text="Editor ATIS será conectado al sistema existente." /></ScopeWindow>}
-        {windows.atc.open && <ScopeWindow title="ATC ONLINE" state={windows.atc} onMouseDown={(e) => startDrag("atc", e)} width={250}>
-          {sessions.length === 0 ? <Muted text="No ATC online" /> : sessions.slice(0, 10).map((s) => <div key={s.id} className="flex justify-between border-b border-[#506653]/40 px-2 py-1"><span>{s.position}</span><span>{ATC_FREQUENCIES[s.position] ?? "---.---"}</span></div>)}
-        </ScopeWindow>}
-
         {selected && (
-          <div className="absolute bottom-3 right-3 z-20 w-64 border border-[#718b75] bg-[#101d14]/95 shadow-xl">
-            <div className="bg-[#bfc9c0] px-2 py-1 font-bold text-[#101713]">TRACK DATA</div>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 p-2">
-              <span>CALLSIGN</span><b>{selected.callsign}</b>
-              <span>TYPE</span><b>{selected.aircraftType}</b>
-              <span>ALT</span><b>{selected.altitude}</b>
-              <span>HDG</span><b>{Math.round(selected.heading)}</b>
-              <span>GS</span><b>{selected.groundSpeed}</b>
-              <span>SQUAWK</span><b>{selected.squawk}</b>
-              <span>ROUTE</span><b>{selected.departure}→{selected.arrival}</b>
+          <div className="absolute right-[11px] top-[272px] w-[210px] text-[#00ee00]">
+            <div className="text-[#ffff00]">A9999</div>
+            <div>{selected.callsign} -- &nbsp;{selected.aircraftType}</div>
+            <div>050↓ VOGEP N250</div>
+            <div>060 080 {selected.arrival}</div>
+            <div>AHDG ASP TXT</div>
+          </div>
+        )}
+
+        <div className="absolute bottom-[2px] left-[2px] text-[8px] leading-[9px]">
+          <div className="text-[#d6d6d6]">LAN337</div>
+          <div className="text-[#00eaff]">129.800</div>
+          <div className="text-[#d6d6d6]">118.600</div>
+        </div>
+
+        {showConnectDialog && (
+          <div className="absolute left-1/2 top-[44%] z-40 w-[400px] -translate-x-1/2 -translate-y-1/2 border border-[#c8c8c8] bg-[#d7d7d7] p-2 text-[9px] text-[#222] shadow-2xl">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="mb-2 font-bold">SERVER</div>
+                <DialogRow label="Callsign" value={position} />
+                <DialogRow label="Facility" value="TOWER" />
+                <DialogRow label="Rating" value="S2" />
+                <DialogRow label="Server" value="AUTOMATIC" />
+              </div>
+              <div>
+                <div className="mb-2 font-bold">PROFILE</div>
+                <DialogRow label="Password" value="ATC 1275621" />
+                <DialogRow label="DISCORD name" value={controllerName.slice(0, 16)} />
+                <DialogRow label="ROBLOX name" value="PF24" />
+              </div>
+            </div>
+            <div className="mt-2 border-t border-[#b4b4b4] pt-2">
+              <div className="font-bold">INFORMATION</div>
+              <DialogRow label="INFO line 1" value="SANTIAGO TORRE/TOWER" />
+              <DialogRow label="INFO line 2" value="Visítanos en https://pf24.vercel.app/" />
+              <DialogRow label="INFO line 3" value="PDC/DCL MDST     PDC/DCL NO DISPONIBLE" />
+            </div>
+            <div className="mt-3 flex justify-between">
+              <button onClick={() => { setConnected(true); setShowConnectDialog(false); }} className="border border-[#b4b4b4] bg-[#ececec] px-3 py-1">Connect</button>
+              <button onClick={() => setShowConnectDialog(false)} className="border border-[#b4b4b4] bg-[#ececec] px-3 py-1">Close</button>
             </div>
           </div>
         )}
       </section>
 
-      <footer className="absolute inset-x-0 bottom-0 z-40 h-[116px] border-t border-[#607364] bg-[#09130d]">
-        <div className="h-[78px] overflow-hidden px-3 py-2 text-[11px] leading-4 text-[#9fb8a4]">
-          {consoleLines.map((line, index) => <div key={`${line}-${index}`}>{line}</div>)}
-        </div>
-        <form className="flex h-[38px] border-t border-[#405244]" onSubmit={(e) => { e.preventDefault(); executeCommand(command); }}>
-          <span className="flex items-center px-3 text-[#82a789]">COMMAND</span>
-          <input autoFocus value={command} onChange={(e) => setCommand(e.target.value)} className="flex-1 bg-[#0d1a11] px-2 text-[#d5ead8] outline-none" placeholder=".help" />
-          <button className="border-l border-[#405244] px-5 hover:bg-[#1b3020]">EXEC</button>
-        </form>
-      </footer>
+      {showChat && (
+        <footer className="absolute inset-x-0 bottom-0 z-40 h-[112px] bg-[#555c61] text-[9px]">
+          <div className="h-[76px] overflow-hidden px-1 py-2 leading-[12px] text-[#d0d0d0]">
+            {consoleLines.map((line, index) => (
+              <div key={`${line}-${index}`} className={line.startsWith("129.800") || line.startsWith("118.600") ? "" : ""}>
+                <span className={line.startsWith("129.800") ? "text-[#00eaff]" : line.startsWith("118.600") ? "text-[#cfcfcf]" : ""}>{line}</span>
+              </div>
+            ))}
+          </div>
+          <form
+            className="flex h-[36px] items-center border-t border-[#777] bg-[#efefef] text-[#222]"
+            onSubmit={(e) => { e.preventDefault(); executeCommand(command); }}
+          >
+            <span className="pl-16 pr-1 text-[8px]">on 118.600</span>
+            <input
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              className="h-[18px] w-[385px] bg-white px-1 outline-none"
+              autoFocus
+            />
+            <div className="ml-1 text-[8px]">METAR&nbsp;&nbsp;MDST&nbsp;&nbsp;121800Z 11012KT 9999 FEW025 SCT080 22/14 Q1013</div>
+          </form>
+        </footer>
+      )}
 
       <style jsx global>{`
-        .scopeTopButton { border-right: 1px solid #7b877e; padding: 0 11px; background: #d9ded9; }
-        .scopeTopButton:hover { background: #f2f5f2; }
+        .topCell { border-right: 1px solid #173d38; display: flex; align-items: center; justify-content: center; }
+        .scopePanel { position: absolute; z-index: 20; color: #b7c4c1; }
+        .scopePanelTitle { height: 12px; background: #0b443b; padding: 0 4px; font-size: 7px; line-height: 12px; color: #a9d7ce; }
       `}</style>
     </main>
   );
 }
 
-function ScopeWindow({ title, state, onMouseDown, width, children }: { title: string; state: { pos: WindowPos }; onMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void; width: number; children: React.ReactNode }) {
+function Panel({ className, title, children }: { className: string; title: string; children: React.ReactNode }) {
   return (
-    <div className="absolute z-30 border border-[#6e8973] bg-[#0d1a11]/95 shadow-xl" style={{ left: state.pos.x, top: state.pos.y, width }}>
-      <div onMouseDown={onMouseDown} className="cursor-move border-b border-[#6e8973] bg-[#c7cec8] px-2 py-1 font-bold tracking-wide text-[#111813]">{title}</div>
-      <div className="min-h-10">{children}</div>
+    <div className={`scopePanel ${className}`}>
+      <div className="scopePanelTitle flex items-center justify-between"><span>{title}</span><span>⌃×</span></div>
+      {children}
     </div>
   );
 }
 
-function Muted({ text }: { text: string }) {
-  return <div className="p-3 text-[#718977]">{text}</div>;
+function DialogRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mb-1 grid grid-cols-[72px_1fr] items-center gap-1">
+      <span>{label}</span>
+      <div className="border border-[#c8c8c8] bg-[#efefef] px-1 py-[1px]">{value}</div>
+    </div>
+  );
+}
+
+function ToolbarGlyph({ index, active }: { index: number; active: boolean }) {
+  const c = active ? "#ffffff" : "#cfe1dc";
+  if (index === 0) return <span style={{ color: c }} className="text-[15px]">□↗</span>;
+  if (index === 1) return <span style={{ color: c }} className="text-[17px]">□⌟</span>;
+  if (index === 2) return <span style={{ color: c }} className="text-[16px]">□◌</span>;
+  if (index === 3) return <span style={{ color: c }} className="text-[8px] leading-[8px]">TRANS<br />LVL&nbsp;040</span>;
+  if (index === 4) return <span style={{ color: c }} className="text-[16px]">▽</span>;
+  return <span style={{ color: c }} className="text-[15px]">⌁□⌁</span>;
 }
