@@ -38,6 +38,7 @@ const SIM_SEED: SimAircraft[] = [
 export default function PF24Scope({ initialPlans, controllerName }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("MDST_TWR");
+  const [pendingPosition, setPendingPosition] = useState("MDST_TWR");
   const [connected, setConnected] = useState(false);
   const [now, setNow] = useState(new Date());
   const [simEnabled, setSimEnabled] = useState(true);
@@ -57,7 +58,7 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
   const [showMetar, setShowMetar] = useState(true);
   const [showAtis, setShowAtis] = useState(true);
   const [showConnectDialog, setShowConnectDialog] = useState(false);
-  const [toolStates, setToolStates] = useState([false, false, false, false, false, false]);
+  const [toolStates, setToolStates] = useState([false, false, false, false, false]);
 
   const frequency = ATC_FREQUENCIES[position] ?? "199.998";
   const selected = aircraft.find((item) => item.id === selectedId) ?? null;
@@ -73,7 +74,10 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
 
   useEffect(() => {
     const stored = localStorage.getItem("pf24_scope_position");
-    if (stored) setPosition(stored);
+    if (stored) {
+      setPosition(stored);
+      setPendingPosition(stored);
+    }
   }, []);
 
   useEffect(() => {
@@ -108,6 +112,7 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, (payload) => {
         const next = payload.new as ScopeFlightPlan;
         const old = payload.old as ScopeFlightPlan;
+
         if (payload.eventType === "INSERT" && next.status !== "FINISHED") {
           setPlans((current) => [next, ...current]);
         }
@@ -155,7 +160,7 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
       const data = (await response.json()) as { raw?: string | null };
       if (data.raw) setMetarText(data.raw);
     } catch {
-      // Keep the last known METAR text.
+      // Keep last known weather.
     }
   }
 
@@ -183,11 +188,7 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
     } else if (cmd === ".fpl") {
       const callsign = upper[0];
       const plan = plans.find((p) => p.callsign.toUpperCase() === callsign);
-      log(
-        plan
-          ? `118.600: ${plan.callsign} ${plan.aircraft_type} ${plan.departure_icao}>${plan.arrival_icao} FL${plan.flight_level}`
-          : "118.600: FPL no encontrado"
-      );
+      log(plan ? `118.600: ${plan.callsign} ${plan.aircraft_type} ${plan.departure_icao}>${plan.arrival_icao} FL${plan.flight_level}` : "118.600: FPL no encontrado");
     } else if (cmd === ".metar") {
       const station = upper[0] || "MDST";
       setMetarStation(station);
@@ -197,21 +198,13 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
       const callsign = upper[0];
       const value = Number(upper[1]);
       if (callsign && !Number.isNaN(value)) {
-        setAircraft((current) =>
-          current.map((a) =>
-            a.callsign.toUpperCase() === callsign ? { ...a, heading: value, targetHeading: value } : a
-          )
-        );
+        setAircraft((current) => current.map((a) => a.callsign.toUpperCase() === callsign ? { ...a, heading: value, targetHeading: value } : a));
       }
     } else if (cmd === ".alt") {
       const callsign = upper[0];
       const value = Number(upper[1]);
       if (callsign && !Number.isNaN(value)) {
-        setAircraft((current) =>
-          current.map((a) =>
-            a.callsign.toUpperCase() === callsign ? { ...a, altitude: value, targetAltitude: value } : a
-          )
-        );
+        setAircraft((current) => current.map((a) => a.callsign.toUpperCase() === callsign ? { ...a, altitude: value, targetAltitude: value } : a));
       }
     } else if (cmd === ".clear") {
       setConsoleLines([]);
@@ -219,46 +212,61 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
     setCommand("");
   }
 
+  function handleTopConnect() {
+    if (connected) {
+      setConnected(false);
+      return;
+    }
+    setPendingPosition(position);
+    setShowConnectDialog(true);
+  }
+
+  function confirmConnect() {
+    setPosition(pendingPosition);
+    setConnected(true);
+    setShowConnectDialog(false);
+  }
+
   const utc = now.toISOString().slice(11, 19);
   const stripTime = utc.slice(0, 8);
+  const facility = pendingPosition.split("_").at(-1) === "CTR" ? "CENTER" : pendingPosition.split("_").at(-1) === "APP" ? "APPROACH" : pendingPosition.split("_").at(-1) === "GND" ? "GROUND" : "TOWER";
+  const facilityShort = position.split("_").at(-1) ?? "TWR";
 
   return (
     <main className="fixed inset-0 overflow-hidden bg-[#151515] font-mono text-[12px] text-[#b8c8c4] select-none">
       <header className="absolute inset-x-0 top-0 z-50 h-[44px] border-b border-[#2f3437]">
         <div className="flex h-[21px] items-stretch bg-[#06443c] text-[#d9e7e2]">
-          <button className="topCell px-1.5 text-[9px]">MENU</button>
-          <button
-            onClick={() => setShowConnectDialog(true)}
-            className="topCell px-2 text-[12px]"
-          >
-            CONNECT
+          <button className="topCell w-[28px] text-[8px]">MENU</button>
+          <button onClick={handleTopConnect} className="topCell w-[48px] text-[10px]">
+            {connected ? "DISCONNECT" : "CONNECT"}
           </button>
-          <select
-            value={position}
-            onChange={(e) => setPosition(e.target.value)}
-            className="topCell bg-transparent px-2 text-[11px] outline-none"
-          >
-            {Object.keys(ATC_FREQUENCIES).map((item) => (
-              <option key={item} className="bg-[#06443c]">{item}</option>
-            ))}
-          </select>
-          <div className="topCell px-2">[{position.split("_").at(-1) ?? "TWR"}]</div>
-          <div className="topCell px-3">{frequency}</div>
-          <button className="topCell w-[44px] leading-[9px] text-[8px]">OPEN<br />SCT</button>
-          <div className="topCell px-2 text-[12px]">{stripTime}</div>
-          <button className="topCell w-[46px] leading-[9px] text-[8px]">QUICK<br />SET</button>
-          {toolStates.map((active, index) => (
-            <button
-              key={index}
-              onClick={() => toggleTool(index)}
-              className={`topCell relative w-[49px] ${active ? "bg-[#0a5b50]" : ""}`}
-              aria-label={`toolbar ${index + 1}`}
-            >
-              <ToolbarGlyph index={index} active={active} />
-            </button>
-          ))}
+
+          <div className="topCell w-[133px] justify-start px-2 text-[10px]">
+            {position}&nbsp;&nbsp;[{facilityShort}]
+          </div>
+          <div className="topCell w-[78px] px-2 text-[10px]">{frequency}</div>
+          <button className="topCell w-[38px] leading-[8px] text-[7px]">OPEN<br />SCT</button>
+          <div className="topCell w-[62px] px-2 text-[10px]">{stripTime}</div>
+          <button className="topCell w-[40px] leading-[8px] text-[7px]">QUICK<br />SET</button>
+
+          <button onClick={() => toggleTool(0)} className={`topCell w-[38px] ${toolStates[0] ? "bg-[#0a5b50]" : ""}`} aria-label="display tool one">
+            <ToolbarGlyph index={0} active={toolStates[0]} />
+          </button>
+          <button onClick={() => toggleTool(1)} className={`topCell w-[40px] ${toolStates[1] ? "bg-[#0a5b50]" : ""}`} aria-label="display tool two">
+            <ToolbarGlyph index={1} active={toolStates[1]} />
+          </button>
+          <button onClick={() => toggleTool(2)} className={`topCell w-[58px] ${toolStates[2] ? "bg-[#0a5b50]" : ""}`} aria-label="transition level">
+            <ToolbarGlyph index={2} active={toolStates[2]} />
+          </button>
+          <button onClick={() => toggleTool(3)} className={`topCell w-[48px] ${toolStates[3] ? "bg-[#0a5b50]" : ""}`} aria-label="filter tool">
+            <ToolbarGlyph index={3} active={toolStates[3]} />
+          </button>
+          <button onClick={() => toggleTool(4)} className={`topCell w-[72px] ${toolStates[4] ? "bg-[#0a5b50]" : ""}`} aria-label="route display tool">
+            <ToolbarGlyph index={4} active={toolStates[4]} />
+          </button>
+
           <div className="flex-1" />
-          <button className="topCell w-[30px] text-[18px]">←</button>
+          <button className="topCell w-[28px] text-[17px]">←</button>
         </div>
 
         <div className="flex h-[23px] items-center bg-[#555c61] px-3 text-[10px] text-[#dedede]">
@@ -272,13 +280,6 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
       </header>
 
       <section className="absolute inset-x-0 bottom-[112px] top-[44px] overflow-hidden bg-[#151515]">
-        <button
-          onClick={() => setConnected((v) => !v)}
-          className="absolute left-[8px] top-[14px] z-20 border border-[#427b70] bg-[#0d1c19] px-1 py-1 text-[8px] text-[#b9d9d1]"
-        >
-          {connected ? "DISCONNECT" : "CONNECT"}
-        </button>
-
         <Panel className="left-[8px] top-[50px] w-[462px]" title="SECTOR LIST">
           <div className="px-1 py-1 text-[9px]">
             <div className="grid grid-cols-[50px_39px_27px_42px_42px_34px_30px_1fr_42px_34px] text-[#d0d3d2]">
@@ -342,12 +343,7 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
         </div>
 
         {simEnabled && aircraft.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => setSelectedId(a.id)}
-            className="absolute z-10 text-left text-[#00ee00]"
-            style={{ left: `${a.x}%`, top: `${a.y}%` }}
-          >
+          <button key={a.id} onClick={() => setSelectedId(a.id)} className="absolute z-10 text-left text-[#00ee00]" style={{ left: `${a.x}%`, top: `${a.y}%` }}>
             <span className="absolute -left-[12px] -top-[28px] text-[20px]">◇</span>
             <span className="absolute -left-[35px] -top-[6px] tracking-[3px]">••••</span>
             <span className="block leading-[13px]">
@@ -376,33 +372,15 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
         </div>
 
         {showConnectDialog && (
-          <div className="absolute left-1/2 top-[44%] z-40 w-[400px] -translate-x-1/2 -translate-y-1/2 border border-[#c8c8c8] bg-[#d7d7d7] p-2 text-[9px] text-[#222] shadow-2xl">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="mb-2 font-bold">SERVER</div>
-                <DialogRow label="Callsign" value={position} />
-                <DialogRow label="Facility" value="TOWER" />
-                <DialogRow label="Rating" value="S2" />
-                <DialogRow label="Server" value="AUTOMATIC" />
-              </div>
-              <div>
-                <div className="mb-2 font-bold">PROFILE</div>
-                <DialogRow label="Password" value="ATC 1275621" />
-                <DialogRow label="DISCORD name" value={controllerName.slice(0, 16)} />
-                <DialogRow label="ROBLOX name" value="PF24" />
-              </div>
-            </div>
-            <div className="mt-2 border-t border-[#b4b4b4] pt-2">
-              <div className="font-bold">INFORMATION</div>
-              <DialogRow label="INFO line 1" value="SANTIAGO TORRE/TOWER" />
-              <DialogRow label="INFO line 2" value="Visítanos en https://pf24.vercel.app/" />
-              <DialogRow label="INFO line 3" value="PDC/DCL MDST     PDC/DCL NO DISPONIBLE" />
-            </div>
-            <div className="mt-3 flex justify-between">
-              <button onClick={() => { setConnected(true); setShowConnectDialog(false); }} className="border border-[#b4b4b4] bg-[#ececec] px-3 py-1">Connect</button>
-              <button onClick={() => setShowConnectDialog(false)} className="border border-[#b4b4b4] bg-[#ececec] px-3 py-1">Close</button>
-            </div>
-          </div>
+          <ConnectDialog
+            pendingPosition={pendingPosition}
+            setPendingPosition={setPendingPosition}
+            facility={facility}
+            controllerName={controllerName}
+            connected={connected}
+            onConnect={confirmConnect}
+            onClose={() => setShowConnectDialog(false)}
+          />
         )}
       </section>
 
@@ -410,22 +388,14 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
         <footer className="absolute inset-x-0 bottom-0 z-40 h-[112px] bg-[#555c61] text-[9px]">
           <div className="h-[76px] overflow-hidden px-1 py-2 leading-[12px] text-[#d0d0d0]">
             {consoleLines.map((line, index) => (
-              <div key={`${line}-${index}`} className={line.startsWith("129.800") || line.startsWith("118.600") ? "" : ""}>
+              <div key={`${line}-${index}`}>
                 <span className={line.startsWith("129.800") ? "text-[#00eaff]" : line.startsWith("118.600") ? "text-[#cfcfcf]" : ""}>{line}</span>
               </div>
             ))}
           </div>
-          <form
-            className="flex h-[36px] items-center border-t border-[#777] bg-[#efefef] text-[#222]"
-            onSubmit={(e) => { e.preventDefault(); executeCommand(command); }}
-          >
+          <form className="flex h-[36px] items-center border-t border-[#777] bg-[#efefef] text-[#222]" onSubmit={(e) => { e.preventDefault(); executeCommand(command); }}>
             <span className="pl-16 pr-1 text-[8px]">on 118.600</span>
-            <input
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              className="h-[18px] w-[385px] bg-white px-1 outline-none"
-              autoFocus
-            />
+            <input value={command} onChange={(e) => setCommand(e.target.value)} className="h-[18px] w-[385px] bg-white px-1 outline-none" autoFocus />
             <div className="ml-1 text-[8px]">METAR&nbsp;&nbsp;MDST&nbsp;&nbsp;121800Z 11012KT 9999 FEW025 SCT080 22/14 Q1013</div>
           </form>
         </footer>
@@ -435,6 +405,8 @@ export default function PF24Scope({ initialPlans, controllerName }: Props) {
         .topCell { border-right: 1px solid #173d38; display: flex; align-items: center; justify-content: center; }
         .scopePanel { position: absolute; z-index: 20; color: #b7c4c1; }
         .scopePanelTitle { height: 12px; background: #0b443b; padding: 0 4px; font-size: 7px; line-height: 12px; color: #a9d7ce; }
+        .connectBox { border: 1px solid #b7b7b7; background: #d8d8d8; box-shadow: inset 1px 1px #f8f8f8, inset -1px -1px #999; }
+        .connectField { height: 18px; border: 1px solid #c0c0c0; background: #efefef; box-shadow: inset 1px 1px #fff; padding: 1px 5px; color: #151515; }
       `}</style>
     </main>
   );
@@ -449,21 +421,140 @@ function Panel({ className, title, children }: { className: string; title: strin
   );
 }
 
-function DialogRow({ label, value }: { label: string; value: string }) {
+function ConnectDialog({
+  pendingPosition,
+  setPendingPosition,
+  facility,
+  controllerName,
+  connected,
+  onConnect,
+  onClose,
+}: {
+  pendingPosition: string;
+  setPendingPosition: (value: string) => void;
+  facility: string;
+  controllerName: string;
+  connected: boolean;
+  onConnect: () => void;
+  onClose: () => void;
+}) {
   return (
-    <div className="mb-1 grid grid-cols-[72px_1fr] items-center gap-1">
+    <div className="connectBox absolute left-1/2 top-[45%] z-40 w-[405px] -translate-x-1/2 -translate-y-1/2 p-[10px] text-[10px] text-[#202020]">
+      <div className="mb-[7px] text-[9px]">Connect dialog</div>
+
+      <div className="grid grid-cols-[1fr_1.05fr] gap-[13px]">
+        <fieldset className="border border-[#b8b8b8] px-[8px] pb-[9px] pt-[5px]">
+          <legend className="px-[3px] text-[10px] font-bold tracking-[.03em]">SERVER</legend>
+
+          <ConnectSelectRow label="Callsign" value={pendingPosition} onChange={setPendingPosition} options={Object.keys(ATC_FREQUENCIES)} />
+          <ConnectStaticSelectRow label="Facility" value={facility} />
+          <ConnectStaticSelectRow label="Rating" value="S2" />
+          <ConnectStaticSelectRow label="Server" value="AUTOMATIC" />
+        </fieldset>
+
+        <fieldset className="border border-[#b8b8b8] px-[8px] pb-[9px] pt-[5px]">
+          <legend className="px-[3px] text-[10px] font-bold tracking-[.03em]">PROFILE</legend>
+          <ConnectValueRow label="Password" value="ATC 1275621" />
+          <ConnectValueRow label="DISCORD name" value={controllerName || "ep1lef536"} />
+          <ConnectValueRow label="ROBLOX name" value="ep1lef2964" />
+        </fieldset>
+      </div>
+
+      <fieldset className="mt-[6px] border border-[#b8b8b8] px-[8px] pb-[9px] pt-[5px]">
+        <legend className="px-[3px] text-[10px] font-bold tracking-[.03em]">INFORMATION</legend>
+        <ConnectValueRow label="INFO line 1" value="SANTIAGO TORRE/TOWER" />
+        <ConnectValueRow label="INFO line 2" value="Visítanos en https://pf24.vercel.app/" />
+        <ConnectValueRow label="INFO line 3" value="PDC/DCL MDST     PDC/DCL NO DISPONIBLE" />
+        <ConnectValueRow label="INFO line 4" value="" />
+      </fieldset>
+
+      <div className="mt-[9px] flex items-center justify-between">
+        <div className="flex gap-[5px]">
+          <button onClick={onConnect} className="min-w-[62px] border border-[#b4b4b4] bg-[#ececec] px-3 py-[2px] shadow-[inset_1px_1px_#fff,inset_-1px_-1px_#999]">Connect</button>
+          <button disabled={!connected} className="min-w-[74px] border border-[#c1c1c1] bg-[#d4d4d4] px-3 py-[2px] text-[#aaa] shadow-[inset_1px_1px_#eee]">Disconnect</button>
+        </div>
+        <button onClick={onClose} className="min-w-[55px] border border-[#b4b4b4] bg-[#ececec] px-3 py-[2px] shadow-[inset_1px_1px_#fff,inset_-1px_-1px_#999]">Close</button>
+      </div>
+    </div>
+  );
+}
+
+function ConnectSelectRow({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[] }) {
+  return (
+    <div className="mb-[3px] grid grid-cols-[58px_1fr] items-center gap-[5px]">
       <span>{label}</span>
-      <div className="border border-[#c8c8c8] bg-[#efefef] px-1 py-[1px]">{value}</div>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="connectField w-full appearance-auto outline-none">
+        {options.map((option) => <option key={option}>{option}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function ConnectStaticSelectRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mb-[3px] grid grid-cols-[58px_1fr] items-center gap-[5px]">
+      <span>{label}</span>
+      <div className="connectField flex items-center justify-between"><span>{value}</span><span className="text-[8px]">▾</span></div>
+    </div>
+  );
+}
+
+function ConnectValueRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mb-[3px] grid grid-cols-[77px_1fr] items-center gap-[5px]">
+      <span>{label}</span>
+      <div className="connectField truncate">{value}</div>
     </div>
   );
 }
 
 function ToolbarGlyph({ index, active }: { index: number; active: boolean }) {
-  const c = active ? "#ffffff" : "#cfe1dc";
-  if (index === 0) return <span style={{ color: c }} className="text-[15px]">□↗</span>;
-  if (index === 1) return <span style={{ color: c }} className="text-[17px]">□⌟</span>;
-  if (index === 2) return <span style={{ color: c }} className="text-[16px]">□◌</span>;
-  if (index === 3) return <span style={{ color: c }} className="text-[8px] leading-[8px]">TRANS<br />LVL&nbsp;040</span>;
-  if (index === 4) return <span style={{ color: c }} className="text-[16px]">▽</span>;
-  return <span style={{ color: c }} className="text-[15px]">⌁□⌁</span>;
+  const stroke = active ? "#ffffff" : "#cfe1dc";
+
+  if (index === 0) {
+    return (
+      <svg width="28" height="19" viewBox="0 0 28 19" aria-hidden="true">
+        <rect x="3" y="8" width="9" height="8" fill="none" stroke={stroke} strokeWidth="1" />
+        <line x1="11" y1="8" x2="20" y2="2" stroke={stroke} strokeWidth="1" />
+        <rect x="19" y="1" width="4" height="4" fill="none" stroke={stroke} strokeWidth="1" />
+      </svg>
+    );
+  }
+
+  if (index === 1) {
+    return (
+      <svg width="30" height="19" viewBox="0 0 30 19" aria-hidden="true">
+        <rect x="3" y="2" width="12" height="14" fill="none" stroke={stroke} strokeWidth="1" />
+        <line x1="16" y1="14" x2="24" y2="5" stroke={stroke} strokeWidth="1" strokeDasharray="2 2" />
+        <circle cx="25" cy="4" r="1.5" fill="none" stroke={stroke} strokeWidth="1" />
+      </svg>
+    );
+  }
+
+  if (index === 2) {
+    return <span style={{ color: stroke }} className="text-[7px] leading-[7px]">TRANS<br />LVL&nbsp;&nbsp;040</span>;
+  }
+
+  if (index === 3) {
+    return (
+      <svg width="28" height="19" viewBox="0 0 28 19" aria-hidden="true">
+        <path d="M5 3 H22 L16 9 V15 H11 V9 Z" fill="none" stroke={stroke} strokeWidth="1" />
+        <rect x="21" y="1" width="4" height="4" fill="none" stroke={stroke} strokeWidth="1" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg width="58" height="19" viewBox="0 0 58 19" aria-hidden="true">
+      <line x1="6" y1="15" x2="20" y2="3" stroke={stroke} strokeWidth="1" />
+      <rect x="4" y="13" width="4" height="4" fill="none" stroke={stroke} strokeWidth="1" />
+      <rect x="19" y="1" width="4" height="4" fill="none" stroke={stroke} strokeWidth="1" />
+      <circle cx="35" cy="5" r="1.5" fill={stroke} />
+      <circle cx="43" cy="5" r="1.5" fill={stroke} />
+      <circle cx="35" cy="13" r="1.5" fill={stroke} />
+      <rect x="41" y="10" width="5" height="5" fill="none" stroke={stroke} strokeWidth="1" />
+      <line x1="35" y1="5" x2="43" y2="5" stroke={stroke} strokeWidth="0.8" />
+      <line x1="35" y1="5" x2="35" y2="13" stroke={stroke} strokeWidth="0.8" />
+    </svg>
+  );
 }
