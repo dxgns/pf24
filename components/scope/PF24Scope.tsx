@@ -28,7 +28,7 @@ const CALLSIGN_OPTIONS = Object.keys(ATC_FREQUENCIES).sort();
 const PDC_AIRPORTS = new Set(["MDPC", "LCLK", "GCLP", "LEMH", "EGKK"]);
 const PROFILE_STORAGE_KEY = "pf24_scope_profile_v1";
 const SCOPE_SETTINGS_STORAGE_KEY = "pf24_scope_settings_v2";
-const RUNWAY_STORAGE_KEY = "pf24_scope_runways_v1";
+const RUNWAY_STORAGE_KEY = "pf24_scope_runways_v2";
 const EMPTY_FORM: ConnectForm = { callsign: "", facility: "", rating: "", server: "AUTOMATIC", password: "", discordName: "", robloxName: "", info4: "" };
 const DEFAULT_WINDOWS: Record<WindowKey, WindowState> = {
   sector: { x: 8, y: 50, open: true, collapsed: false }, taxi: { x: 8, y: 104, open: true, collapsed: false }, timer: { x: 700, y: 70, open: true, collapsed: false },
@@ -46,10 +46,9 @@ const RUNWAYS: Array<{ airport: string; runway: string }> = [
   { airport: "MDPC", runway: "08" }, { airport: "MDPC", runway: "09" }, { airport: "MDST", runway: "11" }, { airport: "MDST", runway: "29" },
   { airport: "MTCA", runway: "26" }, { airport: "MTCA", runway: "08" },
 ];
-const DEFAULT_RUNWAY_STATE: RunwayState = Object.fromEntries(RUNWAYS.map(({ airport, runway }) => {
-  const key = `${airport}-${runway}`;
-  return [key, { active: key === "EGKK-26L" || key === "GCLP-21R", dep: key === "EFKT-16", arr: key === "EFKT-16" }];
-}));
+const DEFAULT_RUNWAY_STATE: RunwayState = Object.fromEntries(
+  RUNWAYS.map(({ airport, runway }) => [`${airport}-${runway}`, { active: false, dep: false, arr: false }])
+);
 
 function getAirportFromCallsign(callsign: string) { return callsign.trim().toUpperCase().split("_")[0] ?? ""; }
 function callsignMatchesFacility(callsign: string, facility: FacilityCode | "") { const normalized = callsign.trim().toUpperCase(); return Boolean(normalized && facility && normalized.endsWith(`_${facility}`)); }
@@ -164,7 +163,7 @@ export default function PF24Scope({ initialPlans }: Props) {
     {showRunwaySelector && <RunwaySelector state={runwayState} setState={setRunwayState} onClose={() => { setShowRunwaySelector(false); setToolStates((c) => c.map((v, i) => i === 0 ? false : v)); }}/>} 
 
     {showChat && <footer className="absolute inset-x-0 bottom-0 z-40 h-[112px] bg-[#555c61] text-[9px]"><div className="h-[76px] overflow-hidden px-1 py-2 leading-[12px]">{consoleLines.map((line,index)=><div key={`${line}-${index}`}>{line}</div>)}</div><form className="flex h-[36px] items-center border-t border-[#777] bg-[#efefef] text-[#222]" onSubmit={(e)=>{e.preventDefault();executeCommand(command);}}><span className="pl-16 pr-1 text-[8px]">on 118.600</span><input value={command} onChange={(e)=>setCommand(e.target.value)} className="h-[18px] w-[385px] bg-white px-1 outline-none"/><div className="ml-1 text-[8px]">METAR&nbsp;&nbsp;MDST&nbsp;&nbsp;121800Z 11012KT 9999 FEW025 SCT080 22/14 Q1013</div></form></footer>}
-    <style jsx global>{`.scopeTopCell{border-right:1px solid #173d38;display:flex;align-items:center;justify-content:center;min-width:0}.scopeTopGap{border-right:1px solid #173d38}.scopeToolOn{background:#0a5b50}.scopeConnected{border:1px solid #fff!important}.connectBox{border:1px solid #b7b7b7;background:#d8d8d8;box-shadow:inset 1px 1px #f8f8f8,inset -1px -1px #999}.connectField{height:20px;border:1px solid #c0c0c0;background:#efefef;box-shadow:inset 1px 1px #fff;padding:1px 5px;color:#151515}.windowIcon{width:16px;height:12px;display:flex;align-items:center;justify-content:center}.scopeMenu{box-shadow:0 0 0 1px #102f2a}.scopeConfigField{height:24px;border:1px solid #d4d4d4;background:#efefef;color:#111;box-shadow:inset 1px 1px #fff;padding:0 28px 0 8px}`}</style>
+    <style jsx global>{`html,body{overflow:hidden!important;max-width:100vw!important}.scopeTopCell{border-right:1px solid #173d38;display:flex;align-items:center;justify-content:center;min-width:0}.scopeTopGap{border-right:1px solid #173d38}.scopeToolOn{background:#0a5b50}.scopeConnected{border:1px solid #fff!important}.connectBox{border:1px solid #b7b7b7;background:#d8d8d8;box-shadow:inset 1px 1px #f8f8f8,inset -1px -1px #999}.connectField{height:20px;border:1px solid #c0c0c0;background:#efefef;box-shadow:inset 1px 1px #fff;padding:1px 5px;color:#151515}.windowIcon{width:16px;height:12px;display:flex;align-items:center;justify-content:center}.scopeMenu{box-shadow:0 0 0 1px #102f2a}.scopeConfigField{height:24px;border:1px solid #d4d4d4;background:#efefef;color:#111;box-shadow:inset 1px 1px #fff;padding:0 28px 0 8px}`}</style>
   </main>;
 }
 
@@ -203,13 +202,14 @@ function ScopeConfiguration({ zoom, setZoom, onClose }: { zoom:number; setZoom:R
 
 function RunwaySelector({ state, setState, onClose }: { state:RunwayState; setState:React.Dispatch<React.SetStateAction<RunwayState>>; onClose:()=>void }) {
   const toggle=(airport:string,runway:string,field:keyof RunwaySelection)=>{const key=`${airport}-${runway}`;setState((c)=>({...c,[key]:{...c[key],[field]:!c[key]?.[field]}}));};
-  return <div className="absolute left-[390px] top-[70px] z-[95] w-[338px] border border-[#888] bg-[#cecece] font-mono text-[11px] text-[#111] shadow-[0_2px_8px_rgba(0,0,0,.45)]">
+  const columns="grid-cols-[72px_68px_68px_1fr_1fr]";
+  return <div className="absolute left-[390px] top-[70px] z-[95] w-[334px] max-w-[calc(100%-16px)] overflow-hidden border border-[#888] bg-[#cecece] font-mono text-[11px] text-[#111] shadow-[0_2px_8px_rgba(0,0,0,.45)]">
     <div className="flex h-[19px] items-center justify-between px-[4px]"><span>Runway selector dialog</span><button onClick={onClose} className="px-[4px]">×</button></div>
-    <div className="grid grid-cols-[80px_78px_74px_52px_52px] border-t border-white text-[12px]"><div className="border-r border-white px-[4px] py-[2px]">Airport</div><div className="border-r border-white px-[6px] py-[2px] text-center">Active</div><div className="border-r border-white px-[6px] py-[2px] text-center">Runway</div><div className="border-r border-white px-[4px] py-[2px] text-center">DEP</div><div className="px-[4px] py-[2px] text-center">ARR</div></div>
-    <div className="max-h-[520px] overflow-y-auto">{RUNWAYS.map(({airport,runway})=>{const key=`${airport}-${runway}`;const row=state[key]??{active:false,dep:false,arr:false};return <div key={key} className="grid h-[20px] grid-cols-[80px_78px_74px_52px_52px]"><div className="border-r border-white px-[4px] leading-[20px]">{airport}</div><RunwayCell checked={row.active} onClick={()=>toggle(airport,runway,"active")}/><div className="border-r border-white px-[20px] leading-[20px]">{runway}</div><RunwayCell checked={row.dep} onClick={()=>toggle(airport,runway,"dep")}/><RunwayCell checked={row.arr} onClick={()=>toggle(airport,runway,"arr")}/></div>})}</div>
+    <div className={`grid ${columns} border-t border-white text-[12px]`}><div className="min-w-0 border-r border-white px-[4px] py-[2px]">Airport</div><div className="min-w-0 border-r border-white px-[4px] py-[2px] text-center">Active</div><div className="min-w-0 border-r border-white px-[4px] py-[2px] text-center">Runway</div><div className="min-w-0 border-r border-white px-[2px] py-[2px] text-center">DEP</div><div className="min-w-0 px-[2px] py-[2px] text-center">ARR</div></div>
+    <div className="max-h-[520px] overflow-y-auto overflow-x-hidden">{RUNWAYS.map(({airport,runway})=>{const key=`${airport}-${runway}`;const row=state[key]??{active:false,dep:false,arr:false};return <div key={key} className={`grid h-[20px] ${columns}`}><div className="min-w-0 border-r border-white px-[4px] leading-[20px]">{airport}</div><RunwayCell checked={row.active} onClick={()=>toggle(airport,runway,"active")}/><div className="min-w-0 border-r border-white px-[14px] leading-[20px]">{runway}</div><RunwayCell checked={row.dep} onClick={()=>toggle(airport,runway,"dep")}/><RunwayCell checked={row.arr} onClick={()=>toggle(airport,runway,"arr")}/></div>})}</div>
   </div>;
 }
-function RunwayCell({checked,onClick}:{checked:boolean;onClick:()=>void}){return <button onClick={onClick} className="flex items-center justify-center border-r border-white"><span className="flex h-[16px] w-[18px] items-center justify-center bg-[#ededed]">{checked&&<PlaneIcon/>}</span></button>}
+function RunwayCell({checked,onClick}:{checked:boolean;onClick:()=>void}){return <button onClick={onClick} className="flex min-w-0 items-center justify-center border-r border-white"><span className="flex h-[16px] w-[18px] items-center justify-center bg-[#ededed]">{checked&&<PlaneIcon/>}</span></button>}
 function PlaneIcon(){return <svg width="13" height="13" viewBox="0 0 20 20"><path d="M9 1h2l1 6 6 3v2l-6-1-1 7H9l-1-7-6 1v-2l6-3z" fill="#111"/></svg>}
 
 function MenuGlyph(){return <svg width="21" height="8" viewBox="0 0 100 38" aria-hidden="true"><rect x="3" y="3" width="94" height="32" fill="none" stroke="#e2e2e2" strokeWidth="4"/><path d="M18 19h13M24.5 12.5v13M38 19h13M44.5 12.5v13M57 19h13M76 19h13M82.5 12.5v13" fill="none" stroke="#e2e2e2" strokeWidth="4" strokeLinecap="square"/></svg>}
