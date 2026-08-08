@@ -81,7 +81,7 @@ export default function MetarInteraction() {
       window.setTimeout(() => {
         syncHosts();
         syncAirports();
-      }, 80);
+      }, 120);
     };
 
     document.addEventListener("click", onScopeClick, true);
@@ -142,7 +142,7 @@ export default function MetarInteraction() {
     const style = document.createElement("style");
     style.dataset.pf24MetarInteraction = "true";
     style.textContent = `
-      [data-pf24-metar-host='true'] > div:not(:first-child) { display: none !important; }
+      [data-pf24-metar-host='true'] > div:nth-child(2):not([data-pf24-metar-overlay='true']) { display: none !important; }
       main.fixed footer form > div.ml-1.text-\\[8px\\] { visibility: hidden !important; }
     `;
     document.head.appendChild(style);
