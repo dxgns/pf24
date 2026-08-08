@@ -15,20 +15,19 @@ export default function MaintenancePage() {
         </h1>
 
         <p className="mt-6 text-lg leading-8 text-slate-300">
-          PF24 se encuentra temporalmente en mantenimiento mientras realizamos
-          mejoras y ajustes en la plataforma.
+          El servicio se encuentra temporalmente no disponible.
+          Volverá a estar operativo una vez finalizado el mantenimiento.
         </p>
 
         <div className="mt-8 rounded-2xl border border-amber-400/20 bg-amber-500/5 p-4">
           <p className="text-sm text-amber-200">
-            El acceso general permanecerá cerrado hasta finalizar los trabajos.
-            El Scope continúa disponible para pruebas internas autorizadas.
+            Gracias por tu comprensión. Intenta nuevamente más tarde.
           </p>
         </div>
 
         <div className="mt-10 border-t border-white/10 pt-6">
           <p className="mono text-xs text-slate-500">
-            STATUS: MAINTENANCE_MODE
+            STATUS: MAINTENANCE
           </p>
         </div>
       </section>
