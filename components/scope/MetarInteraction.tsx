@@ -142,8 +142,9 @@ export default function MetarInteraction() {
     const style = document.createElement("style");
     style.dataset.pf24MetarInteraction = "true";
     style.textContent = `
+      [data-pf24-metar-host='true'] { width: 190px !important; }
       [data-pf24-metar-host='true'] > div:nth-child(2):not([data-pf24-metar-overlay='true']) { display: none !important; }
-      main.fixed footer form > div.ml-1.text-\\[8px\\] { visibility: hidden !important; }
+      main.fixed footer form > div.ml-1.text-\\[8px\\]:not([data-pf24-full-metar='true']) { display: none !important; }
     `;
     document.head.appendChild(style);
     return () => style.remove();
@@ -158,7 +159,7 @@ export default function MetarInteraction() {
   }, [metarHost]);
 
   const upper = metarHost ? createPortal(
-    <div className="max-h-[150px] overflow-y-auto px-1 py-1 text-[9px] leading-[13px] text-[#00efff]" data-pf24-metar-overlay="true">
+    <div className="max-h-[96px] overflow-y-auto px-1 py-1 text-[9px] leading-[13px] text-[#00efff]" data-pf24-metar-overlay="true">
       {airports.length === 0 ? (
         <div className="text-[#9ca3a3]">No active airports</div>
       ) : airports.map((station) => {
@@ -176,7 +177,7 @@ export default function MetarInteraction() {
             className="block w-full whitespace-nowrap text-left hover:bg-[#0b302d]"
             onClick={(event) => {
               event.stopPropagation();
-              setSelectedRaw(entry?.raw ?? null);
+              if (entry?.raw) setSelectedRaw(entry.raw);
             }}
           >
             {label}
