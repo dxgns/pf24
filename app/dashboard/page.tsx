@@ -16,11 +16,12 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
+  const canAccessATC = session.user?.permissions?.canAccessATC;
+
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
       <section className="section-container max-w-7xl">
         <div className="panel rounded-3xl p-8">
-
           <div className="mb-6 flex items-center justify-between">
             <a
               href="/"
@@ -29,26 +30,19 @@ export default async function DashboardPage() {
               ← Inicio
             </a>
 
-            <div className="mono text-sm tracking-[0.25em] text-slate-400">
-              PF24
-            </div>
+            <div className="mono text-sm tracking-[0.25em] text-slate-400">PF24</div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-6">
             <div className="flex items-center gap-4">
               <UserAvatar image={session.user?.image} name={session.user?.name} />
-
               <div>
                 <h1 className="mt-2 text-4xl font-extrabold">
                   Bienvenido, {session.user?.name ?? "usuario"}.
                 </h1>
-
-                <p className="mt-2 text-slate-400">
-                  Dashboard
-                </p>
+                <p className="mt-2 text-slate-400">Dashboard</p>
               </div>
             </div>
-
             <LogoutButton />
           </div>
         </div>
@@ -59,7 +53,7 @@ export default async function DashboardPage() {
           <InfoCard label="Sistema" value="ONLINE" accent="green" />
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-3">
+        <div className="mt-8 grid gap-6 lg:grid-cols-2 xl:grid-cols-4">
           <PortalCard
             href="/piloto"
             eyebrow="Pilot Operations"
@@ -74,6 +68,15 @@ export default async function DashboardPage() {
             text="Sector List, control de tráfico, posiciones activas, transponder y estados en tiempo real."
           />
 
+          {canAccessATC && (
+            <PortalCard
+              href="/scope"
+              eyebrow="PF24 Scope Beta"
+              title="Scope ATC"
+              text="Radar, flight data, coordinación, ventanas operacionales y modo de simulación."
+            />
+          )}
+
           <PortalCard
             href="/admin"
             eyebrow="Administration"
@@ -81,7 +84,6 @@ export default async function DashboardPage() {
             text="Configuración, roles, aeropuertos, posiciones ATC, auditoría y mantenimiento del sistema."
           />
         </div>
-
       </section>
     </main>
   );
@@ -99,11 +101,7 @@ function InfoCard({
   return (
     <div className="panel rounded-2xl p-5">
       <p className="mono text-xs text-sky-300/70">{label}</p>
-      <p
-        className={`mono mt-2 text-xl font-bold ${
-          accent === "green" ? "text-green-300" : "text-white"
-        }`}
-      >
+      <p className={`mono mt-2 text-xl font-bold ${accent === "green" ? "text-green-300" : "text-white"}`}>
         {value}
       </p>
     </div>
@@ -126,41 +124,10 @@ function PortalCard({
       href={href}
       className="panel group rounded-3xl p-8 transition hover:-translate-y-1 hover:border-sky-400/60"
     >
-      <p className="mono text-xs uppercase tracking-[0.25em] text-sky-300/70">
-        {eyebrow}
-      </p>
-
-      <h2 className="mt-4 text-2xl font-extrabold text-white group-hover:text-sky-300">
-        {title}
-      </h2>
-
-      <p className="mt-4 leading-7 text-slate-400">
-        {text}
-      </p>
-
-      <p className="mt-6 mono text-sm text-sky-300">
-        Abrir módulo →
-      </p>
-    </a>
-  );
-}
-
-function StatusLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-[#020617] p-4">
-      <p className="text-sm text-slate-400">{label}</p>
-      <p className="mono mt-1 font-bold text-green-300">{value}</p>
-    </div>
-  );
-}
-
-function QuickLink({ href, label }: { href: string; label: string }) {
-  return (
-    <a
-      href={href}
-      className="rounded-xl border border-white/10 bg-[#020617] px-4 py-3 font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300"
-    >
-      {label}
+      <p className="mono text-xs uppercase tracking-[0.25em] text-sky-300/70">{eyebrow}</p>
+      <h2 className="mt-4 text-2xl font-extrabold text-white group-hover:text-sky-300">{title}</h2>
+      <p className="mt-4 leading-7 text-slate-400">{text}</p>
+      <p className="mt-6 mono text-sm text-sky-300">Abrir módulo →</p>
     </a>
   );
 }
