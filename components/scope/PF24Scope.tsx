@@ -38,12 +38,14 @@ const FACILITY_LABELS: Array<{ value: FacilityCode; label: string }> = [
 const CALLSIGN_OPTIONS = Object.keys(ATC_FREQUENCIES).sort();
 const PDC_AIRPORTS = new Set(["MDPC", "LCLK", "GCLP", "LEMH", "EGKK"]);
 const PROFILE_STORAGE_KEY = "pf24_scope_profile_v1";
+const SCOPE_SETTINGS_STORAGE_KEY = "pf24_scope_settings_v1";
 const EMPTY_FORM: ConnectForm = { callsign: "", facility: "", rating: "", server: "AUTOMATIC", password: "", discordName: "", robloxName: "", info4: "" };
 const DEFAULT_WINDOWS: Record<WindowKey, WindowState> = {
   sector: { x: 8, y: 50, open: true, collapsed: false }, taxi: { x: 8, y: 104, open: true, collapsed: false },
   timer: { x: 700, y: 70, open: true, collapsed: false }, holds: { x: 825, y: 58, open: true, collapsed: false },
   freq: { x: 1120, y: 48, open: true, collapsed: false }, metar: { x: 1265, y: 48, open: true, collapsed: false },
 };
+const WINDOW_WIDTHS: Record<WindowKey, number> = { sector: 462, taxi: 190, timer: 110, holds: 144, freq: 134, metar: 185 };
 const SIM_SEED: SimAircraft[] = [{ id: "sim-1", callsign: "LAN337", aircraftType: "A320", altitude: 5000, targetAltitude: 5000, heading: 180, targetHeading: 180, groundSpeed: 180, x: 73, y: 39, squawk: "9999", departure: "MDPC", arrival: "MDST" }];
 
 function getAirportFromCallsign(callsign: string) { return callsign.trim().toUpperCase().split("_")[0] ?? ""; }
@@ -70,6 +72,8 @@ export default function PF24Scope({ initialPlans }: Props) {
   const [showMenu, setShowMenu] = useState(false);
   const [showScopeConfig, setShowScopeConfig] = useState(false);
   const [scopeZoom, setScopeZoom] = useState(100);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [viewport, setViewport] = useState({ width: 1920, height: 1080 });
   const [toolStates, setToolStates] = useState([false, false, false, false, false, false]);
   const [connectForm, setConnectForm] = useState<ConnectForm>(EMPTY_FORM);
   const [windows, setWindows] = useState<Record<WindowKey, WindowState>>(DEFAULT_WINDOWS);
@@ -80,8 +84,17 @@ export default function PF24Scope({ initialPlans }: Props) {
   const facilityShort = position.split("_").at(-1) ?? "";
   const activePlan = useMemo(() => plans.find((p) => p.callsign?.toUpperCase() === "LAN337") ?? plans[0] ?? null, [plans]);
   const taxiPlans = useMemo(() => plans.filter((p) => ["STUP", "PUSH", "TAXI_DEP", "TAXI_IN"].includes(p.sector_status)), [plans]);
+  const scopeScale = scopeZoom / 100;
+  const logicalWidth = viewport.width / scopeScale;
+  const logicalHeight = viewport.height / scopeScale;
 
   useEffect(() => { const t = window.setInterval(() => setNow(new Date()), 1000); return () => window.clearInterval(t); }, []);
+  useEffect(() => {
+    const updateViewport = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
   useEffect(() => {
     const stored = localStorage.getItem("pf24_scope_window_layout_v3");
     if (stored) { try { setWindows({ ...DEFAULT_WINDOWS, ...JSON.parse(stored) }); } catch {} }
@@ -90,21 +103,46 @@ export default function PF24Scope({ initialPlans }: Props) {
       const p = JSON.parse(storedProfile) as Partial<StoredProfile>;
       setConnectForm((c) => ({ ...c, password: typeof p.password === "string" ? p.password : "", discordName: typeof p.discordName === "string" ? p.discordName : "", robloxName: typeof p.robloxName === "string" ? p.robloxName : "" }));
     } catch {} }
+    const storedSettings = localStorage.getItem(SCOPE_SETTINGS_STORAGE_KEY);
+    if (storedSettings) { try {
+      const settings = JSON.parse(storedSettings) as { zoom?: number };
+      if (typeof settings.zoom === "number" && Number.isFinite(settings.zoom)) setScopeZoom(Math.max(25, Math.min(175, Math.round(settings.zoom))));
+    } catch {} }
+    setSettingsLoaded(true);
   }, []);
   useEffect(() => { localStorage.setItem("pf24_scope_window_layout_v3", JSON.stringify(windows)); }, [windows]);
   useEffect(() => {
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify({ password: connectForm.password, discordName: connectForm.discordName, robloxName: connectForm.robloxName }));
   }, [connectForm.password, connectForm.discordName, connectForm.robloxName]);
   useEffect(() => {
+    if (!settingsLoaded) return;
+    localStorage.setItem(SCOPE_SETTINGS_STORAGE_KEY, JSON.stringify({ zoom: scopeZoom }));
+  }, [scopeZoom, settingsLoaded]);
+  useEffect(() => {
+    setWindows((current) => {
+      const next = { ...current };
+      (Object.keys(current) as WindowKey[]).forEach((key) => {
+        const maxX = Math.max(0, logicalWidth - WINDOW_WIDTHS[key] - 4);
+        const maxY = Math.max(44, logicalHeight - 170);
+        next[key] = { ...current[key], x: Math.min(Math.max(0, current[key].x), maxX), y: Math.min(Math.max(44, current[key].y), maxY) };
+      });
+      return next;
+    });
+  }, [logicalWidth, logicalHeight]);
+  useEffect(() => {
     const move = (e: MouseEvent) => {
       if (!dragRef.current) return;
       const { key, dx, dy } = dragRef.current;
-      setWindows((cur) => ({ ...cur, [key]: { ...cur[key], x: Math.max(0, e.clientX - dx), y: Math.max(44, e.clientY - dy) } }));
+      const mouseX = e.clientX / scopeScale;
+      const mouseY = e.clientY / scopeScale;
+      const maxX = Math.max(0, logicalWidth - WINDOW_WIDTHS[key] - 4);
+      const maxY = Math.max(44, logicalHeight - 170);
+      setWindows((cur) => ({ ...cur, [key]: { ...cur[key], x: Math.min(maxX, Math.max(0, mouseX - dx)), y: Math.min(maxY, Math.max(44, mouseY - dy)) } }));
     };
     const up = () => { dragRef.current = null; };
     window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
     return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
-  }, []);
+  }, [scopeScale, logicalWidth, logicalHeight]);
   useEffect(() => {
     const load = async () => { const { data } = await supabase.from("atc_sessions").select("*").eq("is_active", true); setSessions((data ?? []) as ATCSession[]); };
     load(); const ch = supabase.channel("scope-atc-sessions-ui").on("postgres_changes", { event: "*", schema: "public", table: "atc_sessions" }, load).subscribe();
@@ -136,7 +174,10 @@ export default function PF24Scope({ initialPlans }: Props) {
     else if (cmd === ".metar") { const s = upper[0] || "MDST"; setMetarStation(s); loadMetar(s); }
     else if (cmd === ".clear") setConsoleLines([]); setCommand("");
   }
-  function startDrag(key: WindowKey, e: React.MouseEvent) { const w = windows[key]; dragRef.current = { key, dx: e.clientX - w.x, dy: e.clientY - w.y }; }
+  function startDrag(key: WindowKey, e: React.MouseEvent) {
+    const w = windows[key];
+    dragRef.current = { key, dx: e.clientX / scopeScale - w.x, dy: e.clientY / scopeScale - w.y };
+  }
   function closeWindow(key: WindowKey) { setWindows((c) => ({ ...c, [key]: { ...c[key], open: false } })); }
   function collapseWindow(key: WindowKey) { setWindows((c) => ({ ...c, [key]: { ...c[key], collapsed: !c[key].collapsed } })); }
   function resetWindow(key: WindowKey) { setWindows((c) => ({ ...c, [key]: { ...DEFAULT_WINDOWS[key], open: true } })); }
@@ -149,7 +190,10 @@ export default function PF24Scope({ initialPlans }: Props) {
   function toggleTool(index: number) { setToolStates((c) => c.map((v, i) => i === index ? !v : v)); }
 
   const stripTime = now.toISOString().slice(11, 19);
-  return <main className="fixed inset-0 overflow-hidden bg-[#151515] font-mono text-[12px] text-[#d8d8d8] select-none">
+  return <main
+    className="fixed left-0 top-0 overflow-hidden bg-[#151515] font-mono text-[12px] text-[#d8d8d8] select-none"
+    style={{ width: `${100 / scopeScale}%`, height: `${100 / scopeScale}%`, transform: `scale(${scopeScale})`, transformOrigin: "top left" }}
+  >
     <header className="absolute inset-x-0 top-0 z-50 h-[44px] border-b border-[#202426]">
       <div className="flex h-[21px] items-stretch bg-[#064a40] text-[#e2e2e2]">
         <button onClick={() => setShowMenu((v) => !v)} className="scopeTopCell w-[26px] text-[7px] leading-[7px]"><span className="flex h-full flex-col items-center justify-center"><MenuGlyph/><span className="mt-[1px]">MENU</span></span></button>
@@ -230,7 +274,7 @@ function StaticRow({label,value}:{label:string;value:string}){return <div classN
 function SelectRow({label,value,onChange}:{label:string;value:string;onChange:(v:string)=>void}){return <div className="mb-1 grid grid-cols-[72px_1fr] items-center gap-1"><span>{label}</span><select value={value} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none"><option value=""></option>{FACILITY_LABELS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>}
 
 function ScopeConfiguration({ zoom, setZoom, onClose }: { zoom:number; setZoom:React.Dispatch<React.SetStateAction<number>>; onClose:()=>void }) {
-  const updateZoom=(value:number)=>setZoom(Math.max(25,Math.min(400,Math.round(value))));
+  const updateZoom=(value:number)=>setZoom(Math.max(25,Math.min(175,Math.round(value))));
   return <div className="absolute left-1/2 top-1/2 z-[90] h-[330px] w-[620px] -translate-x-1/2 -translate-y-1/2 border border-[#888] bg-[#cecece] font-mono text-[#111] shadow-[0_2px_10px_rgba(0,0,0,.5)]">
     <div className="flex h-[23px] items-stretch border-b border-white bg-[#cecece] text-[14px]">
       <div className="flex items-center border-r border-white px-[12px]">General</div>
