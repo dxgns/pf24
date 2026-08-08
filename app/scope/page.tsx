@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { supabase } from "@/lib/supabase";
 import PF24Scope from "@/components/scope/PF24Scope";
+import ScopeLayoutGuards from "@/components/scope/ScopeLayoutGuards";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = {
@@ -32,9 +33,12 @@ export default async function ScopePage() {
   }
 
   return (
-    <PF24Scope
-      initialPlans={(data ?? []) as ScopeFlightPlan[]}
-      controllerName={session.user?.name ?? "ATC"}
-    />
+    <>
+      <PF24Scope
+        initialPlans={(data ?? []) as ScopeFlightPlan[]}
+        controllerName={session.user?.name ?? "ATC"}
+      />
+      <ScopeLayoutGuards />
+    </>
   );
 }
