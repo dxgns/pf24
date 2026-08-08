@@ -1,24 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ATC_FREQUENCIES } from "@/lib/atcFrequencies";
 import type { ScopeFlightPlan, SimAircraft } from "@/lib/scope/types";
 
-type Props = {
-  initialPlans: ScopeFlightPlan[];
-  controllerName: string;
-};
-
-type ATCSession = {
-  id: string;
-  controller_name: string;
-  position: string;
-  is_active: boolean;
-};
-
+type Props = { initialPlans: ScopeFlightPlan[]; controllerName: string };
+type ATCSession = { id: string; controller_name: string; position: string; is_active: boolean };
 type FacilityCode = "DEL" | "GND" | "TWR" | "APP" | "CTR";
-
+type WindowKey = "sector" | "taxi" | "timer" | "holds" | "freq" | "metar";
+type WindowState = { x: number; y: number; open: boolean; collapsed: boolean };
 type ConnectForm = {
   callsign: string;
   facility: FacilityCode | "";
@@ -31,19 +22,9 @@ type ConnectForm = {
 };
 
 const AIRPORT_NAMES: Record<string, string> = {
-  LCLK: "Larnaca",
-  LCPH: "Paphos",
-  LCRA: "Akrotiri",
-  MDPC: "Punta Cana",
-  MDST: "Santiago",
-  MDAB: "Arroyo Barril",
-  MDCR: "Cabo Rojo",
-  MTCA: "Les Cayes",
-  GCLP: "Gran Canaria",
-  LEMH: "Menorca",
-  EGKK: "Gatwick",
-  EGHI: "Southampton",
-  EFKT: "Kittilä",
+  LCLK: "Larnaca", LCPH: "Paphos", LCRA: "Akrotiri", MDPC: "Punta Cana", MDST: "Santiago",
+  MDAB: "Arroyo Barril", MDCR: "Cabo Rojo", MTCA: "Les Cayes", GCLP: "Gran Canaria",
+  LEMH: "Menorca", EGKK: "Gatwick", EGHI: "Southampton", EFKT: "Kittilä",
 };
 
 const FACILITY_INFO: Record<FacilityCode, string> = {
@@ -55,52 +36,28 @@ const FACILITY_INFO: Record<FacilityCode, string> = {
 };
 
 const FACILITY_LABELS: Array<{ value: FacilityCode; label: string }> = [
-  { value: "DEL", label: "Delivery" },
-  { value: "GND", label: "Ground" },
-  { value: "TWR", label: "Tower" },
-  { value: "APP", label: "Approach" },
-  { value: "CTR", label: "Center" },
+  { value: "DEL", label: "Delivery" }, { value: "GND", label: "Ground" }, { value: "TWR", label: "Tower" },
+  { value: "APP", label: "Approach" }, { value: "CTR", label: "Center" },
 ];
 
 const PDC_AIRPORTS = new Set(["MDPC", "LCLK", "GCLP", "LEMH", "EGKK"]);
+const EMPTY_FORM: ConnectForm = { callsign: "", facility: "", rating: "", server: "", password: "", discordName: "", robloxName: "", info4: "" };
 
-const SIM_SEED: SimAircraft[] = [
-  {
-    id: "sim-1",
-    callsign: "LAN337",
-    aircraftType: "A320",
-    altitude: 5000,
-    targetAltitude: 5000,
-    heading: 180,
-    targetHeading: 180,
-    groundSpeed: 180,
-    x: 73,
-    y: 39,
-    squawk: "9999",
-    departure: "MDPC",
-    arrival: "MDST",
-  },
-];
-
-const EMPTY_FORM: ConnectForm = {
-  callsign: "",
-  facility: "",
-  rating: "",
-  server: "",
-  password: "",
-  discordName: "",
-  robloxName: "",
-  info4: "",
+const DEFAULT_WINDOWS: Record<WindowKey, WindowState> = {
+  sector: { x: 8, y: 58, open: true, collapsed: false },
+  taxi: { x: 8, y: 132, open: true, collapsed: false },
+  timer: { x: 760, y: 78, open: true, collapsed: false },
+  holds: { x: 900, y: 68, open: true, collapsed: false },
+  freq: { x: 1398, y: 64, open: true, collapsed: false },
+  metar: { x: 1530, y: 64, open: true, collapsed: false },
 };
 
-function getAirportFromCallsign(callsign: string) {
-  return callsign.trim().toUpperCase().split("_")[0] ?? "";
-}
+const SIM_SEED: SimAircraft[] = [{ id: "sim-1", callsign: "LAN337", aircraftType: "A320", altitude: 5000, targetAltitude: 5000, heading: 180, targetHeading: 180, groundSpeed: 180, x: 73, y: 39, squawk: "9999", departure: "MDPC", arrival: "MDST" }];
 
+function getAirportFromCallsign(callsign: string) { return callsign.trim().toUpperCase().split("_")[0] ?? ""; }
 function makePosition(callsign: string, facility: FacilityCode | "") {
   const airport = getAirportFromCallsign(callsign);
-  if (!airport || !facility) return "";
-  return `${airport}_${facility}`;
+  return airport && facility ? `${airport}_${facility}` : "";
 }
 
 export default function PF24Scope({ initialPlans }: Props) {
@@ -117,31 +74,39 @@ export default function PF24Scope({ initialPlans }: Props) {
   const [metarStation, setMetarStation] = useState("MDST");
   const [metarText, setMetarText] = useState("MDST 12003KT 01015");
   const [showChat, setShowChat] = useState(true);
-  const [showClock, setShowClock] = useState(true);
-  const [showHolds, setShowHolds] = useState(true);
-  const [showMetar, setShowMetar] = useState(true);
-  const [showAtis, setShowAtis] = useState(true);
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [toolStates, setToolStates] = useState([false, false, false, false, false]);
   const [connectForm, setConnectForm] = useState<ConnectForm>(EMPTY_FORM);
+  const [windows, setWindows] = useState<Record<WindowKey, WindowState>>(DEFAULT_WINDOWS);
+  const dragRef = useRef<{ key: WindowKey; dx: number; dy: number } | null>(null);
 
   const frequency = position ? ATC_FREQUENCIES[position] ?? "---.---" : "---.---";
   const selected = aircraft.find((item) => item.id === selectedId) ?? null;
   const facilityShort = position.split("_").at(-1) ?? "";
-
-  const activePlan = useMemo(
-    () => plans.find((p) => p.callsign?.toUpperCase() === "LAN337") ?? plans[0] ?? null,
-    [plans]
-  );
-
-  const taxiPlans = useMemo(
-    () => plans.filter((p) => ["STUP", "PUSH", "TAXI_DEP", "TAXI_IN"].includes(p.sector_status)),
-    [plans]
-  );
+  const activePlan = useMemo(() => plans.find((p) => p.callsign?.toUpperCase() === "LAN337") ?? plans[0] ?? null, [plans]);
+  const taxiPlans = useMemo(() => plans.filter((p) => ["STUP", "PUSH", "TAXI_DEP", "TAXI_IN"].includes(p.sector_status)), [plans]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("pf24_scope_window_layout_v2");
+    if (stored) { try { setWindows({ ...DEFAULT_WINDOWS, ...JSON.parse(stored) }); } catch {} }
+  }, []);
+  useEffect(() => { localStorage.setItem("pf24_scope_window_layout_v2", JSON.stringify(windows)); }, [windows]);
+
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      if (!dragRef.current) return;
+      const { key, dx, dy } = dragRef.current;
+      setWindows((cur) => ({ ...cur, [key]: { ...cur[key], x: Math.max(0, e.clientX - dx), y: Math.max(45, e.clientY - dy) } }));
+    };
+    const up = () => { dragRef.current = null; };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
   }, []);
 
   useEffect(() => {
@@ -150,270 +115,176 @@ export default function PF24Scope({ initialPlans }: Props) {
       setSessions((data ?? []) as ATCSession[]);
     };
     loadSessions();
-    const channel = supabase
-      .channel("scope-atc-sessions-ui")
-      .on("postgres_changes", { event: "*", schema: "public", table: "atc_sessions" }, loadSessions)
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    const channel = supabase.channel("scope-atc-sessions-ui").on("postgres_changes", { event: "*", schema: "public", table: "atc_sessions" }, loadSessions).subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   useEffect(() => {
-    const channel = supabase
-      .channel("scope-flight-plans-ui")
-      .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, (payload) => {
-        const next = payload.new as ScopeFlightPlan;
-        const old = payload.old as ScopeFlightPlan;
-        if (payload.eventType === "INSERT" && next.status !== "FINISHED") setPlans((current) => [next, ...current]);
-        if (payload.eventType === "UPDATE") {
-          setPlans((current) => {
-            if (next.status === "FINISHED") return current.filter((p) => p.id !== next.id);
-            return current.some((p) => p.id === next.id)
-              ? current.map((p) => (p.id === next.id ? next : p))
-              : [next, ...current];
-          });
-        }
-        if (payload.eventType === "DELETE") setPlans((current) => current.filter((p) => p.id !== old.id));
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    const channel = supabase.channel("scope-flight-plans-ui").on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, (payload) => {
+      const next = payload.new as ScopeFlightPlan; const old = payload.old as ScopeFlightPlan;
+      if (payload.eventType === "INSERT" && next.status !== "FINISHED") setPlans((c) => [next, ...c]);
+      if (payload.eventType === "UPDATE") setPlans((c) => next.status === "FINISHED" ? c.filter((p) => p.id !== next.id) : c.some((p) => p.id === next.id) ? c.map((p) => p.id === next.id ? next : p) : [next, ...c]);
+      if (payload.eventType === "DELETE") setPlans((c) => c.filter((p) => p.id !== old.id));
+    }).subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   useEffect(() => {
     if (!simEnabled) return;
-    const timer = window.setInterval(() => {
-      setAircraft((current) =>
-        current.map((a) => {
-          const headingRad = (a.heading * Math.PI) / 180;
-          let x = a.x + Math.sin(headingRad) * 0.018;
-          let y = a.y - Math.cos(headingRad) * 0.018;
-          if (x > 95) x = 5;
-          if (x < 5) x = 95;
-          if (y > 88) y = 8;
-          if (y < 8) y = 88;
-          return { ...a, x, y };
-        })
-      );
-    }, 1000);
+    const timer = window.setInterval(() => setAircraft((current) => current.map((a) => {
+      const r = (a.heading * Math.PI) / 180; let x = a.x + Math.sin(r) * 0.018; let y = a.y - Math.cos(r) * 0.018;
+      if (x > 95) x = 5; if (x < 5) x = 95; if (y > 88) y = 8; if (y < 8) y = 88; return { ...a, x, y };
+    })), 1000);
     return () => window.clearInterval(timer);
   }, [simEnabled]);
 
   async function loadMetar(station: string) {
-    try {
-      const response = await fetch(`/api/scope/metar?station=${encodeURIComponent(station)}`);
-      const data = (await response.json()) as { raw?: string | null };
-      if (data.raw) setMetarText(data.raw);
-    } catch {}
-  }
-
-  function toggleTool(index: number) {
-    setToolStates((current) => current.map((value, i) => (i === index ? !value : value)));
-  }
-
-  function log(line: string) {
-    setConsoleLines((current) => [...current.slice(-5), line]);
+    try { const r = await fetch(`/api/scope/metar?station=${encodeURIComponent(station)}`); const d = await r.json() as { raw?: string | null }; if (d.raw) setMetarText(d.raw); } catch {}
   }
 
   function executeCommand(raw: string) {
-    const input = raw.trim();
-    if (!input) return;
-    log(`118.600: ${input}`);
-    const [cmd, ...args] = input.split(/\s+/);
-    const upper = args.map((item) => item.toUpperCase());
-    if (cmd === ".help") log("118.600: .fpl .metar .sim .hdg .alt .clear");
-    else if (cmd === ".sim") {
-      const enabled = upper[0] !== "OFF";
-      setSimEnabled(enabled);
-      log(`118.600: SIM ${enabled ? "ON" : "OFF"}`);
-    } else if (cmd === ".fpl") {
-      const plan = plans.find((p) => p.callsign.toUpperCase() === upper[0]);
-      log(plan ? `118.600: ${plan.callsign} ${plan.aircraft_type} ${plan.departure_icao}>${plan.arrival_icao} FL${plan.flight_level}` : "118.600: FPL no encontrado");
-    } else if (cmd === ".metar") {
-      const station = upper[0] || "MDST";
-      setMetarStation(station);
-      loadMetar(station);
-      setShowMetar(true);
-    } else if (cmd === ".hdg") {
-      const value = Number(upper[1]);
-      if (upper[0] && !Number.isNaN(value)) setAircraft((current) => current.map((a) => a.callsign.toUpperCase() === upper[0] ? { ...a, heading: value, targetHeading: value } : a));
-    } else if (cmd === ".alt") {
-      const value = Number(upper[1]);
-      if (upper[0] && !Number.isNaN(value)) setAircraft((current) => current.map((a) => a.callsign.toUpperCase() === upper[0] ? { ...a, altitude: value, targetAltitude: value } : a));
-    } else if (cmd === ".clear") setConsoleLines([]);
+    const input = raw.trim(); if (!input) return;
+    setConsoleLines((c) => [...c.slice(-5), `118.600: ${input}`]);
+    const [cmd, ...args] = input.split(/\s+/); const upper = args.map((a) => a.toUpperCase());
+    if (cmd === ".help") setConsoleLines((c) => [...c.slice(-5), "118.600: .fpl .metar .sim .hdg .alt .clear"]);
+    else if (cmd === ".sim") setSimEnabled(upper[0] !== "OFF");
+    else if (cmd === ".metar") { const s = upper[0] || "MDST"; setMetarStation(s); loadMetar(s); }
+    else if (cmd === ".clear") setConsoleLines([]);
     setCommand("");
   }
 
-  function openConnectDialog() {
-    setConnectForm(EMPTY_FORM);
-    setShowConnectDialog(true);
+  function startDrag(key: WindowKey, e: React.MouseEvent) {
+    const w = windows[key]; dragRef.current = { key, dx: e.clientX - w.x, dy: e.clientY - w.y };
   }
+  function closeWindow(key: WindowKey) { setWindows((c) => ({ ...c, [key]: { ...c[key], open: false } })); }
+  function collapseWindow(key: WindowKey) { setWindows((c) => ({ ...c, [key]: { ...c[key], collapsed: !c[key].collapsed } })); }
+  function resetWindow(key: WindowKey) { setWindows((c) => ({ ...c, [key]: { ...DEFAULT_WINDOWS[key], open: true } })); }
 
+  function openConnectDialog() { setConnectForm(EMPTY_FORM); setShowConnectDialog(true); }
   function confirmConnect() {
-    const nextPosition = makePosition(connectForm.callsign, connectForm.facility);
-    if (!nextPosition) return;
-    setPosition(nextPosition);
-    setConnected(true);
-    setShowConnectDialog(false);
+    const next = makePosition(connectForm.callsign, connectForm.facility); if (!next) return;
+    setPosition(next); setConnected(true); setShowConnectDialog(false);
   }
+  function disconnect() { setConnected(false); setPosition(""); setShowConnectDialog(false); setConnectForm(EMPTY_FORM); }
 
-  function disconnect() {
-    setConnected(false);
-    setPosition("");
-    setShowConnectDialog(false);
-    setConnectForm(EMPTY_FORM);
-  }
-
-  const utc = now.toISOString().slice(11, 19);
-  const stripTime = utc.slice(0, 8);
+  const stripTime = now.toISOString().slice(11, 19);
 
   return (
-    <main className="fixed inset-0 overflow-hidden bg-[#151515] font-mono text-[12px] text-[#b8c8c4] select-none">
-      <header className="absolute inset-x-0 top-0 z-50 h-[44px] border-b border-[#2f3437]">
-        <div className="flex h-[21px] items-stretch bg-[#06443c] text-[#d9e7e2]">
-          <button className="topCell w-[28px] text-[8px]">MENU</button>
-          <button onClick={openConnectDialog} className="topCell w-[48px] text-[10px]">CONNECT</button>
-          <div className="topCell w-[133px] justify-start px-2 text-[10px]">{position ? `${position}  [${facilityShort}]` : ""}</div>
-          <div className="topCell w-[78px] px-2 text-[10px]">{connected ? frequency : ""}</div>
-          <button className="topCell w-[38px] leading-[8px] text-[7px]">OPEN<br />SCT</button>
-          <div className="topCell w-[62px] px-2 text-[10px]">{stripTime}</div>
-          <button className="topCell w-[40px] leading-[8px] text-[7px]">QUICK<br />SET</button>
-          <button onClick={() => toggleTool(0)} className={`topCell w-[38px] ${toolStates[0] ? "bg-[#0a5b50]" : ""}`}><ToolbarGlyph index={0} active={toolStates[0]} /></button>
-          <button onClick={() => toggleTool(1)} className={`topCell w-[40px] ${toolStates[1] ? "bg-[#0a5b50]" : ""}`}><ToolbarGlyph index={1} active={toolStates[1]} /></button>
-          <button onClick={() => toggleTool(2)} className={`topCell w-[58px] ${toolStates[2] ? "bg-[#0a5b50]" : ""}`}><ToolbarGlyph index={2} active={toolStates[2]} /></button>
-          <button onClick={() => toggleTool(3)} className={`topCell w-[48px] ${toolStates[3] ? "bg-[#0a5b50]" : ""}`}><ToolbarGlyph index={3} active={toolStates[3]} /></button>
-          <button onClick={() => toggleTool(4)} className={`topCell w-[72px] ${toolStates[4] ? "bg-[#0a5b50]" : ""}`}><ToolbarGlyph index={4} active={toolStates[4]} /></button>
+    <main className="fixed inset-0 overflow-hidden bg-[#151515] font-mono text-[#d8d8d8] select-none">
+      <header className="absolute inset-x-0 top-0 z-50 h-[99px] border-b border-[#202426]">
+        <div className="flex h-[47px] items-stretch bg-[#064a40] text-[#e0e0e0]">
+          <button className="topCell w-[50px] text-[12px] leading-[13px]"><span><span className="block border border-[#cde5df] px-[3px] text-[8px] leading-[8px]">+ - + -</span>MENU</span></button>
+          <button onClick={openConnectDialog} className="topCell w-[95px] text-[20px]">CONNECT</button>
+          <div className="topCell w-[280px] justify-start px-3 text-[20px]">{position ? `${position}  [${facilityShort}]` : ""}</div>
+          <div className="topCell w-[122px] px-3 text-[20px]">{connected ? frequency : ""}</div>
+          <div className="topGap w-[49px]" />
+          <button className="topCell w-[52px] text-[10px] leading-[13px]">OPEN<br />SCT</button>
+          <div className="topCell w-[118px] px-2 text-[22px]">{stripTime}</div>
+          <div className="topGap w-[48px]" />
+          <button className="topCell w-[54px] text-[10px] leading-[13px]">QUICK<br />SET</button>
+          <button onClick={() => setToolStates((c) => c.map((v,i) => i===0?!v:v))} className={`topCell w-[48px] ${toolStates[0] ? "bg-[#0a5b50]" : ""}`}><ToolbarGlyph index={0} active={toolStates[0]} /></button>
+          <div className="topGap w-[49px]" />
+          <button onClick={() => setToolStates((c) => c.map((v,i) => i===1?!v:v))} className={`topCell w-[50px] ${toolStates[1] ? "bg-[#0a5b50]" : ""}`}><ToolbarGlyph index={1} active={toolStates[1]} /></button>
+          <button onClick={() => setToolStates((c) => c.map((v,i) => i===2?!v:v))} className={`topCell w-[52px] ${toolStates[2] ? "bg-[#0a5b50]" : ""}`}><ToolbarGlyph index={2} active={toolStates[2]} /></button>
+          <button onClick={() => setToolStates((c) => c.map((v,i) => i===3?!v:v))} className={`topCell w-[116px] ${toolStates[3] ? "bg-[#0a5b50]" : ""}`}><ToolbarGlyph index={3} active={toolStates[3]} /></button>
+          <div className="topGap w-[54px]" />
+          <button onClick={() => setToolStates((c) => c.map((v,i) => i===4?!v:v))} className={`topCell w-[96px] ${toolStates[4] ? "bg-[#0a5b50]" : ""}`}><ToolbarGlyph index={4} active={toolStates[4]} /></button>
           <div className="flex-1" />
-          <button className="topCell w-[28px] text-[17px]">←</button>
         </div>
-        <div className="flex h-[23px] items-center bg-[#555c61] px-3 text-[10px] text-[#dedede]">
-          <span className="mr-4">{stripTime}</span>
-          <button onClick={() => setShowChat((v) => !v)} className="mr-4 hover:text-white">CHATBOX</button>
-          <button onClick={() => setShowClock((v) => !v)} className="mr-4 hover:text-white">CLOCK</button>
-          <button onClick={() => setShowHolds((v) => !v)} className="mr-4 hover:text-white">HOLDS</button>
-          <button onClick={() => setShowMetar((v) => !v)} className="mr-4 hover:text-white">METAR</button>
-          <button onClick={() => setShowAtis((v) => !v)} className="hover:text-white">ATIS</button>
+        <div className="flex h-[52px] items-start bg-[#555c61] px-[53px] pt-[8px] text-[19px] text-[#dedede]">
+          <span className="mr-[28px]">{stripTime}</span>
+          <button onClick={() => setShowChat((v) => !v)} className="mr-[22px]">CHATBOX</button>
+          <button onClick={() => setWindows((c) => ({...c,timer:{...c.timer,open:true}}))} className="mr-[22px]">CLOCK</button>
+          <button onClick={() => setWindows((c) => ({...c,holds:{...c.holds,open:true}}))} className="mr-[22px]">HOLDS</button>
+          <button onClick={() => setWindows((c) => ({...c,metar:{...c.metar,open:true}}))} className="mr-[22px]">METAR</button>
+          <button>ATIS</button>
         </div>
       </header>
 
-      <section className="absolute inset-x-0 bottom-[112px] top-[44px] overflow-hidden bg-[#151515]">
-        <Panel className="left-[8px] top-[50px] w-[462px]" title="SECTOR LIST">
-          <div className="px-1 py-1 text-[9px]">
-            <div className="grid grid-cols-[50px_39px_27px_42px_42px_34px_30px_1fr_42px_34px] text-[#d0d3d2]"><span>CALLSIGN</span><span>ATYP</span><span>FR</span><span>DEP</span><span>ARR</span><span>FL</span><span>RWY</span><span>PROCS</span><span>ASSR</span><span>STS</span></div>
-            <div className="grid grid-cols-[50px_39px_27px_42px_42px_34px_30px_1fr_42px_34px] text-[#00ee00]"><span>{activePlan?.callsign ?? "LAN337"}</span><span>{activePlan?.aircraft_type ?? "A320"}</span><span>{activePlan?.flight_rules ?? "I"}</span><span>{activePlan?.departure_icao ?? "MDPC"}</span><span>{activePlan?.arrival_icao ?? "MDST"}</span><span>{activePlan?.flight_level ?? "050"}</span><span>11X</span><span className="truncate">PIXE6W-PIXE5-ILSZ-R11X</span><span>{activePlan?.transponder ?? "9999"}</span><span>XXX</span></div>
+      <section className="absolute inset-x-0 bottom-[112px] top-[99px] overflow-hidden bg-[#151515]">
+        {windows.sector.open && <FloatingWindow windowKey="sector" state={windows.sector} title="SECTOR LIST" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[930px]">
+          <div className="px-[8px] py-[5px] text-[20px] leading-[29px]">
+            <div className="grid grid-cols-[180px_105px_65px_90px_90px_75px_95px_1fr_110px_70px]"><span>CALLSIGN</span><span>ATYP</span><span>FR</span><span>DEP</span><span>ARR</span><span>FL</span><span>RWY</span><span>PROCS</span><span>ASSR</span><span>STS</span></div>
+            <div className="grid grid-cols-[180px_105px_65px_90px_90px_75px_95px_1fr_110px_70px] text-[#00e000]"><span>{activePlan?.callsign ?? "LAN337"}</span><span>{activePlan?.aircraft_type ?? "A320"}</span><span>{activePlan?.flight_rules ?? "I"}</span><span>{activePlan?.departure_icao ?? "MDPC"}</span><span>{activePlan?.arrival_icao ?? "MDST"}</span><span>{activePlan?.flight_level ?? "050"}</span><span>11X</span><span>PIXE6W-PIXE5-ILSZ-R11X</span><span>{activePlan?.transponder ?? "9999"}</span><span>XXX</span></div>
           </div>
-        </Panel>
+        </FloatingWindow>}
 
-        <Panel className="left-[8px] top-[104px] w-[190px]" title="COMBINED TAXI LIST">
-          <div className="px-1 py-1 text-[9px]">
-            <div className="grid grid-cols-[50px_43px_35px_42px_1fr] text-[#d0d3d2]"><span>CALLSIGN</span><span>ATYP</span><span>STS</span><span>GATE</span><span>WRN</span></div>
-            <div className="grid grid-cols-[50px_43px_35px_42px_1fr] text-[#00ee00]"><span>{taxiPlans[0]?.callsign ?? activePlan?.callsign ?? "LAN337"}</span><span>{taxiPlans[0]?.aircraft_type ?? activePlan?.aircraft_type ?? "A320"}</span><span>XXX</span><span>999X</span><span><span className="text-[#00ee00]">NORM</span><br /><span className="text-[#ff7a00]">PROB</span></span></div>
+        {windows.taxi.open && <FloatingWindow windowKey="taxi" state={windows.taxi} title="COMBINED TAXI LIST" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[620px]">
+          <div className="px-[8px] py-[5px] text-[20px] leading-[28px]">
+            <div className="grid grid-cols-[180px_110px_95px_125px_1fr]"><span>CALLSIGN</span><span>ATYP</span><span>STS</span><span>GATE</span><span>WRN</span></div>
+            <div className="grid grid-cols-[180px_110px_95px_125px_1fr] text-[#00e000]"><span>{taxiPlans[0]?.callsign ?? activePlan?.callsign ?? "LAN337"}</span><span>{taxiPlans[0]?.aircraft_type ?? activePlan?.aircraft_type ?? "A320"}</span><span>XXX</span><span>999X</span><span>NORM<br/><span className="text-[#ff6a00]">PROB</span></span></div>
           </div>
-        </Panel>
+        </FloatingWindow>}
 
-        {showClock && <div className="absolute left-[46%] top-[70px] w-[110px] border border-[#c9c9c9] bg-[#454b50] text-center text-[#f0f0f0]"><div className="border-b border-[#c9c9c9] text-[8px] tracking-[.25em]">TIMER</div><div className="py-2 text-[24px] leading-none">99:99:99</div></div>}
-        {showHolds && <div className="absolute left-[54%] top-[58px] w-[144px] border border-[#c9c9c9] bg-[#555b60] text-[#dddddd]"><div className="border-b border-[#c9c9c9] text-center text-[8px]">HOLD LIST</div><div className="grid grid-cols-[1fr_32px_34px] border-b border-[#c9c9c9] text-center text-[8px]"><span>CALLSIGN</span><span>FL</span><span>AFL</span></div><div className="grid grid-cols-[1fr_32px_34px] text-center text-[9px] text-[#00ee00]"><span>LAN337</span><span>040</span><span>050</span></div><div className="h-[54px] border-t border-[#8c8c8c]" /></div>}
+        {windows.timer.open && <FloatingWindow windowKey="timer" state={windows.timer} title="TIMER" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[112px]" simple><div className="border border-[#c8c8c8] bg-[#4b5156] py-2 text-center text-[26px] text-white">99:99:99</div></FloatingWindow>}
 
-        <div className="absolute right-[10px] top-[48px] flex gap-3 text-[9px]"><div className="min-w-[134px]"><div className="flex justify-between bg-[#0b443b] px-1 text-[#a9d7ce]"><span>Freq</span><span>⌃×</span></div><div className="px-1 py-1 text-[#ffff00]">MDCS_CTR&nbsp;&nbsp;199.999</div></div>{showMetar && <div className="min-w-[161px]"><div className="flex justify-between bg-[#0b443b] px-1 text-[#a9d7ce]"><span>ATIS&nbsp;&nbsp;&nbsp;&nbsp;Metar</span><span>▢⌃×</span></div><div className="px-1 py-1 text-[#00f4ff]">X&nbsp;&nbsp;{metarStation}&nbsp;&nbsp;{metarText.replace(metarStation, "").trim()}</div></div>}</div>
+        {windows.holds.open && <FloatingWindow windowKey="holds" state={windows.holds} title="HOLD LIST" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[145px]" simple><div className="border border-[#c8c8c8] bg-[#565c60] text-[9px]"><div className="grid grid-cols-[1fr_32px_34px] border-b border-[#c8c8c8] text-center"><span>CALLSIGN</span><span>FL</span><span>AFL</span></div><div className="grid grid-cols-[1fr_32px_34px] text-center text-[#00e000]"><span>LAN337</span><span>040</span><span>050</span></div><div className="h-[54px]"/></div></FloatingWindow>}
 
-        {simEnabled && aircraft.map((a) => <button key={a.id} onClick={() => setSelectedId(a.id)} className="absolute z-10 text-left text-[#00ee00]" style={{ left: `${a.x}%`, top: `${a.y}%` }}><span className="absolute -left-[12px] -top-[28px] text-[20px]">◇</span><span className="absolute -left-[35px] -top-[6px] tracking-[3px]">••••</span><span className="block leading-[13px]"><span className="text-[10px]">I</span><br /><b>{a.callsign}</b><br />A{String(Math.round(a.altitude / 100)).padStart(3, "0")}↓&nbsp;&nbsp;{a.groundSpeed}<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{a.arrival}</span></button>)}
+        {windows.freq.open && <FloatingWindow windowKey="freq" state={windows.freq} title="Freq" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[245px]"><div className="px-[14px] py-[12px] text-[28px] text-[#ffff00]">MDCS_CTR&nbsp;&nbsp;199.999</div></FloatingWindow>}
+
+        {windows.metar.open && <FloatingWindow windowKey="metar" state={windows.metar} title="ATIS             Metars" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[580px]"><div className="px-[28px] py-[10px] text-[30px] text-[#00efff]">X&nbsp;&nbsp;{metarStation}&nbsp;&nbsp;{metarText.replace(metarStation, "").trim()}</div></FloatingWindow>}
+
+        {simEnabled && aircraft.map((a) => <button key={a.id} onClick={() => setSelectedId(a.id)} className="absolute z-10 text-left text-[#00ee00]" style={{ left: `${a.x}%`, top: `${a.y}%` }}><span className="absolute -left-[12px] -top-[28px] text-[20px]">◇</span><span className="absolute -left-[35px] -top-[6px] tracking-[3px]">••••</span><span className="block leading-[13px]"><span className="text-[10px]">I</span><br/><b>{a.callsign}</b><br/>A{String(Math.round(a.altitude/100)).padStart(3,"0")}↓&nbsp;&nbsp;{a.groundSpeed}<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{a.arrival}</span></button>)}
         {selected && <div className="absolute right-[11px] top-[272px] w-[210px] text-[#00ee00]"><div className="text-[#ffff00]">A9999</div><div>{selected.callsign} -- &nbsp;{selected.aircraftType}</div><div>050↓ VOGEP N250</div><div>060 080 {selected.arrival}</div><div>AHDG ASP TXT</div></div>}
-
-        <div className="absolute bottom-[2px] left-[2px] text-[8px] leading-[9px]"><div className="text-[#d6d6d6]">LAN337</div><div className="text-[#00eaff]">129.800</div><div className="text-[#d6d6d6]">118.600</div></div>
-
+        <div className="absolute bottom-[2px] left-[2px] text-[8px] leading-[9px]"><div>LAN337</div><div className="text-[#00eaff]">129.800</div><div>118.600</div></div>
         {showConnectDialog && <ConnectDialog form={connectForm} setForm={setConnectForm} connected={connected} onConnect={confirmConnect} onDisconnect={disconnect} onClose={() => setShowConnectDialog(false)} />}
       </section>
 
-      {showChat && <footer className="absolute inset-x-0 bottom-0 z-40 h-[112px] bg-[#555c61] text-[9px]"><div className="h-[76px] overflow-hidden px-1 py-2 leading-[12px] text-[#d0d0d0]">{consoleLines.map((line, index) => <div key={`${line}-${index}`}><span className={line.startsWith("129.800") ? "text-[#00eaff]" : line.startsWith("118.600") ? "text-[#cfcfcf]" : ""}>{line}</span></div>)}</div><form className="flex h-[36px] items-center border-t border-[#777] bg-[#efefef] text-[#222]" onSubmit={(e) => { e.preventDefault(); executeCommand(command); }}><span className="pl-16 pr-1 text-[8px]">on 118.600</span><input value={command} onChange={(e) => setCommand(e.target.value)} className="h-[18px] w-[385px] bg-white px-1 outline-none" autoFocus /><div className="ml-1 text-[8px]">METAR&nbsp;&nbsp;MDST&nbsp;&nbsp;121800Z 11012KT 9999 FEW025 SCT080 22/14 Q1013</div></form></footer>}
+      {showChat && <footer className="absolute inset-x-0 bottom-0 z-40 h-[112px] bg-[#555c61] text-[9px]"><div className="h-[76px] overflow-hidden px-1 py-2 leading-[12px]">{consoleLines.map((line,index)=><div key={`${line}-${index}`}>{line}</div>)}</div><form className="flex h-[36px] items-center border-t border-[#777] bg-[#efefef] text-[#222]" onSubmit={(e)=>{e.preventDefault();executeCommand(command);}}><span className="pl-16 pr-1 text-[8px]">on 118.600</span><input value={command} onChange={(e)=>setCommand(e.target.value)} className="h-[18px] w-[385px] bg-white px-1 outline-none"/><div className="ml-1 text-[8px]">METAR&nbsp;&nbsp;MDST&nbsp;&nbsp;121800Z 11012KT 9999 FEW025 SCT080 22/14 Q1013</div></form></footer>}
 
       <style jsx global>{`
-        .topCell { border-right: 1px solid #173d38; display: flex; align-items: center; justify-content: center; }
-        .scopePanel { position: absolute; z-index: 20; color: #b7c4c1; }
-        .scopePanelTitle { height: 12px; background: #0b443b; padding: 0 4px; font-size: 7px; line-height: 12px; color: #a9d7ce; }
-        .connectBox { border: 1px solid #b7b7b7; background: #d8d8d8; box-shadow: inset 1px 1px #f8f8f8, inset -1px -1px #999; }
-        .connectField { height: 20px; border: 1px solid #c0c0c0; background: #efefef; box-shadow: inset 1px 1px #fff; padding: 1px 5px; color: #151515; }
+        .topCell{border-right:1px solid #173d38;display:flex;align-items:center;justify-content:center}.topGap{border-right:1px solid #173d38}.connectBox{border:1px solid #b7b7b7;background:#d8d8d8;box-shadow:inset 1px 1px #f8f8f8,inset -1px -1px #999}.connectField{height:20px;border:1px solid #c0c0c0;background:#efefef;box-shadow:inset 1px 1px #fff;padding:1px 5px;color:#151515}
       `}</style>
     </main>
   );
 }
 
-function Panel({ className, title, children }: { className: string; title: string; children: React.ReactNode }) {
-  return <div className={`scopePanel ${className}`}><div className="scopePanelTitle flex items-center justify-between"><span>{title}</span><span>⌃×</span></div>{children}</div>;
-}
-
-function ConnectDialog({ form, setForm, connected, onConnect, onDisconnect, onClose }: {
-  form: ConnectForm;
-  setForm: React.Dispatch<React.SetStateAction<ConnectForm>>;
-  connected: boolean;
-  onConnect: () => void;
-  onDisconnect: () => void;
-  onClose: () => void;
+function FloatingWindow({ windowKey, state, title, children, onDrag, onClose, onCollapse, onReset, className="", simple=false }: {
+  windowKey: WindowKey; state: WindowState; title: string; children: React.ReactNode; className?: string; simple?: boolean;
+  onDrag: (key: WindowKey, e: React.MouseEvent) => void; onClose: (key: WindowKey) => void; onCollapse: (key: WindowKey) => void; onReset: (key: WindowKey) => void;
 }) {
-  const airport = getAirportFromCallsign(form.callsign);
-  const airportName = AIRPORT_NAMES[airport] ?? "";
-  const info1 = airportName && form.facility ? `${airportName} ${FACILITY_INFO[form.facility]}` : "";
-  const info2 = airport ? "Visítanos en https://pf24.vercel.app/" : "";
-  const info3 = airport ? (PDC_AIRPORTS.has(airport) ? `PDC/DCL ${airport}` : "PDC/DCL NO DISPONIBLE") : "";
-
-  function patch<K extends keyof ConnectForm>(key: K, value: ConnectForm[K]) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
-
-  return (
-    <div className="connectBox absolute left-1/2 top-[45%] z-40 w-[500px] -translate-x-1/2 -translate-y-1/2 p-[12px] text-[10px] text-[#202020]">
-      <div className="mb-[8px] text-[9px]">Connect dialog</div>
-      <div className="grid grid-cols-2 gap-[14px]">
-        <fieldset className="border border-[#b8b8b8] px-[9px] pb-[10px] pt-[6px]">
-          <legend className="px-[3px] text-[10px] font-bold tracking-[.03em]">SERVER</legend>
-          <TextRow label="Callsign" value={form.callsign} onChange={(v) => patch("callsign", v.toUpperCase())} maxLength={20} />
-          <SelectRow label="Facility" value={form.facility} onChange={(v) => patch("facility", v as FacilityCode)} options={FACILITY_LABELS} />
-          <TextRow label="Rating" value={form.rating} onChange={(v) => patch("rating", v)} maxLength={20} />
-          <TextRow label="Server" value={form.server} onChange={(v) => patch("server", v)} maxLength={20} />
-        </fieldset>
-        <fieldset className="border border-[#b8b8b8] px-[9px] pb-[10px] pt-[6px]">
-          <legend className="px-[3px] text-[10px] font-bold tracking-[.03em]">PROFILE</legend>
-          <TextRow label="Password" value={form.password} onChange={(v) => patch("password", v)} maxLength={20} type="password" />
-          <TextRow label="DISCORD name" value={form.discordName} onChange={(v) => patch("discordName", v)} maxLength={20} />
-          <TextRow label="ROBLOX name" value={form.robloxName} onChange={(v) => patch("robloxName", v)} maxLength={20} />
-        </fieldset>
-      </div>
-      <fieldset className="mt-[7px] border border-[#b8b8b8] px-[9px] pb-[10px] pt-[6px]">
-        <legend className="px-[3px] text-[10px] font-bold tracking-[.03em]">INFORMATION</legend>
-        <StaticRow label="INFO line 1" value={info1} />
-        <StaticRow label="INFO line 2" value={info2} />
-        <StaticRow label="INFO line 3" value={info3} />
-        <TextRow label="INFO line 4" value={form.info4} onChange={(v) => patch("info4", v)} maxLength={20} wide />
-      </fieldset>
-      <div className="mt-[10px] flex items-center justify-between">
-        <div className="flex gap-[5px]">
-          <button onClick={onConnect} disabled={!form.callsign || !form.facility} className="min-w-[64px] border border-[#b4b4b4] bg-[#ececec] px-3 py-[2px] shadow-[inset_1px_1px_#fff,inset_-1px_-1px_#999] disabled:text-[#aaa]">Connect</button>
-          <button onClick={onDisconnect} disabled={!connected} className="min-w-[78px] border border-[#b4b4b4] bg-[#ececec] px-3 py-[2px] shadow-[inset_1px_1px_#fff,inset_-1px_-1px_#999] disabled:bg-[#d4d4d4] disabled:text-[#aaa]">Disconnect</button>
-        </div>
-        <button onClick={onClose} className="min-w-[58px] border border-[#b4b4b4] bg-[#ececec] px-3 py-[2px] shadow-[inset_1px_1px_#fff,inset_-1px_-1px_#999]">Close</button>
-      </div>
+  return <div className={`absolute z-30 ${className}`} style={{ left: state.x, top: state.y }}>
+    <div onMouseDown={(e)=>onDrag(windowKey,e)} className={`flex h-[28px] cursor-move items-center bg-[#064a40] text-[#dedede] ${simple ? "justify-center text-[10px]" : "text-[18px]"}`}>
+      <div className="flex-1 text-center tracking-[1px]">{title}</div>
+      {!simple && <div className="flex h-full">
+        <button onMouseDown={(e)=>e.stopPropagation()} onClick={()=>onReset(windowKey)} title="Posición inicial" className="windowIcon"><ListIcon/></button>
+        <button onMouseDown={(e)=>e.stopPropagation()} onClick={()=>onCollapse(windowKey)} title="Ocultar/mostrar información" className="windowIcon"><CollapseIcon collapsed={state.collapsed}/></button>
+        <button onMouseDown={(e)=>e.stopPropagation()} onClick={()=>onClose(windowKey)} title="Cerrar" className="windowIcon"><CloseIcon/></button>
+      </div>}
     </div>
-  );
+    {!state.collapsed && children}
+  </div>;
 }
 
-function TextRow({ label, value, onChange, maxLength, type = "text", wide = false }: { label: string; value: string; onChange: (value: string) => void; maxLength: number; type?: string; wide?: boolean }) {
-  return <div className={`mb-[4px] grid items-center gap-[6px] ${wide ? "grid-cols-[82px_1fr]" : "grid-cols-[72px_1fr]"}`}><span>{label}</span><input type={type} value={value} maxLength={maxLength} onChange={(e) => onChange(e.target.value)} className="connectField w-full outline-none" /></div>;
+function ListIcon(){return <svg width="21" height="21" viewBox="0 0 21 21"><rect x="4" y="4" width="13" height="13" fill="none" stroke="#d8e4e1"/><line x1="6" y1="7" x2="15" y2="7" stroke="#d8e4e1"/><line x1="6" y1="10.5" x2="15" y2="10.5" stroke="#d8e4e1"/><line x1="6" y1="14" x2="15" y2="14" stroke="#d8e4e1"/></svg>}
+function CollapseIcon({collapsed}:{collapsed:boolean}){return <svg width="23" height="21" viewBox="0 0 23 21"><path d={collapsed?"M4 7 L11.5 14 L19 7":"M4 14 L11.5 7 L19 14"} fill="none" stroke="#d8e4e1" strokeWidth="1.2"/></svg>}
+function CloseIcon(){return <svg width="23" height="21" viewBox="0 0 23 21"><line x1="5" y1="4" x2="18" y2="17" stroke="#d8e4e1"/><line x1="18" y1="4" x2="5" y2="17" stroke="#d8e4e1"/></svg>}
+
+function ConnectDialog({ form, setForm, connected, onConnect, onDisconnect, onClose }: { form: ConnectForm; setForm: React.Dispatch<React.SetStateAction<ConnectForm>>; connected: boolean; onConnect:()=>void; onDisconnect:()=>void; onClose:()=>void }) {
+  const airport=getAirportFromCallsign(form.callsign); const airportName=AIRPORT_NAMES[airport]??"";
+  const info1=airportName&&form.facility?`${airportName} ${FACILITY_INFO[form.facility]}`:"";
+  const info2=airport?"Visítanos en https://pf24.vercel.app/":"";
+  const info3=airport?(PDC_AIRPORTS.has(airport)?`PDC/DCL ${airport}`:"PDC/DCL NO DISPONIBLE"):"";
+  const patch=<K extends keyof ConnectForm>(key:K,value:ConnectForm[K])=>setForm((c)=>({...c,[key]:value}));
+  return <div className="connectBox absolute left-1/2 top-[45%] z-50 w-[500px] -translate-x-1/2 -translate-y-1/2 p-[12px] text-[10px] text-[#202020]">
+    <div className="mb-2">Connect dialog</div><div className="grid grid-cols-2 gap-[14px]">
+      <fieldset className="border border-[#b8b8b8] p-2"><legend>SERVER</legend><TextRow label="Callsign" value={form.callsign} onChange={(v)=>patch("callsign",v.toUpperCase())}/><SelectRow label="Facility" value={form.facility} onChange={(v)=>patch("facility",v as FacilityCode)}/><TextRow label="Rating" value={form.rating} onChange={(v)=>patch("rating",v)}/><TextRow label="Server" value={form.server} onChange={(v)=>patch("server",v)}/></fieldset>
+      <fieldset className="border border-[#b8b8b8] p-2"><legend>PROFILE</legend><TextRow label="Password" value={form.password} onChange={(v)=>patch("password",v)} type="password"/><TextRow label="DISCORD name" value={form.discordName} onChange={(v)=>patch("discordName",v)}/><TextRow label="ROBLOX name" value={form.robloxName} onChange={(v)=>patch("robloxName",v)}/></fieldset>
+    </div>
+    <fieldset className="mt-2 border border-[#b8b8b8] p-2"><legend>INFORMATION</legend><StaticRow label="INFO line 1" value={info1}/><StaticRow label="INFO line 2" value={info2}/><StaticRow label="INFO line 3" value={info3}/><TextRow label="INFO line 4" value={form.info4} onChange={(v)=>patch("info4",v)} wide/></fieldset>
+    <div className="mt-3 flex justify-between"><div className="flex gap-1"><button onClick={onConnect} disabled={!form.callsign||!form.facility} className="border bg-[#ececec] px-3 py-1 disabled:text-gray-400">Connect</button><button onClick={onDisconnect} disabled={!connected} className="border bg-[#ececec] px-3 py-1 disabled:text-gray-400">Disconnect</button></div><button onClick={onClose} className="border bg-[#ececec] px-3 py-1">Close</button></div>
+  </div>;
 }
 
-function StaticRow({ label, value }: { label: string; value: string }) {
-  return <div className="mb-[4px] grid grid-cols-[82px_1fr] items-center gap-[6px]"><span>{label}</span><div className="connectField truncate">{value}</div></div>;
-}
+function TextRow({label,value,onChange,type="text",wide=false}:{label:string;value:string;onChange:(v:string)=>void;type?:string;wide?:boolean}){return <div className={`mb-1 grid items-center gap-1 ${wide?"grid-cols-[82px_1fr]":"grid-cols-[72px_1fr]"}`}><span>{label}</span><input type={type} value={value} maxLength={20} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none"/></div>}
+function StaticRow({label,value}:{label:string;value:string}){return <div className="mb-1 grid grid-cols-[82px_1fr] items-center gap-1"><span>{label}</span><div className="connectField truncate">{value}</div></div>}
+function SelectRow({label,value,onChange}:{label:string;value:string;onChange:(v:string)=>void}){return <div className="mb-1 grid grid-cols-[72px_1fr] items-center gap-1"><span>{label}</span><select value={value} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none"><option value=""></option>{FACILITY_LABELS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>}
 
-function SelectRow({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) {
-  return <div className="mb-[4px] grid grid-cols-[72px_1fr] items-center gap-[6px]"><span>{label}</span><select value={value} onChange={(e) => onChange(e.target.value)} className="connectField w-full outline-none"><option value=""></option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>;
-}
-
-function ToolbarGlyph({ index, active }: { index: number; active: boolean }) {
-  const stroke = active ? "#ffffff" : "#cfe1dc";
-  if (index === 0) return <svg width="28" height="19" viewBox="0 0 28 19" aria-hidden="true"><rect x="3" y="8" width="9" height="8" fill="none" stroke={stroke} strokeWidth="1" /><line x1="11" y1="8" x2="20" y2="2" stroke={stroke} strokeWidth="1" /><rect x="19" y="1" width="4" height="4" fill="none" stroke={stroke} strokeWidth="1" /></svg>;
-  if (index === 1) return <svg width="30" height="19" viewBox="0 0 30 19" aria-hidden="true"><rect x="3" y="2" width="12" height="14" fill="none" stroke={stroke} strokeWidth="1" /><line x1="16" y1="14" x2="24" y2="5" stroke={stroke} strokeWidth="1" strokeDasharray="2 2" /><circle cx="25" cy="4" r="1.5" fill="none" stroke={stroke} strokeWidth="1" /></svg>;
-  if (index === 2) return <span style={{ color: stroke }} className="text-[7px] leading-[7px]">TRANS<br />LVL&nbsp;&nbsp;040</span>;
-  if (index === 3) return <svg width="28" height="19" viewBox="0 0 28 19" aria-hidden="true"><path d="M5 3 H22 L16 9 V15 H11 V9 Z" fill="none" stroke={stroke} strokeWidth="1" /><rect x="21" y="1" width="4" height="4" fill="none" stroke={stroke} strokeWidth="1" /></svg>;
-  return <svg width="58" height="19" viewBox="0 0 58 19" aria-hidden="true"><line x1="6" y1="15" x2="20" y2="3" stroke={stroke} strokeWidth="1" /><rect x="4" y="13" width="4" height="4" fill="none" stroke={stroke} strokeWidth="1" /><rect x="19" y="1" width="4" height="4" fill="none" stroke={stroke} strokeWidth="1" /><circle cx="35" cy="5" r="1.5" fill={stroke} /><circle cx="43" cy="5" r="1.5" fill={stroke} /><circle cx="35" cy="13" r="1.5" fill={stroke} /><rect x="41" y="10" width="5" height="5" fill="none" stroke={stroke} strokeWidth="1" /><line x1="35" y1="5" x2="43" y2="5" stroke={stroke} strokeWidth="0.8" /><line x1="35" y1="5" x2="35" y2="13" stroke={stroke} strokeWidth="0.8" /></svg>;
+function ToolbarGlyph({index,active}:{index:number;active:boolean}){
+  const s=active?"#fff":"#cfe1dc";
+  if(index===0)return <svg width="40" height="40" viewBox="0 0 40 40"><rect x="11" y="9" width="15" height="22" fill="none" stroke={s}/><line x1="14" y1="28" x2="23" y2="28" stroke={s}/><line x1="14" y1="25" x2="21" y2="25" stroke={s}/></svg>;
+  if(index===1)return <svg width="43" height="40" viewBox="0 0 43 40"><rect x="8" y="23" width="14" height="12" fill="none" stroke={s}/><line x1="23" y1="23" x2="36" y2="7" stroke={s}/><circle cx="36" cy="6" r="1.5" fill={s}/><circle cx="29" cy="17" r="1" fill={s}/><circle cx="34" cy="28" r="1" fill={s}/></svg>;
+  if(index===2)return <svg width="48" height="40" viewBox="0 0 48 40"><rect x="18" y="5" width="16" height="16" fill="none" stroke={s}/><circle cx="11" cy="32" r="1" fill={s}/><circle cx="21" cy="32" r="1" fill={s}/><circle cx="31" cy="32" r="1" fill={s}/></svg>;
+  if(index===3)return <span style={{color:s}} className="flex w-full items-center justify-center text-[11px] leading-[12px]"><span>TRANS<br/>LVL</span><span className="ml-4 text-[20px]">040</span></span>;
+  return <svg width="90" height="40" viewBox="0 0 90 40"><path d="M10 9 H29 L23 17 V28 H17 V17 Z" fill="none" stroke={s}/><text x="33" y="9" fontSize="8" fill={s}>FL</text><line x1="48" y1="31" x2="65" y2="8" stroke={s}/><polygon points="47,31 52,29 49,25" fill="#f2cb8d"/><rect x="64" y="6" width="6" height="6" fill="none" stroke={s}/><circle cx="76" cy="8" r="2" fill={s}/><circle cx="84" cy="8" r="2" fill={s}/><rect x="80" y="27" width="7" height="7" fill="none" stroke={s}/><circle cx="76" cy="31" r="2" fill={s}/></svg>;
 }
