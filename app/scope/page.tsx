@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { supabase } from "@/lib/supabase";
 import PF24Scope from "@/components/scope/PF24Scope";
-import TransitionLevelSync from "@/components/scope/TransitionLevelSync";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = {
@@ -33,12 +32,9 @@ export default async function ScopePage() {
   }
 
   return (
-    <>
-      <PF24Scope
-        initialPlans={(data ?? []) as ScopeFlightPlan[]}
-        controllerName={session.user?.name ?? "ATC"}
-      />
-      <TransitionLevelSync />
-    </>
+    <PF24Scope
+      initialPlans={(data ?? []) as ScopeFlightPlan[]}
+      controllerName={session.user?.name ?? "ATC"}
+    />
   );
 }
