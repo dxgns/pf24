@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { supabase } from "@/lib/supabase";
 import PF24Scope from "@/components/scope/PF24Scope";
 import ScopeLayoutGuards from "@/components/scope/ScopeLayoutGuards";
+import MetarInteraction from "@/components/scope/MetarInteraction";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = {
@@ -39,6 +40,7 @@ export default async function ScopePage() {
         controllerName={session.user?.name ?? "ATC"}
       />
       <ScopeLayoutGuards />
+      <MetarInteraction />
     </>
   );
 }
