@@ -21,6 +21,8 @@ type ConnectForm = {
   info4: string;
 };
 
+type StoredProfile = Pick<ConnectForm, "password" | "discordName" | "robloxName">;
+
 const AIRPORT_NAMES: Record<string, string> = {
   LCLK: "Larnaca", LCPH: "Paphos", LCRA: "Akrotiri", MDPC: "Punta Cana", MDST: "Santiago",
   MDAB: "Arroyo Barril", MDCR: "Cabo Rojo", MTCA: "Les Cayes", GCLP: "Gran Canaria",
@@ -43,8 +45,10 @@ const FACILITY_LABELS: Array<{ value: FacilityCode; label: string }> = [
   { value: "CTR", label: "Center" },
 ];
 
+const CALLSIGN_OPTIONS = Object.keys(ATC_FREQUENCIES).sort();
 const PDC_AIRPORTS = new Set(["MDPC", "LCLK", "GCLP", "LEMH", "EGKK"]);
-const EMPTY_FORM: ConnectForm = { callsign: "", facility: "", rating: "", server: "", password: "", discordName: "", robloxName: "", info4: "" };
+const PROFILE_STORAGE_KEY = "pf24_scope_profile_v1";
+const EMPTY_FORM: ConnectForm = { callsign: "", facility: "", rating: "", server: "AUTOMATIC", password: "", discordName: "", robloxName: "", info4: "" };
 
 const DEFAULT_WINDOWS: Record<WindowKey, WindowState> = {
   sector: { x: 8, y: 50, open: true, collapsed: false },
@@ -97,8 +101,31 @@ export default function PF24Scope({ initialPlans }: Props) {
   useEffect(() => {
     const stored = localStorage.getItem("pf24_scope_window_layout_v3");
     if (stored) { try { setWindows({ ...DEFAULT_WINDOWS, ...JSON.parse(stored) }); } catch {} }
+
+    const storedProfile = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (storedProfile) {
+      try {
+        const parsed = JSON.parse(storedProfile) as Partial<StoredProfile>;
+        setConnectForm((current) => ({
+          ...current,
+          password: typeof parsed.password === "string" ? parsed.password : "",
+          discordName: typeof parsed.discordName === "string" ? parsed.discordName : "",
+          robloxName: typeof parsed.robloxName === "string" ? parsed.robloxName : "",
+        }));
+      } catch {}
+    }
   }, []);
+
   useEffect(() => { localStorage.setItem("pf24_scope_window_layout_v3", JSON.stringify(windows)); }, [windows]);
+
+  useEffect(() => {
+    const profile: StoredProfile = {
+      password: connectForm.password,
+      discordName: connectForm.discordName,
+      robloxName: connectForm.robloxName,
+    };
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+  }, [connectForm.password, connectForm.discordName, connectForm.robloxName]);
 
   useEffect(() => {
     const move = (e: MouseEvent) => {
@@ -272,17 +299,21 @@ function ConnectDialog({ form, setForm, connected, onConnect, onDisconnect, onCl
   const info1=airportName&&form.facility?`${airportName} ${FACILITY_INFO[form.facility]}`:"";
   const info2=airport?"Visítanos en https://pf24.vercel.app/":"";
   const info3=airport?(PDC_AIRPORTS.has(airport)?`PDC/DCL ${airport}`:"PDC/DCL NO DISPONIBLE"):"";
+  const allFieldsComplete = Boolean(form.callsign.trim() && form.facility && form.rating.trim() && form.server.trim() && form.password.trim() && form.discordName.trim() && form.robloxName.trim() && info1 && info2 && info3 && form.info4.trim());
   const patch=<K extends keyof ConnectForm>(key:K,value:ConnectForm[K])=>setForm((c)=>({...c,[key]:value}));
-  return <div className="connectBox absolute left-1/2 top-[45%] z-50 w-[500px] -translate-x-1/2 -translate-y-1/2 p-[12px] text-[10px] text-[#202020]">
-    <div className="mb-2">Connect dialog</div><div className="grid grid-cols-2 gap-[14px]">
-      <fieldset className="border border-[#b8b8b8] p-2"><legend>SERVER</legend><TextRow label="Callsign" value={form.callsign} onChange={(v)=>patch("callsign",v.toUpperCase())}/><SelectRow label="Facility" value={form.facility} onChange={(v)=>patch("facility",v as FacilityCode)}/><TextRow label="Rating" value={form.rating} onChange={(v)=>patch("rating",v)}/><TextRow label="Server" value={form.server} onChange={(v)=>patch("server",v)}/></fieldset>
+  return <div className="connectBox absolute left-1/2 top-[45%] z-50 w-[555px] -translate-x-1/2 -translate-y-1/2 p-[14px] text-[10px] text-[#202020]">
+    <div className="mb-2">Connect dialog</div><div className="grid grid-cols-2 gap-[16px]">
+      <fieldset className="border border-[#b8b8b8] p-2"><legend>SERVER</legend><CallsignRow value={form.callsign} onChange={(v)=>patch("callsign",v.toUpperCase())}/><SelectRow label="Facility" value={form.facility} onChange={(v)=>patch("facility",v as FacilityCode)}/><TextRow label="Rating" value={form.rating} onChange={(v)=>patch("rating",v)}/><TextRow label="Server" value={form.server} onChange={(v)=>patch("server",v)}/></fieldset>
       <fieldset className="border border-[#b8b8b8] p-2"><legend>PROFILE</legend><TextRow label="Password" value={form.password} onChange={(v)=>patch("password",v)} type="password"/><TextRow label="DISCORD name" value={form.discordName} onChange={(v)=>patch("discordName",v)}/><TextRow label="ROBLOX name" value={form.robloxName} onChange={(v)=>patch("robloxName",v)}/></fieldset>
     </div>
     <fieldset className="mt-2 border border-[#b8b8b8] p-2"><legend>INFORMATION</legend><StaticRow label="INFO line 1" value={info1}/><StaticRow label="INFO line 2" value={info2}/><StaticRow label="INFO line 3" value={info3}/><TextRow label="INFO line 4" value={form.info4} onChange={(v)=>patch("info4",v)} wide/></fieldset>
-    <div className="mt-3 flex justify-between"><div className="flex gap-1"><button onClick={onConnect} disabled={!form.callsign||!form.facility||connected} className="border bg-[#ececec] px-3 py-1 disabled:text-gray-400">Connect</button><button onClick={onDisconnect} disabled={!connected} className="border bg-[#ececec] px-3 py-1 disabled:text-gray-400">Disconnect</button></div><button onClick={onClose} className="border bg-[#ececec] px-3 py-1">Close</button></div>
+    <div className="mt-3 flex justify-between"><div className="flex gap-1"><button onClick={onConnect} disabled={!allFieldsComplete||connected} className="border bg-[#ececec] px-3 py-1 disabled:text-gray-400">Connect</button><button onClick={onDisconnect} disabled={!connected} className="border bg-[#ececec] px-3 py-1 disabled:text-gray-400">Disconnect</button></div><button onClick={onClose} className="border bg-[#ececec] px-3 py-1">Close</button></div>
   </div>;
 }
 
+function CallsignRow({value,onChange}:{value:string;onChange:(v:string)=>void}){
+  return <div className="relative mb-1 grid grid-cols-[72px_1fr] items-center gap-1"><span>Callsign</span><div className="relative"><input list="scope-callsigns" value={value} maxLength={20} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none" autoComplete="off"/><datalist id="scope-callsigns">{CALLSIGN_OPTIONS.map((option)=><option key={option} value={option}/>)}</datalist></div></div>;
+}
 function TextRow({label,value,onChange,type="text",wide=false}:{label:string;value:string;onChange:(v:string)=>void;type?:string;wide?:boolean}){return <div className={`mb-1 grid items-center gap-1 ${wide?"grid-cols-[82px_1fr]":"grid-cols-[72px_1fr]"}`}><span>{label}</span><input type={type} value={value} maxLength={20} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none"/></div>}
 function StaticRow({label,value}:{label:string;value:string}){return <div className="mb-1 grid grid-cols-[82px_1fr] items-center gap-1"><span>{label}</span><div className="connectField truncate">{value}</div></div>}
 function SelectRow({label,value,onChange}:{label:string;value:string;onChange:(v:string)=>void}){return <div className="mb-1 grid grid-cols-[72px_1fr] items-center gap-1"><span>{label}</span><select value={value} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none"><option value=""></option>{FACILITY_LABELS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>}
