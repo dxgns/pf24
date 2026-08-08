@@ -67,6 +67,9 @@ export default function PF24Scope({ initialPlans }: Props) {
   const [metarText, setMetarText] = useState("MDST 12003KT 01015");
   const [showChat, setShowChat] = useState(true);
   const [showConnectDialog, setShowConnectDialog] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showScopeConfig, setShowScopeConfig] = useState(false);
+  const [scopeZoom, setScopeZoom] = useState(100);
   const [toolStates, setToolStates] = useState([false, false, false, false, false, false]);
   const [connectForm, setConnectForm] = useState<ConnectForm>(EMPTY_FORM);
   const [windows, setWindows] = useState<Record<WindowKey, WindowState>>(DEFAULT_WINDOWS);
@@ -149,7 +152,7 @@ export default function PF24Scope({ initialPlans }: Props) {
   return <main className="fixed inset-0 overflow-hidden bg-[#151515] font-mono text-[12px] text-[#d8d8d8] select-none">
     <header className="absolute inset-x-0 top-0 z-50 h-[44px] border-b border-[#202426]">
       <div className="flex h-[21px] items-stretch bg-[#064a40] text-[#e2e2e2]">
-        <button className="scopeTopCell w-[26px] text-[7px] leading-[7px]"><span className="flex h-full flex-col items-center justify-center"><MenuGlyph/><span className="mt-[1px]">MENU</span></span></button>
+        <button onClick={() => setShowMenu((v) => !v)} className="scopeTopCell w-[26px] text-[7px] leading-[7px]"><span className="flex h-full flex-col items-center justify-center"><MenuGlyph/><span className="mt-[1px]">MENU</span></span></button>
         <button onClick={() => setShowConnectDialog(true)} className={`scopeTopCell w-[48px] text-[10px] ${connected ? "scopeConnected" : ""}`}>{connected ? "DISCONNECT" : "CONNECT"}</button>
         <div className="scopeTopCell w-[116px] justify-start px-[5px] text-[10px] tracking-[.3px]">{position ? `${position}  [${facilityShort}]` : ""}</div>
         <div className="scopeTopCell w-[52px] text-[10px] tracking-[.5px]">{connected ? frequency : ""}</div>
@@ -168,6 +171,13 @@ export default function PF24Scope({ initialPlans }: Props) {
         <button onClick={() => toggleTool(5)} className={`scopeTopCell w-[50px] ${toolStates[5] ? "scopeToolOn" : ""}`}><ToolbarGlyph kind="route" active={toolStates[5]}/></button>
         <div className="flex-1" />
       </div>
+
+      {showMenu && <div className="scopeMenu absolute left-[2px] top-[21px] z-[80] w-[205px] bg-[#064a40] text-[#e2e2e2]">
+        <div className="scopeMenuTitle flex h-[12px] items-center justify-center border-b border-[#102f2a] text-[7px]">Title Menu</div>
+        <button onClick={() => { setShowScopeConfig(true); setShowMenu(false); }} className="block w-full border-b border-[#102f2a] px-[8px] py-[7px] text-left text-[12px] leading-none hover:bg-[#0a554a]">Scope configuration</button>
+        <div className="h-[118px]" />
+      </div>}
+
       <div className="flex h-[23px] items-center border-t border-[#30383b] bg-[#555c61] pl-[27px] text-[10px] text-[#e3e3e3]">
         <span className="mr-[14px]">{stripTime}</span>
         <button onClick={() => setShowChat((v) => !v)} className="mr-[12px]">CHATBOX</button>
@@ -191,9 +201,11 @@ export default function PF24Scope({ initialPlans }: Props) {
       {showConnectDialog && <ConnectDialog form={connectForm} setForm={setConnectForm} connected={connected} onConnect={confirmConnect} onDisconnect={disconnect} onClose={() => setShowConnectDialog(false)}/>} 
     </section>
 
+    {showScopeConfig && <ScopeConfiguration zoom={scopeZoom} setZoom={setScopeZoom} onClose={() => setShowScopeConfig(false)} />}
+
     {showChat && <footer className="absolute inset-x-0 bottom-0 z-40 h-[112px] bg-[#555c61] text-[9px]"><div className="h-[76px] overflow-hidden px-1 py-2 leading-[12px]">{consoleLines.map((line,index)=><div key={`${line}-${index}`}>{line}</div>)}</div><form className="flex h-[36px] items-center border-t border-[#777] bg-[#efefef] text-[#222]" onSubmit={(e)=>{e.preventDefault();executeCommand(command);}}><span className="pl-16 pr-1 text-[8px]">on 118.600</span><input value={command} onChange={(e)=>setCommand(e.target.value)} className="h-[18px] w-[385px] bg-white px-1 outline-none"/><div className="ml-1 text-[8px]">METAR&nbsp;&nbsp;MDST&nbsp;&nbsp;121800Z 11012KT 9999 FEW025 SCT080 22/14 Q1013</div></form></footer>}
     <style jsx global>{`
-      .scopeTopCell{border-right:1px solid #173d38;display:flex;align-items:center;justify-content:center;min-width:0}.scopeTopGap{border-right:1px solid #173d38}.scopeToolOn{background:#0a5b50}.scopeConnected{border-top:1px solid #fff!important;border-bottom:1px solid #fff!important;border-left:1px solid #fff!important;border-right:1px solid #fff!important}.connectBox{border:1px solid #b7b7b7;background:#d8d8d8;box-shadow:inset 1px 1px #f8f8f8,inset -1px -1px #999}.connectField{height:20px;border:1px solid #c0c0c0;background:#efefef;box-shadow:inset 1px 1px #fff;padding:1px 5px;color:#151515}.windowIcon{width:16px;height:12px;display:flex;align-items:center;justify-content:center}
+      .scopeTopCell{border-right:1px solid #173d38;display:flex;align-items:center;justify-content:center;min-width:0}.scopeTopGap{border-right:1px solid #173d38}.scopeToolOn{background:#0a5b50}.scopeConnected{border-top:1px solid #fff!important;border-bottom:1px solid #fff!important;border-left:1px solid #fff!important;border-right:1px solid #fff!important}.connectBox{border:1px solid #b7b7b7;background:#d8d8d8;box-shadow:inset 1px 1px #f8f8f8,inset -1px -1px #999}.connectField{height:20px;border:1px solid #c0c0c0;background:#efefef;box-shadow:inset 1px 1px #fff;padding:1px 5px;color:#151515}.windowIcon{width:16px;height:12px;display:flex;align-items:center;justify-content:center}.scopeMenu{box-shadow:0 0 0 1px #102f2a}.scopeConfigField{height:24px;border:1px solid #d4d4d4;background:#efefef;color:#111;box-shadow:inset 1px 1px #fff;padding:0 28px 0 8px}
     `}</style>
   </main>;
 }
@@ -216,6 +228,29 @@ function CallsignRow({value,onChange}:{value:string;onChange:(v:string)=>void}){
 function TextRow({label,value,onChange,type="text",wide=false,maxLength=20}:{label:string;value:string;onChange:(v:string)=>void;type?:string;wide?:boolean;maxLength?:number}){return <div className={`mb-1 grid items-center gap-1 ${wide?"grid-cols-[82px_1fr]":"grid-cols-[72px_1fr]"}`}><span>{label}</span><input type={type} value={value} maxLength={maxLength} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none"/></div>}
 function StaticRow({label,value}:{label:string;value:string}){return <div className="mb-1 grid grid-cols-[82px_1fr] items-center gap-1"><span>{label}</span><div className="connectField truncate">{value}</div></div>}
 function SelectRow({label,value,onChange}:{label:string;value:string;onChange:(v:string)=>void}){return <div className="mb-1 grid grid-cols-[72px_1fr] items-center gap-1"><span>{label}</span><select value={value} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none"><option value=""></option>{FACILITY_LABELS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>}
+
+function ScopeConfiguration({ zoom, setZoom, onClose }: { zoom:number; setZoom:React.Dispatch<React.SetStateAction<number>>; onClose:()=>void }) {
+  const updateZoom=(value:number)=>setZoom(Math.max(25,Math.min(400,Math.round(value))));
+  return <div className="absolute left-1/2 top-1/2 z-[90] h-[330px] w-[620px] -translate-x-1/2 -translate-y-1/2 border border-[#888] bg-[#cecece] font-mono text-[#111] shadow-[0_2px_10px_rgba(0,0,0,.5)]">
+    <div className="flex h-[23px] items-stretch border-b border-white bg-[#cecece] text-[14px]">
+      <div className="flex items-center border-r border-white px-[12px]">General</div>
+      <div className="flex items-center border-r border-[#c2c2c2] px-[12px] text-[#aaa]">Personalization</div>
+      <button onClick={onClose} className="ml-auto w-[28px] border-l border-[#bbb] text-[16px]">×</button>
+    </div>
+    <div className="px-[18px] pt-[30px] text-[14px]">
+      <div className="flex items-center gap-[14px]">
+        <span>Default scope zoom</span>
+        <div className="relative flex h-[24px] w-[200px] items-center bg-[#efefef]">
+          <input value={`${zoom}%`} readOnly className="scopeConfigField h-full w-full text-center text-[15px] outline-none" />
+          <div className="absolute right-0 top-0 flex h-full w-[26px] border-l border-[#bcbcbc] bg-[#d9d9d9]">
+            <button onClick={()=>updateZoom(zoom-5)} className="flex w-1/2 items-center justify-center border-r border-[#aaa] text-[9px]">▾</button>
+            <button onClick={()=>updateZoom(zoom+5)} className="flex w-1/2 items-center justify-center text-[9px]">▴</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
 
 function MenuGlyph() {
   return <svg width="21" height="8" viewBox="0 0 100 38" aria-hidden="true">
