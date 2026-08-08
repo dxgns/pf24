@@ -83,3 +83,17 @@ body {
   outline: none;
   border-color: rgba(56, 189, 248, 0.8);
 }
+
+/* PF24 Scope: the stored window coordinate system historically starts at y=44.
+   Pull floating windows up by the same amount so y=44 visually touches the
+   bottom edge of the Scope toolbar instead of leaving an invisible gap. */
+section > div.absolute.z-30 {
+  transform: translateY(-44px);
+}
+
+/* Keep the CONNECT cell dimensions unchanged; only shrink the longer label. */
+.scopeConnected {
+  font-size: 7px !important;
+  letter-spacing: -0.35px !important;
+  white-space: nowrap;
+}
