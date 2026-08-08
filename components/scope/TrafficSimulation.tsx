@@ -22,11 +22,7 @@ type Traffic = {
 };
 
 type Point = { x: number; y: number };
-
-type DragState = {
-  dx: number;
-  dy: number;
-} | null;
+type DragState = { dx: number; dy: number } | null;
 
 const TRAFFIC_SEED: Traffic[] = [
   { id: "t1", callsign: "LAN337", aircraftType: "A320", altitude: 5000, targetAltitude: 6000, verticalRate: 1200, heading: 180, targetHeading: 180, groundSpeed: 180, x: 29, y: 34, squawk: "9999", departure: "MDPC", arrival: "MDST", fix: "VOGEP" },
@@ -45,6 +41,7 @@ const TRAIL_SPACING_PX = 16;
 const TARGET_SIZE_PX = 18;
 const DETAIL_WIDTH = 190;
 const DETAIL_HEIGHT = 88;
+const LABEL_WIDTH = 132;
 
 function shortestTurn(current: number, target: number) {
   return ((target - current + 540) % 360) - 180;
@@ -80,6 +77,21 @@ function pointFromPercent(hostSize: Point, x: number, y: number): Point {
 function headingUnit(heading: number): Point {
   const radians = heading * Math.PI / 180;
   return { x: Math.sin(radians), y: -Math.cos(radians) };
+}
+
+function connectorEnd(aircraft: Point, detail: Point): Point {
+  const center = { x: detail.x + DETAIL_WIDTH / 2, y: detail.y + DETAIL_HEIGHT / 2 };
+  const dx = center.x - aircraft.x;
+  const dy = center.y - aircraft.y;
+  const halfW = DETAIL_WIDTH / 2;
+  const halfH = DETAIL_HEIGHT / 2;
+  const scaleX = dx === 0 ? Number.POSITIVE_INFINITY : halfW / Math.abs(dx);
+  const scaleY = dy === 0 ? Number.POSITIVE_INFINITY : halfH / Math.abs(dy);
+  const scale = Math.min(scaleX, scaleY);
+  return {
+    x: center.x - dx * scale,
+    y: center.y - dy * scale,
+  };
 }
 
 export default function TrafficSimulation() {
@@ -141,7 +153,7 @@ export default function TrafficSimulation() {
   useEffect(() => {
     const deselect = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("[data-pf24-traffic-target='true']")) return;
+      if (target?.closest("[data-pf24-traffic-select='true']")) return;
       if (target?.closest("[data-pf24-traffic-detail='true']")) return;
       setSelectedId(null);
       setDetailPosition(null);
@@ -199,13 +211,13 @@ export default function TrafficSimulation() {
     return () => window.clearInterval(timer);
   }, []);
 
-  function selectTraffic(a: Traffic, event: React.MouseEvent<HTMLButtonElement>) {
+  function selectTraffic(a: Traffic, event: React.MouseEvent<HTMLElement>) {
     event.stopPropagation();
     setSelectedId(a.id);
     const point = pointFromPercent(hostSize, a.x, a.y);
     setDetailPosition({
-      x: clamp(point.x + 38, 2, hostSize.x - DETAIL_WIDTH - 2),
-      y: clamp(point.y + 70, 2, hostSize.y - DETAIL_HEIGHT - 2),
+      x: clamp(point.x - 8, 2, hostSize.x - DETAIL_WIDTH - 2),
+      y: clamp(point.y + 72, 2, hostSize.y - DETAIL_HEIGHT - 2),
     });
   }
 
@@ -219,6 +231,9 @@ export default function TrafficSimulation() {
   }
 
   if (!host) return null;
+
+  const selectedPoint = selected ? pointFromPercent(hostSize, selected.x, selected.y) : null;
+  const connector = selectedPoint && detailPosition ? connectorEnd(selectedPoint, detailPosition) : null;
 
   return createPortal(
     <div className="pointer-events-none absolute inset-0 z-[8] overflow-hidden" data-pf24-traffic-sim="true">
@@ -242,6 +257,7 @@ export default function TrafficSimulation() {
             {showHeading && <line x1={point.x} y1={point.y} x2={vectorEnd.x} y2={vectorEnd.y} stroke="#00e000" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}
           </g>;
         })}
+        {selectedPoint && connector && <line x1={selectedPoint.x} y1={selectedPoint.y} x2={connector.x} y2={connector.y} stroke="#00e000" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}
       </svg>
 
       {traffic.map((a) => {
@@ -252,7 +268,7 @@ export default function TrafficSimulation() {
         return <div key={a.id} className="absolute" style={{ left: point.x, top: point.y }}>
           <button
             type="button"
-            data-pf24-traffic-target="true"
+            data-pf24-traffic-select="true"
             onClick={(event) => selectTraffic(a, event)}
             className="pointer-events-auto absolute z-[10] -translate-x-1/2 -translate-y-1/2"
             style={{ width: TARGET_SIZE_PX, height: TARGET_SIZE_PX }}
@@ -260,12 +276,20 @@ export default function TrafficSimulation() {
           >
             <span className={`absolute inset-0 rotate-45 border ${active ? "border-[#00ff00]" : "border-[#00d800]"}`}/>
           </button>
-          <div className="pointer-events-none absolute left-[17px] top-[15px] z-[9] w-[132px] whitespace-nowrap text-left font-mono text-[#00e000]">
-            <div className="text-[9px] leading-[11px]">I</div>
-            <div className="text-[13px] leading-[14px]">{a.callsign}</div>
-            <div className="text-[12px] leading-[14px]">A{fl}{trend}&nbsp;&nbsp;{String(Math.round(a.groundSpeed)).padStart(3, "0")}</div>
-            <div className="pl-[64px] text-[12px] leading-[13px]">{a.arrival}</div>
-          </div>
+
+          {!active && <button
+            type="button"
+            data-pf24-traffic-select="true"
+            onClick={(event) => selectTraffic(a, event)}
+            className="pointer-events-auto absolute left-[17px] top-[15px] z-[9] whitespace-nowrap text-left font-mono text-[#00e000]"
+            style={{ width: LABEL_WIDTH }}
+            aria-label={`Abrir información de ${a.callsign}`}
+          >
+            <span className="block text-[9px] leading-[11px]">I</span>
+            <span className="block text-[13px] leading-[14px]">{a.callsign}</span>
+            <span className="block text-[12px] leading-[14px]">A{fl}{trend}&nbsp;&nbsp;{String(Math.round(a.groundSpeed)).padStart(3, "0")}</span>
+            <span className="block pl-[64px] text-[12px] leading-[13px]">{a.arrival}</span>
+          </button>}
         </div>;
       })}
 
