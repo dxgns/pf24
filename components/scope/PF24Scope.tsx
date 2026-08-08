@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { ATC_FREQUENCIES } from "@/lib/atcFrequencies";
+import { ATC_FREQUENCIES, ATC_SECTOR_NAMES } from "@/lib/atcFrequencies";
 import type { ScopeFlightPlan, SimAircraft } from "@/lib/scope/types";
 
 type Props = { initialPlans: ScopeFlightPlan[]; controllerName: string };
@@ -295,8 +295,12 @@ function CollapseIcon({collapsed}:{collapsed:boolean}){return <svg width="12" he
 function CloseIcon(){return <svg width="12" height="10" viewBox="0 0 12 10"><line x1="2" y1="1" x2="10" y2="9" stroke="#d8e4e1" strokeWidth=".8"/><line x1="10" y1="1" x2="2" y2="9" stroke="#d8e4e1" strokeWidth=".8"/></svg>}
 
 function ConnectDialog({ form, setForm, connected, onConnect, onDisconnect, onClose }: { form: ConnectForm; setForm: React.Dispatch<React.SetStateAction<ConnectForm>>; connected: boolean; onConnect:()=>void; onDisconnect:()=>void; onClose:()=>void }) {
-  const airport=getAirportFromCallsign(form.callsign); const airportName=AIRPORT_NAMES[airport]??"";
-  const info1=airportName&&form.facility?`${airportName} ${FACILITY_INFO[form.facility]}`:"";
+  const callsign=form.callsign.trim().toUpperCase();
+  const airport=getAirportFromCallsign(callsign);
+  const sectorName=ATC_SECTOR_NAMES[callsign]??"";
+  const airportName=AIRPORT_NAMES[airport]??"";
+  const placeName=sectorName||airportName;
+  const info1=placeName&&form.facility?`${placeName} ${FACILITY_INFO[form.facility]}`:"";
   const info2=airport?"Visítanos en https://pf24.vercel.app/":"";
   const info3=airport?(PDC_AIRPORTS.has(airport)?`PDC/DCL ${airport}`:"PDC/DCL NO DISPONIBLE"):"";
   const allFieldsComplete = Boolean(form.callsign.trim() && form.facility && form.rating.trim() && form.server.trim() && form.password.trim() && form.discordName.trim() && form.robloxName.trim() && info1 && info2 && info3);
@@ -312,7 +316,7 @@ function ConnectDialog({ form, setForm, connected, onConnect, onDisconnect, onCl
 }
 
 function CallsignRow({value,onChange}:{value:string;onChange:(v:string)=>void}){
-  return <div className="relative mb-1 grid grid-cols-[72px_1fr] items-center gap-1"><span>Callsign</span><div className="relative"><input list="scope-callsigns" value={value} maxLength={20} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none" autoComplete="off"/><datalist id="scope-callsigns">{CALLSIGN_OPTIONS.map((option)=><option key={option} value={option}/>)}</datalist></div></div>;
+  return <div className="relative mb-1 grid grid-cols-[72px_1fr] items-center gap-1"><span>Callsign</span><div className="relative"><input list="scope-callsigns" value={value} maxLength={20} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none" autoComplete="off"/><datalist id="scope-callsigns">{CALLSIGN_OPTIONS.map((option)=><option key={option} value={option} label={ATC_SECTOR_NAMES[option] ? `${ATC_SECTOR_NAMES[option]} — ${option}` : option}/>)}</datalist></div></div>;
 }
 function TextRow({label,value,onChange,type="text",wide=false,maxLength=20}:{label:string;value:string;onChange:(v:string)=>void;type?:string;wide?:boolean;maxLength?:number}){return <div className={`mb-1 grid items-center gap-1 ${wide?"grid-cols-[82px_1fr]":"grid-cols-[72px_1fr]"}`}><span>{label}</span><input type={type} value={value} maxLength={maxLength} onChange={(e)=>onChange(e.target.value)} className="connectField w-full outline-none"/></div>}
 function StaticRow({label,value}:{label:string;value:string}){return <div className="mb-1 grid grid-cols-[82px_1fr] items-center gap-1"><span>{label}</span><div className="connectField truncate">{value}</div></div>}
