@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Traffic = {
   id: string;
@@ -21,7 +21,12 @@ type Traffic = {
   fix: string;
 };
 
-type TrailPoint = { x: number; y: number };
+type Point = { x: number; y: number };
+
+type DragState = {
+  dx: number;
+  dy: number;
+} | null;
 
 const TRAFFIC_SEED: Traffic[] = [
   { id: "t1", callsign: "LAN337", aircraftType: "A320", altitude: 5000, targetAltitude: 6000, verticalRate: 1200, heading: 180, targetHeading: 180, groundSpeed: 180, x: 29, y: 34, squawk: "9999", departure: "MDPC", arrival: "MDST", fix: "VOGEP" },
@@ -33,6 +38,13 @@ const TRAFFIC_SEED: Traffic[] = [
   { id: "t7", callsign: "PAA481", aircraftType: "B739", altitude: 18100, targetAltitude: 18000, verticalRate: -400, heading: 266, targetHeading: 266, groundSpeed: 342, x: 68, y: 79, squawk: "7441", departure: "MDST", arrival: "MDPC", fix: "SULI" },
   { id: "t8", callsign: "NKS904", aircraftType: "A20N", altitude: 10400, targetAltitude: 12000, verticalRate: 1300, heading: 12, targetHeading: 12, groundSpeed: 295, x: 48, y: 48, squawk: "3526", departure: "MDPC", arrival: "MDST", fix: "PIXE" },
 ];
+
+const VECTOR_LENGTH_PX = 62;
+const TRAIL_DOTS = 5;
+const TRAIL_SPACING_PX = 16;
+const TARGET_SIZE_PX = 18;
+const DETAIL_WIDTH = 190;
+const DETAIL_HEIGHT = 88;
 
 function shortestTurn(current: number, target: number) {
   return ((target - current + 540) % 360) - 180;
@@ -57,21 +69,50 @@ function getToolbarButtons(): HTMLButtonElement[] {
   return row ? Array.from(row.querySelectorAll<HTMLButtonElement>(":scope > button")) : [];
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+function pointFromPercent(hostSize: Point, x: number, y: number): Point {
+  return { x: hostSize.x * x / 100, y: hostSize.y * y / 100 };
+}
+
+function headingUnit(heading: number): Point {
+  const radians = heading * Math.PI / 180;
+  return { x: Math.sin(radians), y: -Math.cos(radians) };
+}
+
 export default function TrafficSimulation() {
   const [host, setHost] = useState<HTMLElement | null>(null);
+  const [hostSize, setHostSize] = useState<Point>({ x: 1, y: 1 });
   const [traffic, setTraffic] = useState<Traffic[]>(TRAFFIC_SEED);
-  const [selectedId, setSelectedId] = useState<string>(TRAFFIC_SEED[0].id);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showHeading, setShowHeading] = useState(false);
   const [showTrail, setShowTrail] = useState(false);
-  const [trails, setTrails] = useState<Record<string, TrailPoint[]>>(() => Object.fromEntries(TRAFFIC_SEED.map((a) => [a.id, []])));
+  const [detailPosition, setDetailPosition] = useState<Point | null>(null);
+  const dragRef = useRef<DragState>(null);
 
   const selected = useMemo(() => traffic.find((a) => a.id === selectedId) ?? null, [selectedId, traffic]);
 
   useEffect(() => {
-    setHost(findRadar());
-    const retry = window.setTimeout(() => setHost(findRadar()), 250);
+    const radar = findRadar();
+    setHost(radar);
+    if (radar) setHostSize({ x: Math.max(1, radar.clientWidth), y: Math.max(1, radar.clientHeight) });
+    const retry = window.setTimeout(() => {
+      const next = findRadar();
+      setHost(next);
+      if (next) setHostSize({ x: Math.max(1, next.clientWidth), y: Math.max(1, next.clientHeight) });
+    }, 250);
     return () => window.clearTimeout(retry);
   }, []);
+
+  useEffect(() => {
+    if (!host) return;
+    const update = () => setHostSize({ x: Math.max(1, host.clientWidth), y: Math.max(1, host.clientHeight) });
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [host]);
 
   useEffect(() => {
     const style = document.createElement("style");
@@ -90,13 +131,42 @@ export default function TrafficSimulation() {
       if (!(button instanceof HTMLButtonElement)) return;
       const buttons = getToolbarButtons();
       const index = buttons.indexOf(button);
-      // Top-bar vector glyph = HDG vector; dotted glyph = history trail.
-      if (index === 5) setShowHeading((v) => !v);
-      if (index === 6) setShowTrail((v) => !v);
+      if (index === 5) setShowHeading((value) => !value);
+      if (index === 6) setShowTrail((value) => !value);
     };
     document.addEventListener("click", onToolbarClick, true);
     return () => document.removeEventListener("click", onToolbarClick, true);
   }, []);
+
+  useEffect(() => {
+    const deselect = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("[data-pf24-traffic-target='true']")) return;
+      if (target?.closest("[data-pf24-traffic-detail='true']")) return;
+      setSelectedId(null);
+      setDetailPosition(null);
+    };
+    document.addEventListener("click", deselect, true);
+    return () => document.removeEventListener("click", deselect, true);
+  }, []);
+
+  useEffect(() => {
+    const move = (event: MouseEvent) => {
+      const drag = dragRef.current;
+      if (!drag || !host) return;
+      const rect = host.getBoundingClientRect();
+      const x = clamp(event.clientX - rect.left - drag.dx, 2, hostSize.x - DETAIL_WIDTH - 2);
+      const y = clamp(event.clientY - rect.top - drag.dy, 2, hostSize.y - DETAIL_HEIGHT - 2);
+      setDetailPosition({ x, y });
+    };
+    const up = () => { dragRef.current = null; };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  }, [host, hostSize.x, hostSize.y]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -129,33 +199,47 @@ export default function TrafficSimulation() {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setTrails((current) => {
-        const next = { ...current };
-        for (const a of traffic) {
-          next[a.id] = [...(current[a.id] ?? []), { x: a.x, y: a.y }].slice(-6);
-        }
-        return next;
-      });
-    }, 1200);
-    return () => window.clearInterval(timer);
-  }, [traffic]);
+  function selectTraffic(a: Traffic, event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    setSelectedId(a.id);
+    const point = pointFromPercent(hostSize, a.x, a.y);
+    setDetailPosition({
+      x: clamp(point.x + 38, 2, hostSize.x - DETAIL_WIDTH - 2),
+      y: clamp(point.y + 70, 2, hostSize.y - DETAIL_HEIGHT - 2),
+    });
+  }
+
+  function startDetailDrag(event: React.MouseEvent<HTMLDivElement>) {
+    if (!detailPosition) return;
+    event.stopPropagation();
+    dragRef.current = {
+      dx: event.clientX - (host?.getBoundingClientRect().left ?? 0) - detailPosition.x,
+      dy: event.clientY - (host?.getBoundingClientRect().top ?? 0) - detailPosition.y,
+    };
+  }
 
   if (!host) return null;
 
   return createPortal(
     <div className="pointer-events-none absolute inset-0 z-[8] overflow-hidden" data-pf24-traffic-sim="true">
-      <svg className="absolute inset-0 h-full w-full overflow-visible" aria-hidden="true">
+      <svg className="absolute inset-0 h-full w-full" width={hostSize.x} height={hostSize.y} viewBox={`0 0 ${hostSize.x} ${hostSize.y}`} preserveAspectRatio="none" aria-hidden="true">
         {traffic.map((a) => {
-          const points = trails[a.id] ?? [];
-          const vectorLength = Math.max(3.5, Math.min(8, a.groundSpeed / 45));
-          const r = a.heading * Math.PI / 180;
-          const x2 = a.x + Math.sin(r) * vectorLength;
-          const y2 = a.y - Math.cos(r) * vectorLength;
+          const point = pointFromPercent(hostSize, a.x, a.y);
+          const unit = headingUnit(a.heading);
+          const vectorEnd = { x: point.x + unit.x * VECTOR_LENGTH_PX, y: point.y + unit.y * VECTOR_LENGTH_PX };
           return <g key={a.id}>
-            {showTrail && points.map((p, i) => <circle key={`${a.id}-${i}`} cx={`${p.x}%`} cy={`${p.y}%`} r="2" fill="#00d000" opacity={0.45 + i * 0.08}/>) }
-            {showHeading && <line x1={`${a.x}%`} y1={`${a.y}%`} x2={`${x2}%`} y2={`${y2}%`} stroke="#00e000" strokeWidth="1.5"/>}
+            {showTrail && Array.from({ length: TRAIL_DOTS }, (_, index) => {
+              const distance = (index + 1) * TRAIL_SPACING_PX;
+              return <circle
+                key={`${a.id}-trail-${index}`}
+                cx={point.x - unit.x * distance}
+                cy={point.y - unit.y * distance}
+                r="2.2"
+                fill="#00d000"
+                opacity={0.95 - index * 0.11}
+              />;
+            })}
+            {showHeading && <line x1={point.x} y1={point.y} x2={vectorEnd.x} y2={vectorEnd.y} stroke="#00e000" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}
           </g>;
         })}
       </svg>
@@ -164,28 +248,32 @@ export default function TrafficSimulation() {
         const active = a.id === selectedId;
         const fl = flightLevel(a.altitude);
         const trend = trendSymbol(a.verticalRate);
-        return <button
-          key={a.id}
-          type="button"
-          onClick={() => setSelectedId(a.id)}
-          className="pointer-events-auto absolute z-[9] h-4 w-4 -translate-x-1/2 -translate-y-1/2"
-          style={{ left: `${a.x}%`, top: `${a.y}%` }}
-          aria-label={`Seleccionar ${a.callsign}`}
-        >
-          <span className={`absolute left-1/2 top-1/2 h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 rotate-45 border ${active ? "border-[#00ff00]" : "border-[#00d800]"}`}/>
-          {active && <span className="absolute left-[13px] top-[10px] h-px w-[34px] origin-left bg-[#00e000] rotate-[118deg]"/>}
-          <span className="absolute left-[-105px] top-[25px] w-[150px] text-left font-mono text-[12px] leading-[15px] text-[#00e000]">
-            <span className="block text-[10px]">I</span>
-            <span className="block text-[16px] leading-[17px]">{a.callsign}</span>
-            <span className="block text-[15px] leading-[17px]">A{fl}{trend}&nbsp;&nbsp; {Math.round(a.groundSpeed)}</span>
-            <span className="block pl-[62px] text-[15px] leading-[16px]">{a.arrival}</span>
-          </span>
-        </button>;
+        const point = pointFromPercent(hostSize, a.x, a.y);
+        return <div key={a.id} className="absolute" style={{ left: point.x, top: point.y }}>
+          <button
+            type="button"
+            data-pf24-traffic-target="true"
+            onClick={(event) => selectTraffic(a, event)}
+            className="pointer-events-auto absolute z-[10] -translate-x-1/2 -translate-y-1/2"
+            style={{ width: TARGET_SIZE_PX, height: TARGET_SIZE_PX }}
+            aria-label={`Seleccionar ${a.callsign}`}
+          >
+            <span className={`absolute inset-0 rotate-45 border ${active ? "border-[#00ff00]" : "border-[#00d800]"}`}/>
+          </button>
+          <div className="pointer-events-none absolute left-[17px] top-[15px] z-[9] w-[132px] whitespace-nowrap text-left font-mono text-[#00e000]">
+            <div className="text-[9px] leading-[11px]">I</div>
+            <div className="text-[13px] leading-[14px]">{a.callsign}</div>
+            <div className="text-[12px] leading-[14px]">A{fl}{trend}&nbsp;&nbsp;{String(Math.round(a.groundSpeed)).padStart(3, "0")}</div>
+            <div className="pl-[64px] text-[12px] leading-[13px]">{a.arrival}</div>
+          </div>
+        </div>;
       })}
 
-      {selected && <div
-        className="absolute z-[9] w-[190px] font-mono text-[12px] leading-[17px] text-[#00e000]"
-        style={{ left: `min(calc(${selected.x}% + 42px), calc(100% - 195px))`, top: `min(calc(${selected.y}% + 82px), calc(100% - 90px))` }}
+      {selected && detailPosition && <div
+        data-pf24-traffic-detail="true"
+        onMouseDown={startDetailDrag}
+        className="pointer-events-auto absolute z-[12] w-[190px] cursor-move select-none font-mono text-[12px] leading-[17px] text-[#00e000]"
+        style={{ left: detailPosition.x, top: detailPosition.y }}
       >
         <div className="text-[#ffff00]">A{selected.squawk}</div>
         <div>{selected.callsign} -- &nbsp;{selected.aircraftType}</div>
