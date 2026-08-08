@@ -23,6 +23,7 @@ type Traffic = {
 
 type Point = { x: number; y: number };
 type DragState = { dx: number; dy: number } | null;
+type RadarViewportState = { zoom: number; panX: number; panY: number };
 
 const TRAFFIC_SEED: Traffic[] = [
   { id: "t1", callsign: "LAN337", aircraftType: "A320", altitude: 5000, targetAltitude: 6000, verticalRate: 1200, heading: 180, targetHeading: 180, groundSpeed: 180, x: 29, y: 34, squawk: "9999", departure: "MDPC", arrival: "MDST", fix: "VOGEP" },
@@ -42,6 +43,8 @@ const TARGET_SIZE_PX = 18;
 const DETAIL_WIDTH = 190;
 const DETAIL_HEIGHT = 88;
 const LABEL_WIDTH = 132;
+const RADAR_STORAGE_KEY = "pf24_scope_radar_viewport_v1";
+const RADAR_VIEWPORT_EVENT = "pf24-radar-viewport";
 
 function shortestTurn(current: number, target: number) {
   return ((target - current + 540) % 360) - 180;
@@ -70,8 +73,31 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
-function pointFromPercent(hostSize: Point, x: number, y: number): Point {
+function readRadarViewport(): RadarViewportState {
+  try {
+    const raw = localStorage.getItem(RADAR_STORAGE_KEY);
+    if (!raw) return { zoom: 1, panX: 0, panY: 0 };
+    const parsed = JSON.parse(raw) as Partial<RadarViewportState>;
+    return {
+      zoom: typeof parsed.zoom === "number" && Number.isFinite(parsed.zoom) ? parsed.zoom : 1,
+      panX: typeof parsed.panX === "number" && Number.isFinite(parsed.panX) ? parsed.panX : 0,
+      panY: typeof parsed.panY === "number" && Number.isFinite(parsed.panY) ? parsed.panY : 0,
+    };
+  } catch {
+    return { zoom: 1, panX: 0, panY: 0 };
+  }
+}
+
+function worldPoint(hostSize: Point, x: number, y: number): Point {
   return { x: hostSize.x * x / 100, y: hostSize.y * y / 100 };
+}
+
+function screenPoint(hostSize: Point, x: number, y: number, viewport: RadarViewportState): Point {
+  const point = worldPoint(hostSize, x, y);
+  return {
+    x: point.x * viewport.zoom + viewport.panX,
+    y: point.y * viewport.zoom + viewport.panY,
+  };
 }
 
 function headingUnit(heading: number): Point {
@@ -102,9 +128,21 @@ export default function TrafficSimulation() {
   const [showHeading, setShowHeading] = useState(false);
   const [showTrail, setShowTrail] = useState(false);
   const [detailPosition, setDetailPosition] = useState<Point | null>(null);
+  const [radarViewport, setRadarViewport] = useState<RadarViewportState>({ zoom: 1, panX: 0, panY: 0 });
   const dragRef = useRef<DragState>(null);
 
   const selected = useMemo(() => traffic.find((a) => a.id === selectedId) ?? null, [selectedId, traffic]);
+
+  useEffect(() => {
+    setRadarViewport(readRadarViewport());
+    const onViewport = (event: Event) => {
+      const detail = (event as CustomEvent<RadarViewportState>).detail;
+      if (!detail) return;
+      setRadarViewport(detail);
+    };
+    window.addEventListener(RADAR_VIEWPORT_EVENT, onViewport);
+    return () => window.removeEventListener(RADAR_VIEWPORT_EVENT, onViewport);
+  }, []);
 
   useEffect(() => {
     const radar = findRadar();
@@ -132,6 +170,8 @@ export default function TrafficSimulation() {
     style.textContent = `
       main.fixed > section > button.absolute.z-10 { display: none !important; }
       main.fixed > section > div.absolute.right-\\[11px\\].top-\\[272px\\] { display: none !important; }
+      [data-pf24-traffic-sim='true'] { transform: none !important; transform-origin: initial !important; will-change: auto !important; }
+      [data-pf24-traffic-select='true'], [data-pf24-traffic-detail='true'] { text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased; }
     `;
     document.head.appendChild(style);
     return () => style.remove();
@@ -214,7 +254,7 @@ export default function TrafficSimulation() {
   function selectTraffic(a: Traffic, event: React.MouseEvent<HTMLElement>) {
     event.stopPropagation();
     setSelectedId(a.id);
-    const point = pointFromPercent(hostSize, a.x, a.y);
+    const point = screenPoint(hostSize, a.x, a.y, radarViewport);
     setDetailPosition({
       x: clamp(point.x - 8, 2, hostSize.x - DETAIL_WIDTH - 2),
       y: clamp(point.y + 72, 2, hostSize.y - DETAIL_HEIGHT - 2),
@@ -232,14 +272,14 @@ export default function TrafficSimulation() {
 
   if (!host) return null;
 
-  const selectedPoint = selected ? pointFromPercent(hostSize, selected.x, selected.y) : null;
+  const selectedPoint = selected ? screenPoint(hostSize, selected.x, selected.y, radarViewport) : null;
   const connector = selectedPoint && detailPosition ? connectorEnd(selectedPoint, detailPosition) : null;
 
   return createPortal(
     <div className="pointer-events-none absolute inset-0 z-[8] overflow-hidden" data-pf24-traffic-sim="true">
       <svg className="absolute inset-0 h-full w-full" width={hostSize.x} height={hostSize.y} viewBox={`0 0 ${hostSize.x} ${hostSize.y}`} preserveAspectRatio="none" aria-hidden="true">
         {traffic.map((a) => {
-          const point = pointFromPercent(hostSize, a.x, a.y);
+          const point = screenPoint(hostSize, a.x, a.y, radarViewport);
           const unit = headingUnit(a.heading);
           const vectorEnd = { x: point.x + unit.x * VECTOR_LENGTH_PX, y: point.y + unit.y * VECTOR_LENGTH_PX };
           return <g key={a.id}>
@@ -264,7 +304,7 @@ export default function TrafficSimulation() {
         const active = a.id === selectedId;
         const fl = flightLevel(a.altitude);
         const trend = trendSymbol(a.verticalRate);
-        const point = pointFromPercent(hostSize, a.x, a.y);
+        const point = screenPoint(hostSize, a.x, a.y, radarViewport);
         return <div key={a.id} className="absolute" style={{ left: point.x, top: point.y }}>
           <button
             type="button"
