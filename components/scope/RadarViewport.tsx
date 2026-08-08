@@ -7,6 +7,7 @@ type Viewport = { zoom: number; panX: number; panY: number };
 const STORAGE_KEY = "pf24_scope_radar_viewport_v1";
 const MIN_ZOOM = 0.55;
 const MAX_ZOOM = 3;
+const VIEWPORT_EVENT = "pf24-radar-viewport";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -31,18 +32,22 @@ function findRadar() {
   return document.querySelector<HTMLElement>("main.fixed > section");
 }
 
-function findTrafficLayer() {
-  return document.querySelector<HTMLElement>("[data-pf24-traffic-sim='true']");
-}
-
-function isWindowOrControl(target: EventTarget | null) {
+function isScopeWindowOrFormControl(target: EventTarget | null) {
   if (!(target instanceof Element)) return false;
   return Boolean(
     target.closest("section > div.absolute.z-30") ||
-    target.closest("[data-pf24-traffic-detail='true']") ||
-    target.closest("[data-pf24-traffic-select='true']") ||
     target.closest(".connectBox") ||
-    target.closest("button, input, select, textarea")
+    target.closest("input, select, textarea") ||
+    target.closest("button:not([data-pf24-traffic-select='true'])")
+  );
+}
+
+function isPanBlocked(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(
+    isScopeWindowOrFormControl(target) ||
+    target.closest("[data-pf24-traffic-detail='true']") ||
+    target.closest("[data-pf24-traffic-select='true']")
   );
 }
 
@@ -55,26 +60,25 @@ export default function RadarViewport() {
     let panning = false;
     let lastX = 0;
     let lastY = 0;
-    let trafficLayer: HTMLElement | null = null;
 
-    const apply = () => {
-      trafficLayer = findTrafficLayer();
-      if (!trafficLayer) return;
-      trafficLayer.style.transformOrigin = "0 0";
-      trafficLayer.style.transform = `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`;
-      trafficLayer.style.willChange = "transform";
-      trafficLayer.dataset.pf24RadarZoom = viewport.zoom.toFixed(3);
+    const publish = () => {
+      window.dispatchEvent(new CustomEvent<Viewport>(VIEWPORT_EVENT, { detail: { ...viewport } }));
+      radar.dataset.pf24RadarZoom = viewport.zoom.toFixed(3);
+      radar.style.setProperty("--pf24-radar-zoom", String(viewport.zoom));
+      radar.style.setProperty("--pf24-radar-pan-x", `${viewport.panX}px`);
+      radar.style.setProperty("--pf24-radar-pan-y", `${viewport.panY}px`);
     };
 
     const persist = () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(viewport));
     };
 
-    apply();
-    const initialRetry = window.setTimeout(apply, 300);
+    publish();
+    const initialRetry = window.setTimeout(publish, 300);
 
     const onWheel = (event: WheelEvent) => {
-      if (isWindowOrControl(event.target)) return;
+      // Traffic labels intentionally do not block radar zoom.
+      if (isScopeWindowOrFormControl(event.target)) return;
       event.preventDefault();
 
       const rect = radar.getBoundingClientRect();
@@ -92,13 +96,13 @@ export default function RadarViewport() {
         panX: cursorX - worldX * nextZoom,
         panY: cursorY - worldY * nextZoom,
       };
-      apply();
+      publish();
       persist();
     };
 
     const onMouseDown = (event: MouseEvent) => {
       const wantsPan = event.button === 1 || (event.button === 0 && event.shiftKey);
-      if (!wantsPan || isWindowOrControl(event.target)) return;
+      if (!wantsPan || isPanBlocked(event.target)) return;
       event.preventDefault();
       panning = true;
       lastX = event.clientX;
@@ -113,7 +117,7 @@ export default function RadarViewport() {
       lastX = event.clientX;
       lastY = event.clientY;
       viewport = { ...viewport, panX: viewport.panX + dx, panY: viewport.panY + dy };
-      apply();
+      publish();
     };
 
     const stopPan = () => {
@@ -143,12 +147,10 @@ export default function RadarViewport() {
       window.removeEventListener("mouseup", stopPan);
       window.removeEventListener("blur", stopPan);
       radar.style.cursor = "";
-      if (trafficLayer) {
-        trafficLayer.style.transform = "";
-        trafficLayer.style.transformOrigin = "";
-        trafficLayer.style.willChange = "";
-        delete trafficLayer.dataset.pf24RadarZoom;
-      }
+      radar.style.removeProperty("--pf24-radar-zoom");
+      radar.style.removeProperty("--pf24-radar-pan-x");
+      radar.style.removeProperty("--pf24-radar-pan-y");
+      delete radar.dataset.pf24RadarZoom;
     };
   }, []);
 
