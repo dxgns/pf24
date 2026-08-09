@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type MetarValue = { raw: string | null; loading: boolean; error: boolean };
 type RunwaySelection = { active?: boolean; dep?: boolean; arr?: boolean };
-type MetarTab = "atis" | "metar";
+type WeatherPanel = "atis" | "metar";
 
 const RUNWAY_STORAGE_KEY = "pf24_scope_runways_v2";
 const REFRESH_MS = 60_000;
@@ -103,7 +103,7 @@ export default function MetarInteraction() {
   const [airports, setAirports] = useState<string[]>([]);
   const [metars, setMetars] = useState<Record<string, MetarValue>>({});
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<MetarTab>("metar");
+  const [visible, setVisible] = useState({ metar: true, atis: false });
 
   const airportKey = useMemo(() => airports.join(","), [airports]);
   const selectedRaw = selectedStation ? metars[selectedStation]?.raw ?? null : null;
@@ -121,7 +121,7 @@ export default function MetarInteraction() {
   useEffect(() => {
     syncHosts();
     syncAirports();
-    const onScopeClick = () => window.setTimeout(() => { syncHosts(); syncAirports(); }, 120);
+    const onScopeClick = () => window.setTimeout(() => { syncHosts(); syncAirports(); }, 80);
     document.addEventListener("click", onScopeClick, true);
     window.addEventListener("storage", syncAirports);
     return () => {
@@ -131,13 +131,20 @@ export default function MetarInteraction() {
   }, [syncAirports, syncHosts]);
 
   useEffect(() => {
-    const onTabRequest = (event: Event) => {
-      const detail = (event as CustomEvent<MetarTab>).detail;
-      if (detail === "atis" || detail === "metar") setActiveTab(detail);
+    const onToggle = (event: Event) => {
+      const panel = (event as CustomEvent<WeatherPanel>).detail;
+      if (panel !== "atis" && panel !== "metar") return;
+      setVisible((current) => ({ ...current, [panel]: !current[panel] }));
     };
-    window.addEventListener("pf24-metar-tab", onTabRequest);
-    return () => window.removeEventListener("pf24-metar-tab", onTabRequest);
+    window.addEventListener("pf24-weather-toggle", onToggle);
+    return () => window.removeEventListener("pf24-weather-toggle", onToggle);
   }, []);
+
+  useEffect(() => {
+    if (!metarHost) return;
+    metarHost.style.display = visible.metar || visible.atis ? "" : "none";
+    return () => { metarHost.style.display = ""; };
+  }, [metarHost, visible]);
 
   useEffect(() => {
     const onOutsideClick = (event: MouseEvent) => {
@@ -154,13 +161,13 @@ export default function MetarInteraction() {
   }, [airports, selectedStation]);
 
   useEffect(() => {
-    if (!selectedStation || activeTab !== "metar") {
+    if (!selectedStation || !visible.metar) {
       setTransitionLevelDisplay("---");
       return;
     }
     setTransitionLevelDisplay(transitionLevel(selectedStation, selectedRaw));
     return () => setTransitionLevelDisplay("---");
-  }, [activeTab, selectedRaw, selectedStation]);
+  }, [selectedRaw, selectedStation, visible.metar]);
 
   useEffect(() => {
     const stations = airportKey ? airportKey.split(",") : [];
@@ -194,8 +201,10 @@ export default function MetarInteraction() {
     style.dataset.pf24MetarInteraction = "true";
     style.textContent = `
       [data-pf24-metar-host='true'] { width: 330px !important; }
+      [data-pf24-metar-host='true'] > div:first-child { height: 22px !important; background: #064a40 !important; border-color: #173d38 !important; color: #e9e9e9 !important; }
       [data-pf24-metar-host='true'] > div:nth-child(2):not([data-pf24-metar-overlay='true']) { display: none !important; }
-      [data-pf24-metar-title='true'] { padding: 0 !important; font-size: 0 !important; }
+      [data-pf24-metar-title='true'] { height: 100% !important; padding: 0 !important; font-size: 0 !important; }
+      [data-pf24-metar-overlay='true'] { background: #151515 !important; color: #00efff !important; }
       main.fixed footer form > div.ml-1.text-\\[8px\\]:not([data-pf24-full-metar='true']) { display: none !important; }
     `;
     document.head.appendChild(style);
@@ -216,27 +225,33 @@ export default function MetarInteraction() {
 
   useEffect(() => () => setTransitionLevelDisplay("---"), []);
 
-  const tabs = titleHost ? createPortal(
-    <div className="flex h-full w-full text-[11px] leading-none" data-pf24-metar-tabs="true">
-      <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setActiveTab("atis"); }} className={`w-[58px] border-r border-[#173d38] ${activeTab === "atis" ? "bg-[#0a554a]" : ""}`}>ATIS</button>
-      <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setActiveTab("metar"); }} className={`flex-1 ${activeTab === "metar" ? "bg-[#0a554a]" : ""}`}>Metars</button>
+  const title = titleHost ? createPortal(
+    <div className="flex h-full w-full items-stretch text-[12px] leading-none tracking-[1.5px]" data-pf24-metar-tabs="true">
+      {visible.atis && <div className={`${visible.metar ? "w-[58px] border-r border-[#173d38]" : "flex-1"} flex items-center justify-center`}>ATIS</div>}
+      {visible.metar && <div className="flex flex-1 items-center justify-center">Metars</div>}
     </div>, titleHost) : null;
 
+  const metarRows = airports.length === 0 ? (
+    <div className="px-[7px] py-[5px] text-[11px] text-[#9ca3a3]">No active airports</div>
+  ) : airports.map((station) => {
+    const entry = metars[station];
+    const label = entry?.loading ? `${station} -----KT Q----` : entry?.error ? `${station} METAR UNAVAILABLE` : compactMetar(station, entry?.raw ?? null);
+    return <button
+      key={station}
+      type="button"
+      data-pf24-metar-row="true"
+      className="block h-[22px] w-full whitespace-nowrap px-[7px] text-left font-mono text-[12px] leading-[22px] tracking-[.4px] hover:bg-[#0b302d]"
+      onClick={(event) => { event.stopPropagation(); if (entry?.raw) setSelectedStation(station); }}
+    >X&nbsp;&nbsp;{label}</button>;
+  });
+
   const upper = metarHost ? createPortal(
-    <div className="max-h-[96px] overflow-y-auto px-1 py-1 text-[9px] leading-[13px] text-[#00efff]" data-pf24-metar-overlay="true">
-      {activeTab === "atis" ? (
-        <div className="min-h-[26px] px-1 py-1 text-[#9ca3a3]">No ATIS available</div>
-      ) : airports.length === 0 ? (
-        <div className="text-[#9ca3a3]">No active airports</div>
-      ) : airports.map((station) => {
-        const entry = metars[station];
-        const label = entry?.loading ? `${station} -----KT Q----` : entry?.error ? `${station} METAR UNAVAILABLE` : compactMetar(station, entry?.raw ?? null);
-        return <button key={station} type="button" data-pf24-metar-row="true" className="block w-full whitespace-nowrap text-left hover:bg-[#0b302d]" onClick={(event) => { event.stopPropagation(); if (entry?.raw) setSelectedStation(station); }}>{label}</button>;
-      })}
+    <div className="max-h-[132px] overflow-y-auto bg-[#151515] text-[#00efff]" data-pf24-metar-overlay="true">
+      {visible.metar ? metarRows : visible.atis ? <div className="min-h-[44px] px-[7px] py-[7px] font-mono text-[12px] text-[#9ca3a3]">No ATIS available</div> : null}
     </div>, metarHost) : null;
 
-  const lower = footerForm && selectedRaw && activeTab === "metar" ? createPortal(
+  const lower = footerForm && selectedRaw && visible.metar ? createPortal(
     <div className="ml-1 min-w-0 flex-1 truncate text-[8px] text-[#222]" data-pf24-full-metar="true">METAR&nbsp;&nbsp;{selectedRaw}</div>, footerForm) : null;
 
-  return <>{tabs}{upper}{lower}</>;
+  return <>{title}{upper}{lower}</>;
 }
