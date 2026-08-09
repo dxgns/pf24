@@ -33,16 +33,24 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
   useEffect(() => {
     let cancelled = false;
 
+    const removeOwnedAtis = async () => {
+      const { error } = await supabase
+        .from("atis_messages")
+        .delete()
+        .eq("created_by", controllerName);
+      if (error) console.error("PF24 Scope ATIS disconnect cleanup failed:", error);
+    };
+
     const closeSession = async () => {
       const sessionId = localStorage.getItem(STORAGE_KEY);
-      if (!sessionId) return;
-
-      await supabase
-        .from("atc_sessions")
-        .update({ is_active: false, ended_at: new Date().toISOString() })
-        .eq("id", sessionId);
-
-      localStorage.removeItem(STORAGE_KEY);
+      if (sessionId) {
+        await supabase
+          .from("atc_sessions")
+          .update({ is_active: false, ended_at: new Date().toISOString() })
+          .eq("id", sessionId);
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      await removeOwnedAtis();
     };
 
     const openSession = async (position: string) => {
@@ -109,20 +117,32 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
       const sessionId = localStorage.getItem(STORAGE_KEY);
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/+$/, "");
       const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!sessionId || !supabaseUrl || !supabaseKey) return;
+      if (!supabaseUrl || !supabaseKey) return;
 
-      void fetch(`${supabaseUrl}/rest/v1/atc_sessions?id=eq.${encodeURIComponent(sessionId)}`, {
-        method: "PATCH",
+      if (sessionId) {
+        void fetch(`${supabaseUrl}/rest/v1/atc_sessions?id=eq.${encodeURIComponent(sessionId)}`, {
+          method: "PATCH",
+          keepalive: true,
+          headers: {
+            "Content-Type": "application/json",
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+            Prefer: "return=minimal",
+          },
+          body: JSON.stringify({ is_active: false, ended_at: new Date().toISOString() }),
+        });
+        localStorage.removeItem(STORAGE_KEY);
+      }
+
+      void fetch(`${supabaseUrl}/rest/v1/atis_messages?created_by=eq.${encodeURIComponent(controllerName)}`, {
+        method: "DELETE",
         keepalive: true,
         headers: {
-          "Content-Type": "application/json",
           apikey: supabaseKey,
           Authorization: `Bearer ${supabaseKey}`,
           Prefer: "return=minimal",
         },
-        body: JSON.stringify({ is_active: false, ended_at: new Date().toISOString() }),
       });
-      localStorage.removeItem(STORAGE_KEY);
     };
 
     window.addEventListener("pagehide", handlePageHide);
