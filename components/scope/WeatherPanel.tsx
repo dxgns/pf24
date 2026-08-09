@@ -84,6 +84,11 @@ function compactMetar(station: string, raw: string | null) {
   return `${station} ${wind} ${qnh ?? "Q----"}`;
 }
 
+function formatFullMetar(raw: string) {
+  const trimmed = raw.trim();
+  return /^METAR\b/i.test(trimmed) ? trimmed : `METAR ${trimmed}`;
+}
+
 function findRadar(): HTMLElement | null {
   return document.querySelector<HTMLElement>("main.fixed > section");
 }
@@ -310,7 +315,7 @@ export default function WeatherPanel() {
         </div>
       </div>
 
-      {!collapsed && <div className="max-h-[110px] overflow-y-auto bg-[#151515] text-[#00efff]">
+      {!collapsed && <div data-pf24-metar-overlay="true" className="max-h-[110px] overflow-y-auto bg-[#151515] text-[#00efff]">
         {airports.length === 0 ? (
           <div className="flex h-[22px] items-center text-[9px] text-[#8e9696]">
             {visible.atis && <div className="h-full shrink-0" style={{ width: ATIS_WIDTH }} />}
@@ -340,7 +345,7 @@ export default function WeatherPanel() {
 
   const fullMetar = footerForm && selectedRaw && visible.metar ? createPortal(
     <div data-pf24-full-metar="true" className="ml-1 min-w-0 flex-1 truncate text-[8px] text-[#222]">
-      METAR&nbsp;&nbsp;{selectedRaw}
+      {formatFullMetar(selectedRaw)}
     </div>,
     footerForm,
   ) : null;
