@@ -180,6 +180,10 @@ export default function ScopeChromeAdditions() {
       <button
         type="button"
         data-pf24-top-atis="true"
+        onClick={(event) => {
+          event.stopPropagation();
+          window.dispatchEvent(new CustomEvent("pf24-atis-dialog-toggle"));
+        }}
         className="scopeTopCell pointer-events-auto h-[21px] w-[60px] border-l border-[#173d38] text-[12px] tracking-[1px] text-[#e2e2e2]"
         style={{ background: "var(--pf24-topbar, #064a40)" }}
       >ATIS</button>
