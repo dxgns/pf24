@@ -147,6 +147,17 @@ export default function MetarInteraction() {
   }, [metarHost, visible]);
 
   useEffect(() => {
+    if (!metarHost) return;
+    const nativeBody = Array.from(metarHost.children).find((child, index) =>
+      index > 0 && child instanceof HTMLElement && child.dataset.pf24MetarOverlay !== "true",
+    );
+    if (!(nativeBody instanceof HTMLElement)) return;
+    const previousDisplay = nativeBody.style.display;
+    nativeBody.style.display = "none";
+    return () => { nativeBody.style.display = previousDisplay; };
+  }, [metarHost]);
+
+  useEffect(() => {
     const onOutsideClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest("[data-pf24-metar-row='true']")) return;
@@ -200,7 +211,7 @@ export default function MetarInteraction() {
     const style = document.createElement("style");
     style.dataset.pf24MetarInteraction = "true";
     style.textContent = `
-      [data-pf24-metar-host='true'] { width: 440px !important; }
+      [data-pf24-metar-host='true'] { width: 400px !important; }
       [data-pf24-metar-host='true'] > div:first-child {
         height: 30px !important;
         min-height: 30px !important;
@@ -215,10 +226,9 @@ export default function MetarInteraction() {
         border-left: 1px solid #173d38 !important;
       }
       [data-pf24-metar-host='true'] > div:first-child .windowIcon svg {
-        width: 24px !important;
-        height: 22px !important;
+        width: 23px !important;
+        height: 21px !important;
       }
-      [data-pf24-metar-host='true'] > div:nth-child(2):not([data-pf24-metar-overlay='true']) { display: none !important; }
       [data-pf24-metar-title='true'] {
         height: 100% !important;
         padding: 0 !important;
@@ -229,7 +239,7 @@ export default function MetarInteraction() {
       }
       [data-pf24-metar-tabs='true'] {
         color: #e9e9e9 !important;
-        font-size: 20px !important;
+        font-size: 19px !important;
         line-height: 30px !important;
       }
       [data-pf24-metar-overlay='true'] {
@@ -268,7 +278,7 @@ export default function MetarInteraction() {
     </div>, titleHost) : null;
 
   const metarRows = airports.length === 0 ? (
-    <div className="px-[16px] py-[12px] font-mono text-[16px] text-[#9ca3a3]">No active airports</div>
+    <div className="px-[14px] py-[12px] font-mono text-[15px] text-[#9ca3a3]">No active airports</div>
   ) : airports.map((station) => {
     const entry = metars[station];
     const parts = entry?.loading
@@ -281,7 +291,7 @@ export default function MetarInteraction() {
       key={station}
       type="button"
       data-pf24-metar-row="true"
-      className="grid h-[44px] w-full grid-cols-[38px_92px_1fr_92px] items-center whitespace-nowrap px-[14px] text-left font-mono text-[20px] leading-none tracking-[1px] hover:bg-[#0b302d]"
+      className="grid h-[46px] w-full grid-cols-[34px_84px_1fr_82px] items-center whitespace-nowrap px-[13px] text-left font-mono text-[19px] leading-none tracking-[1px] hover:bg-[#0b302d]"
       onClick={(event) => { event.stopPropagation(); if (entry?.raw) setSelectedStation(station); }}
     >
       <span>X</span>
@@ -292,9 +302,9 @@ export default function MetarInteraction() {
   });
 
   const upper = metarHost ? createPortal(
-    <div className="max-h-[176px] overflow-y-auto bg-[#151515] text-[#00efff]" data-pf24-metar-overlay="true">
+    <div className="max-h-[184px] overflow-y-auto bg-[#151515] text-[#00efff]" data-pf24-metar-overlay="true">
       {visible.metar ? metarRows : visible.atis ? (
-        <div className="min-h-[48px] px-[16px] py-[12px] font-mono text-[16px] text-[#9ca3a3]">No ATIS available</div>
+        <div className="min-h-[48px] px-[14px] py-[12px] font-mono text-[15px] text-[#9ca3a3]">No ATIS available</div>
       ) : null}
     </div>, metarHost) : null;
 
