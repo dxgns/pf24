@@ -60,22 +60,22 @@ function transitionLevel(station: string, raw: string | null): string {
   return String(ta === 4000 ? band.ta4000 : band.ta3000).padStart(3, "0");
 }
 
-function compactMetar(station: string, raw: string | null): string {
-  if (!raw) return `${station} -----KT Q----`;
+function compactMetarParts(station: string, raw: string | null) {
+  if (!raw) return { station, wind: "-----KT", qnh: "Q----" };
   const wind = raw.match(/\b(?:\d{3}|VRB)\d{2,3}(?:G\d{2,3})?KT\b/i)?.[0]?.toUpperCase() ?? "-----KT";
   let qnh = raw.match(/\bQ\d{4}\b/i)?.[0]?.toUpperCase() ?? null;
   if (!qnh) {
     const hpa = extractQnhHpa(raw);
     if (hpa !== null) qnh = `Q${String(Math.round(hpa)).padStart(4, "0")}`;
   }
-  return `${station} ${wind} ${qnh ?? "Q----"}`;
+  return { station, wind, qnh: qnh ?? "Q----" };
 }
 
 function findMetarHost(): HTMLElement | null {
   const windows = Array.from(document.querySelectorAll<HTMLElement>("section > div.absolute.z-30"));
   return windows.find((win) => {
     const text = win.firstElementChild?.textContent ?? "";
-    return text.includes("Metars") || text.includes("ATIS");
+    return text.includes("Metars") || text.includes("ATIS") || win.dataset.pf24MetarHost === "true";
   }) ?? null;
 }
 
@@ -200,11 +200,43 @@ export default function MetarInteraction() {
     const style = document.createElement("style");
     style.dataset.pf24MetarInteraction = "true";
     style.textContent = `
-      [data-pf24-metar-host='true'] { width: 330px !important; }
-      [data-pf24-metar-host='true'] > div:first-child { height: 22px !important; background: #064a40 !important; border-color: #173d38 !important; color: #e9e9e9 !important; }
+      [data-pf24-metar-host='true'] { width: 440px !important; }
+      [data-pf24-metar-host='true'] > div:first-child {
+        height: 30px !important;
+        min-height: 30px !important;
+        background: #064a40 !important;
+        border-color: #173d38 !important;
+        color: #e9e9e9 !important;
+      }
+      [data-pf24-metar-host='true'] > div:first-child > div:last-child { height: 100% !important; }
+      [data-pf24-metar-host='true'] > div:first-child .windowIcon {
+        width: 36px !important;
+        height: 100% !important;
+        border-left: 1px solid #173d38 !important;
+      }
+      [data-pf24-metar-host='true'] > div:first-child .windowIcon svg {
+        width: 24px !important;
+        height: 22px !important;
+      }
       [data-pf24-metar-host='true'] > div:nth-child(2):not([data-pf24-metar-overlay='true']) { display: none !important; }
-      [data-pf24-metar-title='true'] { height: 100% !important; padding: 0 !important; font-size: 0 !important; }
-      [data-pf24-metar-overlay='true'] { background: #151515 !important; color: #00efff !important; }
+      [data-pf24-metar-title='true'] {
+        height: 100% !important;
+        padding: 0 !important;
+        font-size: 0 !important;
+        line-height: 0 !important;
+        color: transparent !important;
+        overflow: hidden !important;
+      }
+      [data-pf24-metar-tabs='true'] {
+        color: #e9e9e9 !important;
+        font-size: 20px !important;
+        line-height: 30px !important;
+      }
+      [data-pf24-metar-overlay='true'] {
+        background: #151515 !important;
+        color: #00efff !important;
+        min-height: 48px !important;
+      }
       main.fixed footer form > div.ml-1.text-\\[8px\\]:not([data-pf24-full-metar='true']) { display: none !important; }
     `;
     document.head.appendChild(style);
@@ -226,28 +258,44 @@ export default function MetarInteraction() {
   useEffect(() => () => setTransitionLevelDisplay("---"), []);
 
   const title = titleHost ? createPortal(
-    <div className="flex h-full w-full items-stretch text-[12px] leading-none tracking-[1.5px]" data-pf24-metar-tabs="true">
-      {visible.atis && <div className={`${visible.metar ? "w-[58px] border-r border-[#173d38]" : "flex-1"} flex items-center justify-center`}>ATIS</div>}
+    <div className="flex h-full w-full items-stretch font-mono tracking-[2px]" data-pf24-metar-tabs="true">
+      {visible.atis && (
+        <div className={`${visible.metar ? "w-[112px] shrink-0 border-r border-[#173d38]" : "flex-1"} flex items-center justify-center`}>
+          ATIS
+        </div>
+      )}
       {visible.metar && <div className="flex flex-1 items-center justify-center">Metars</div>}
     </div>, titleHost) : null;
 
   const metarRows = airports.length === 0 ? (
-    <div className="px-[7px] py-[5px] text-[11px] text-[#9ca3a3]">No active airports</div>
+    <div className="px-[16px] py-[12px] font-mono text-[16px] text-[#9ca3a3]">No active airports</div>
   ) : airports.map((station) => {
     const entry = metars[station];
-    const label = entry?.loading ? `${station} -----KT Q----` : entry?.error ? `${station} METAR UNAVAILABLE` : compactMetar(station, entry?.raw ?? null);
+    const parts = entry?.loading
+      ? { station, wind: "-----KT", qnh: "Q----" }
+      : entry?.error
+        ? { station, wind: "METAR", qnh: "UNAVAILABLE" }
+        : compactMetarParts(station, entry?.raw ?? null);
+
     return <button
       key={station}
       type="button"
       data-pf24-metar-row="true"
-      className="block h-[22px] w-full whitespace-nowrap px-[7px] text-left font-mono text-[12px] leading-[22px] tracking-[.4px] hover:bg-[#0b302d]"
+      className="grid h-[44px] w-full grid-cols-[38px_92px_1fr_92px] items-center whitespace-nowrap px-[14px] text-left font-mono text-[20px] leading-none tracking-[1px] hover:bg-[#0b302d]"
       onClick={(event) => { event.stopPropagation(); if (entry?.raw) setSelectedStation(station); }}
-    >X&nbsp;&nbsp;{label}</button>;
+    >
+      <span>X</span>
+      <span>{parts.station}</span>
+      <span>{parts.wind}</span>
+      <span className="text-right">{parts.qnh}</span>
+    </button>;
   });
 
   const upper = metarHost ? createPortal(
-    <div className="max-h-[132px] overflow-y-auto bg-[#151515] text-[#00efff]" data-pf24-metar-overlay="true">
-      {visible.metar ? metarRows : visible.atis ? <div className="min-h-[44px] px-[7px] py-[7px] font-mono text-[12px] text-[#9ca3a3]">No ATIS available</div> : null}
+    <div className="max-h-[176px] overflow-y-auto bg-[#151515] text-[#00efff]" data-pf24-metar-overlay="true">
+      {visible.metar ? metarRows : visible.atis ? (
+        <div className="min-h-[48px] px-[16px] py-[12px] font-mono text-[16px] text-[#9ca3a3]">No ATIS available</div>
+      ) : null}
     </div>, metarHost) : null;
 
   const lower = footerForm && selectedRaw && visible.metar ? createPortal(
