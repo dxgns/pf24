@@ -31,6 +31,19 @@ export default function ScopeUiRefinements() {
     const style = document.createElement("style");
     style.dataset.pf24UiRefinements = "true";
     style.textContent = `
+      /* Keep the weather window compact and fixed, with only a small text margin. */
+      [data-pf24-weather-window='true'] {
+        width: 236px !important;
+        min-width: 236px !important;
+        max-width: 236px !important;
+        box-sizing: border-box !important;
+      }
+      [data-pf24-weather-window='true'] [data-pf24-metar-row='true'] {
+        overflow: hidden !important;
+        white-space: nowrap !important;
+        text-overflow: clip !important;
+      }
+
       /* Timer uses the same palette/borders as HOLD LIST, without changing its layout. */
       [data-pf24-functional-timer='true'] { background: #555c61 !important; color: #e8e8e8 !important; }
       [data-pf24-functional-timer='true'] > div { background: #555c61 !important; }
