@@ -12,7 +12,7 @@ import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
 import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
 import ScopeChromeAdditions from "@/components/scope/ScopeChromeAdditions";
-import ScopeAtisDialog from "@/components/scope/ScopeAtisDialog";
+import ScopeAtisDialogV2 from "@/components/scope/ScopeAtisDialogV2";
 import ScopeAtcPresence from "@/components/scope/ScopeAtcPresence";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
@@ -59,7 +59,7 @@ export default async function ScopePage() {
       <ScopeRatingAccess roles={session.user?.discordRoles ?? []} />
       <ScopeUiRefinements />
       <ScopeChromeAdditions />
-      <ScopeAtisDialog controllerName={controllerName} />
+      <ScopeAtisDialogV2 controllerName={controllerName} />
       <ScopeAtcPresence controllerName={controllerName} />
     </>
   );
