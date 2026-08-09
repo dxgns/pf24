@@ -148,12 +148,6 @@ export default function ScopePersonalization() {
     return () => document.removeEventListener("click", onConfigAction, true);
   }, [active, draft, saved]);
 
-  const goGeneral = () => {
-    const general = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "General");
-    general?.click();
-    setActive(false);
-  };
-
   if (!host || !active) return null;
 
   const fields: Array<[keyof Personalization, string]> = [
@@ -162,17 +156,13 @@ export default function ScopePersonalization() {
   ];
 
   return createPortal(
-    <div className="absolute inset-0 bg-[#cecece] px-[18px] pt-[12px] text-[12px] text-[#111]" data-pf24-personalization-panel="true">
-      <div className="mb-[12px] flex gap-[4px]">
-        <button type="button" onClick={goGeneral} className="border border-[#999] bg-[#e5e5e5] px-[10px] py-[3px]">General</button>
-        <button type="button" className="border border-[#999] bg-[#d7d7d7] px-[10px] py-[3px]">Personalization</button>
-      </div>
+    <div className="absolute inset-0 bg-[#cecece] px-[18px] pt-[22px] text-[12px] text-[#111]" data-pf24-personalization-panel="true">
       <div className="grid grid-cols-2 gap-x-[36px] gap-y-[7px]">
         {fields.map(([key, label]) => (
           <label key={key} className="grid grid-cols-[1fr_92px] items-center gap-[8px]">
             <span>{label}</span>
             <span className="flex h-[23px] items-center border border-[#aaa] bg-[#ededed] px-[3px]">
-              <input type="color" value={draft[key]} onChange={(event) => patch(key, event.target.value)} className="h-[17px] w-[24px] cursor-pointer border-0 bg-transparent p-0" />
+              <input type="color" value={draft[key]} onChange={(event) => patch(key, event.target.value)} className="h-[17px] w-[24px] border-0 bg-transparent p-0" />
               <input value={draft[key].toUpperCase()} maxLength={7} onChange={(event) => { const value = event.target.value; if (/^#[0-9a-f]{6}$/i.test(value)) patch(key, value); }} className="ml-[4px] w-[58px] bg-transparent font-mono text-[10px] outline-none" />
             </span>
           </label>
