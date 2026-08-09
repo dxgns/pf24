@@ -9,6 +9,7 @@ import TrafficSimulation from "@/components/scope/TrafficSimulation";
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
 import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
+import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = {
@@ -49,6 +50,7 @@ export default async function ScopePage() {
       <ScopePersonalization />
       <RadarViewport />
       <ScopeFunctionalExtras />
+      <ScopeRatingAccess roles={session.user?.discordRoles ?? []} />
     </>
   );
 }
