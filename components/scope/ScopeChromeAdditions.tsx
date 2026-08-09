@@ -26,6 +26,15 @@ function findMenu(): HTMLElement | null {
   return document.querySelector<HTMLElement>("main.fixed .scopeMenu");
 }
 
+function findConfigDialog(): HTMLElement | null {
+  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
+  const general = buttons.find((button) => button.textContent?.trim() === "General");
+  const personalization = buttons.find((button) => button.textContent?.trim() === "Personalization");
+  if (!general || !personalization) return null;
+  const dialog = general.closest<HTMLElement>("div.absolute");
+  return dialog && dialog.contains(personalization) ? dialog : null;
+}
+
 function findScopeWindow(title: string): HTMLElement | null {
   const windows = Array.from(document.querySelectorAll<HTMLElement>("main.fixed > section > div.absolute.z-30"));
   const normalized = title.toUpperCase();
@@ -63,11 +72,13 @@ function prepareWindowForReload(key: ListKey) {
 export default function ScopeChromeAdditions() {
   const [topBar, setTopBar] = useState<HTMLElement | null>(null);
   const [menu, setMenu] = useState<HTMLElement | null>(null);
+  const [configDialog, setConfigDialog] = useState<HTMLElement | null>(null);
   const [listVisibility, setListVisibility] = useState<ListVisibility>({ sector: true, taxi: true, freq: true });
 
   const sync = useCallback(() => {
     setTopBar(findTopBar());
     setMenu(findMenu());
+    setConfigDialog(findConfigDialog());
     setListVisibility({
       sector: readWindowOpen("sector"),
       taxi: readWindowOpen("taxi"),
@@ -178,5 +189,18 @@ export default function ScopeChromeAdditions() {
     menu,
   ) : null;
 
-  return <>{topAtis}{menuOptions}</>;
+  const closeConfig = configDialog ? createPortal(
+    <button
+      type="button"
+      data-pf24-config-close="true"
+      onClick={() => {
+        const cancel = Array.from(configDialog.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Cancelar");
+        cancel?.click();
+      }}
+      className="absolute bottom-[10px] right-[12px] border border-[#9b9b9b] bg-[#e5e5e5] px-[14px] py-[3px] text-[12px] text-[#111]"
+    >Close</button>,
+    configDialog,
+  ) : null;
+
+  return <>{topAtis}{menuOptions}{closeConfig}</>;
 }
