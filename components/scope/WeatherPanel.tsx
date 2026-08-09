@@ -11,11 +11,11 @@ type Point = { x: number; y: number };
 const RUNWAY_STORAGE_KEY = "pf24_scope_runways_v2";
 const WINDOW_STORAGE_KEY = "pf24_scope_weather_window_v2";
 const REFRESH_MS = 60_000;
-const METAR_PANEL_WIDTH = 190;
-const ATIS_WIDTH = 50;
-const CONTROL_WIDTH = 42;
-const HEADER_HEIGHT = 18;
-const ROW_HEIGHT = 18;
+const METAR_PANEL_WIDTH = 160;
+const ATIS_WIDTH = 46;
+const CONTROL_WIDTH = 39;
+const HEADER_HEIGHT = 17;
+const ROW_HEIGHT = 16;
 
 const TA_BY_AIRPORT: Record<string, 3000 | 4000> = {
   EFKT: 3000, EGHI: 3000, EGKK: 3000, GCLP: 3000, LCLK: 4000, LCPH: 4000, LCRA: 4000,
@@ -138,13 +138,13 @@ function readWindowPosition(): Point {
 }
 
 function ListIcon() {
-  return <svg width="11" height="9" viewBox="0 0 12 10" aria-hidden="true"><rect x="2" y="1" width="8" height="8" fill="none" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="3" x2="9" y2="3" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="5" x2="9" y2="5" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="7" x2="9" y2="7" stroke="#d8e4e1" strokeWidth=".7"/></svg>;
+  return <svg width="10" height="8" viewBox="0 0 12 10" aria-hidden="true"><rect x="2" y="1" width="8" height="8" fill="none" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="3" x2="9" y2="3" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="5" x2="9" y2="5" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="7" x2="9" y2="7" stroke="#d8e4e1" strokeWidth=".7"/></svg>;
 }
 function CollapseIcon({ collapsed }: { collapsed: boolean }) {
-  return <svg width="11" height="9" viewBox="0 0 12 10" aria-hidden="true"><path d={collapsed ? "M2 3 L6 7 L10 3" : "M2 7 L6 3 L10 7"} fill="none" stroke="#d8e4e1" strokeWidth=".8"/></svg>;
+  return <svg width="10" height="8" viewBox="0 0 12 10" aria-hidden="true"><path d={collapsed ? "M2 3 L6 7 L10 3" : "M2 7 L6 3 L10 7"} fill="none" stroke="#d8e4e1" strokeWidth=".8"/></svg>;
 }
 function CloseIcon() {
-  return <svg width="11" height="9" viewBox="0 0 12 10" aria-hidden="true"><line x1="2" y1="1" x2="10" y2="9" stroke="#d8e4e1" strokeWidth=".8"/><line x1="10" y1="1" x2="2" y2="9" stroke="#d8e4e1" strokeWidth=".8"/></svg>;
+  return <svg width="10" height="8" viewBox="0 0 12 10" aria-hidden="true"><line x1="2" y1="1" x2="10" y2="9" stroke="#d8e4e1" strokeWidth=".8"/><line x1="10" y1="1" x2="2" y2="9" stroke="#d8e4e1" strokeWidth=".8"/></svg>;
 }
 
 export default function WeatherPanel() {
@@ -286,10 +286,10 @@ export default function WeatherPanel() {
       className="pointer-events-auto absolute z-[31] overflow-hidden bg-[#151515] font-mono"
       style={{ left: position.x, top: position.y, width: totalWidth, minWidth: totalWidth, maxWidth: totalWidth }}
     >
-      <div className="flex h-[18px] bg-[#064a40] text-[#e9e9e9]">
+      <div className="flex h-[17px] bg-[#064a40] text-[#e9e9e9]">
         {visible.atis && (
           <div
-            className="flex shrink-0 cursor-move items-center justify-center border border-[#173d38] text-[9px] tracking-[.7px]"
+            className="flex shrink-0 cursor-move items-center justify-center border border-[#173d38] text-[8px] tracking-[.5px]"
             style={{ width: ATIS_WIDTH }}
             onMouseDown={(event) => {
               const rect = radar.getBoundingClientRect();
@@ -300,7 +300,7 @@ export default function WeatherPanel() {
 
         {visible.metar && <div className="flex shrink-0" style={{ width: METAR_PANEL_WIDTH }}>
           <div
-            className="flex cursor-move items-center justify-center border-y border-l border-[#173d38] text-[9px] tracking-[.7px]"
+            className="flex cursor-move items-center justify-center border-y border-l border-[#173d38] text-[8px] tracking-[.5px]"
             style={{ width: metarTitleWidth }}
             onMouseDown={(event) => {
               const rect = radar.getBoundingClientRect();
@@ -308,24 +308,24 @@ export default function WeatherPanel() {
             }}
           >Metars</div>
           <div className="flex h-full shrink-0 border border-[#173d38] border-l-0" style={{ width: CONTROL_WIDTH }}>
-            <button type="button" aria-label="Opciones" className="flex w-[14px] items-center justify-center border-l border-[#173d38]"><ListIcon/></button>
-            <button type="button" aria-label="Colapsar" onClick={() => setCollapsed((value) => !value)} className="flex w-[14px] items-center justify-center border-l border-[#173d38]"><CollapseIcon collapsed={collapsed}/></button>
-            <button type="button" aria-label="Cerrar" onClick={() => setVisible({ metar: false, atis: false })} className="flex w-[14px] items-center justify-center border-l border-[#173d38]"><CloseIcon/></button>
+            <button type="button" aria-label="Opciones" className="flex w-[13px] items-center justify-center border-l border-[#173d38]"><ListIcon/></button>
+            <button type="button" aria-label="Colapsar" onClick={() => setCollapsed((value) => !value)} className="flex w-[13px] items-center justify-center border-l border-[#173d38]"><CollapseIcon collapsed={collapsed}/></button>
+            <button type="button" aria-label="Cerrar" onClick={() => setVisible({ metar: false, atis: false })} className="flex w-[13px] items-center justify-center border-l border-[#173d38]"><CloseIcon/></button>
           </div>
         </div>}
       </div>
 
-      {!collapsed && <div data-pf24-metar-overlay="true" className="max-h-[90px] overflow-y-auto overflow-x-hidden bg-[#151515] text-[#00efff]">
+      {!collapsed && <div data-pf24-metar-overlay="true" className="max-h-[80px] overflow-y-auto overflow-x-hidden bg-[#151515] text-[#00efff]">
         {airports.length === 0 ? (
-          <div className="flex h-[18px] items-center text-[8px] text-[#8e9696]">
+          <div className="flex h-[16px] items-center text-[7px] text-[#8e9696]">
             {visible.atis && <div className="h-full shrink-0" style={{ width: ATIS_WIDTH }} />}
-            {visible.metar && <div className="flex h-full min-w-0 items-center overflow-hidden px-[4px]" style={{ width: METAR_PANEL_WIDTH }}>No active airports</div>}
+            {visible.metar && <div className="flex h-full min-w-0 items-center overflow-hidden px-[3px]" style={{ width: METAR_PANEL_WIDTH }}>No active airports</div>}
           </div>
         ) : airports.map((station) => {
           const entry = metars[station];
           const metar = entry?.loading ? `${station} -----KT Q----` : entry?.error ? `${station} METAR UNAVAILABLE` : compactMetar(station, entry?.raw ?? null);
-          return <div key={station} className="flex h-[18px] min-w-0 items-center overflow-hidden">
-            {visible.atis && <div className="flex h-full shrink-0 items-center px-[4px] text-[8px]" style={{ width: ATIS_WIDTH }}>X</div>}
+          return <div key={station} className="flex h-[16px] min-w-0 items-center overflow-hidden">
+            {visible.atis && <div className="flex h-full shrink-0 items-center px-[3px] text-[7px]" style={{ width: ATIS_WIDTH }}>X</div>}
             {visible.metar && <button
               type="button"
               data-pf24-metar-row="true"
@@ -333,7 +333,7 @@ export default function WeatherPanel() {
                 event.stopPropagation();
                 if (entry?.raw) setSelectedStation(station);
               }}
-              className="flex h-full min-w-0 shrink-0 items-center overflow-hidden whitespace-nowrap px-[4px] text-left text-[8px] tracking-[.1px] hover:bg-[#0b302d]"
+              className="flex h-full min-w-0 shrink-0 items-center overflow-hidden whitespace-nowrap px-[3px] text-left text-[7px] tracking-[.05px] hover:bg-[#0b302d]"
               style={{ width: METAR_PANEL_WIDTH }}
             >{metar}</button>}
           </div>;
