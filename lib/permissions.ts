@@ -9,7 +9,7 @@ export type WebPermissions = {
   canAssumeTraffic: boolean;
   canEditTraffic: boolean;
   canAccessAdmin: boolean;
-  atcRank: "NONE" | "S0" | "S1" | "S2" | "S3" | "C1" | "C3";
+  atcRank: "NONE" | "S0" | "S1" | "S2" | "S3" | "C1" | "C3" | "CI";
 };
 
 export function getPermissionsFromRoles(roles: string[]): WebPermissions {
@@ -20,6 +20,7 @@ export function getPermissionsFromRoles(roles: string[]): WebPermissions {
   const isStaff = has(DISCORD_ROLES.STAFF_ADMIN);
 
   const atcRank =
+    has(DISCORD_ROLES.CI) ? "CI" :
     has(DISCORD_ROLES.C3) ? "C3" :
     has(DISCORD_ROLES.C1) ? "C1" :
     has(DISCORD_ROLES.S3) ? "S3" :
