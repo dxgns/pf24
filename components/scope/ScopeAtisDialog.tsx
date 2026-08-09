@@ -2,6 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 
 type AirportConfig = {
@@ -358,6 +359,6 @@ export default function ScopeAtisDialog({ controllerName }: { controllerName: st
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="grid grid-cols-[145px_1fr] items-center gap-[7px] text-[16px]"><span className="text-right">{label}</span>{children}</label>;
 }
