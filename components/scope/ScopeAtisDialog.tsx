@@ -331,7 +331,7 @@ export default function ScopeAtisDialog({ controllerName }: { controllerName: st
             <Field label="Airport"><select value={airport} onChange={(e) => setAirport(e.target.value)} className="h-[23px] w-full bg-[#ececec] px-[4px] outline-none">{airports.map((icao) => <option key={icao}>{icao}</option>)}</select></Field>
             <Field label="Runway DEP"><select value={config.dep} onChange={(e) => patchConfig({ dep: e.target.value })} className="h-[23px] w-full bg-[#ececec] px-[4px] outline-none"><option value="" />{runwayOptions.map((value) => <option key={value}>{value}</option>)}</select></Field>
             <Field label="Runway ARR"><select value={config.arr} onChange={(e) => patchConfig({ arr: e.target.value })} className="h-[23px] w-full bg-[#ececec] px-[4px] outline-none"><option value="" />{runwayOptions.map((value) => <option key={value}>{value}</option>)}</select></Field>
-            <Field label="Appr Procedures"><input value={config.approach} maxLength={10} onChange={(e) => patchConfig({ approach: e.target.value.toUpperCase().slice(0, 10) })} className="h-[23px] w-full bg-[#ececec] px-[4px] uppercase outline-none" /></Field>
+            <Field label="Appr Procedures"><input value={config.approach} maxLength={15} onChange={(e) => patchConfig({ approach: e.target.value.toUpperCase().slice(0, 15) })} className="h-[23px] w-full bg-[#ececec] px-[4px] uppercase outline-none" /></Field>
           </div>
 
           <div className="mt-[22px] grid grid-cols-2 gap-[24px] text-center">
@@ -351,7 +351,7 @@ export default function ScopeAtisDialog({ controllerName }: { controllerName: st
             <div className="whitespace-pre-wrap break-words">{preview.replace(`${airport} ATIS INFO ${infoLetter}... `, "")}</div>
           </div>
           <div className="mt-[6px] text-[16px]">Remarks</div>
-          <textarea value={config.remarks} maxLength={30} onChange={(e) => patchConfig({ remarks: e.target.value.toUpperCase().slice(0, 30) })} className="mt-[3px] h-[100px] w-full resize-none bg-[#ececec] p-[5px] uppercase outline-none" />
+          <textarea value={config.remarks} maxLength={40} onChange={(e) => patchConfig({ remarks: e.target.value.toUpperCase().slice(0, 40) })} className="mt-[3px] h-[100px] w-full resize-none bg-[#ececec] p-[5px] uppercase outline-none" />
         </div>
       </div>
     </div>,
