@@ -143,12 +143,14 @@ export default function ScopeChromeAdditions() {
   };
 
   const topAtis = topBar ? createPortal(
-    <button
-      type="button"
-      data-pf24-top-atis="true"
-      className="scopeTopCell absolute left-[658px] top-0 z-[3] h-[21px] w-[60px] border-l border-[#173d38] text-[12px] tracking-[1px] text-[#e2e2e2]"
-      style={{ background: "var(--pf24-topbar, #064a40)" }}
-    >ATIS</button>,
+    <div className="pointer-events-none absolute left-[658px] top-0 z-[3] h-[21px] w-[60px]">
+      <button
+        type="button"
+        data-pf24-top-atis="true"
+        className="scopeTopCell pointer-events-auto h-[21px] w-[60px] border-l border-[#173d38] text-[12px] tracking-[1px] text-[#e2e2e2]"
+        style={{ background: "var(--pf24-topbar, #064a40)" }}
+      >ATIS</button>
+    </div>,
     topBar,
   ) : null;
 
