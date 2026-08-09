@@ -31,11 +31,8 @@ export default function ScopeUiRefinements() {
     const style = document.createElement("style");
     style.dataset.pf24UiRefinements = "true";
     style.textContent = `
-      /* Keep the weather window compact and fixed, with only a small text margin. */
+      /* Weather panel dimensions are controlled by WeatherPanel itself. */
       [data-pf24-weather-window='true'] {
-        width: 236px !important;
-        min-width: 236px !important;
-        max-width: 236px !important;
         box-sizing: border-box !important;
       }
       [data-pf24-weather-window='true'] [data-pf24-metar-row='true'] {
