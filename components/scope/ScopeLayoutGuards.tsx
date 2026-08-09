@@ -2,8 +2,34 @@
 
 import { useEffect } from "react";
 
-function isScopeWindow(element: Element): element is HTMLElement {
-  return element instanceof HTMLElement && element.matches("section > div.absolute.z-30");
+const WINDOW_SELECTOR = "main.fixed > section > div.absolute.z-30, [data-pf24-weather-window='true']";
+const COLLISION_GAP = 2;
+
+type DragState = {
+  element: HTMLElement;
+  startMouseX: number;
+  startMouseY: number;
+  startRect: DOMRect;
+};
+
+function scopeWindows(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>(WINDOW_SELECTOR)).filter((element) => {
+    const style = window.getComputedStyle(element);
+    return style.display !== "none" && style.visibility !== "hidden";
+  });
+}
+
+function overlaps(a: DOMRect, b: DOMRect, gap = COLLISION_GAP) {
+  return !(
+    a.right + gap <= b.left ||
+    a.left >= b.right + gap ||
+    a.bottom + gap <= b.top ||
+    a.top >= b.bottom + gap
+  );
+}
+
+function proposedRect(start: DOMRect, dx: number, dy: number): DOMRect {
+  return new DOMRect(start.left + dx, start.top + dy, start.width, start.height);
 }
 
 function clampWindowsToVisibleArea() {
@@ -12,7 +38,7 @@ function clampWindowsToVisibleArea() {
   if (!scope || !radar) return;
 
   const radarRect = radar.getBoundingClientRect();
-  const windows = Array.from(radar.children).filter(isScopeWindow);
+  const windows = scopeWindows();
 
   for (const win of windows) {
     const rect = win.getBoundingClientRect();
@@ -56,6 +82,40 @@ export default function ScopeLayoutGuards() {
     const scope = document.querySelector<HTMLElement>("main.fixed");
     if (!scope) return;
 
+    let drag: DragState | null = null;
+
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      const target = event.target instanceof Element ? event.target : null;
+      const win = target?.closest<HTMLElement>(WINDOW_SELECTOR);
+      if (!win) return;
+      const header = win.firstElementChild;
+      if (!(header instanceof HTMLElement) || !header.contains(target)) return;
+      if (target?.closest("button")) return;
+
+      drag = {
+        element: win,
+        startMouseX: event.clientX,
+        startMouseY: event.clientY,
+        startRect: win.getBoundingClientRect(),
+      };
+    };
+
+    const onMouseMove = (event: MouseEvent) => {
+      if (!drag || !(event.buttons & 1)) return;
+      const dx = event.clientX - drag.startMouseX;
+      const dy = event.clientY - drag.startMouseY;
+      const nextRect = proposedRect(drag.startRect, dx, dy);
+      const collision = scopeWindows().some((other) => other !== drag?.element && overlaps(nextRect, other.getBoundingClientRect()));
+
+      if (collision) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+
+    const onMouseUp = () => { drag = null; };
+
     const onClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest("button") : null;
       if (!(target instanceof HTMLButtonElement)) return;
@@ -68,10 +128,16 @@ export default function ScopeLayoutGuards() {
 
     const onResize = () => window.requestAnimationFrame(clampWindowsToVisibleArea);
 
+    scope.addEventListener("mousedown", onMouseDown, true);
+    window.addEventListener("mousemove", onMouseMove, true);
+    window.addEventListener("mouseup", onMouseUp, true);
     scope.addEventListener("click", onClick);
     window.addEventListener("resize", onResize);
 
     return () => {
+      scope.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("mousemove", onMouseMove, true);
+      window.removeEventListener("mouseup", onMouseUp, true);
       scope.removeEventListener("click", onClick);
       window.removeEventListener("resize", onResize);
     };
