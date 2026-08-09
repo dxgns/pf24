@@ -7,6 +7,7 @@ type ListKey = "sector" | "taxi" | "freq";
 type ListVisibility = Record<ListKey, boolean>;
 
 const WINDOW_LAYOUT_KEY = "pf24_scope_window_layout_v3";
+const MENU_VISIBILITY_KEY = "pf24_scope_menu_visibility_v1";
 const WINDOW_TITLES: Record<ListKey, string> = {
   sector: "SECTOR LIST",
   taxi: "COMBINED TAXI LIST",
@@ -17,6 +18,7 @@ const WINDOW_DEFAULTS: Record<ListKey, { x: number; y: number }> = {
   taxi: { x: 8, y: 104 },
   freq: { x: 1120, y: 48 },
 };
+const DEFAULT_VISIBILITY: ListVisibility = { sector: true, taxi: true, freq: true };
 
 function findTopBar(): HTMLElement | null {
   return document.querySelector<HTMLElement>("main.fixed header > div:first-child");
@@ -41,17 +43,30 @@ function findScopeWindow(title: string): HTMLElement | null {
   return windows.find((windowElement) => windowElement.firstElementChild?.textContent?.trim().toUpperCase().includes(normalized)) ?? null;
 }
 
-function readWindowOpen(key: ListKey): boolean {
-  const element = findScopeWindow(WINDOW_TITLES[key]);
-  if (element) return element.style.display !== "none";
+function readSavedVisibility(): ListVisibility {
   try {
-    const raw = localStorage.getItem(WINDOW_LAYOUT_KEY);
-    if (!raw) return false;
-    const layout = JSON.parse(raw) as Record<string, { open?: boolean }>;
-    return layout[key]?.open === true;
+    const raw = localStorage.getItem(MENU_VISIBILITY_KEY);
+    if (!raw) return DEFAULT_VISIBILITY;
+    const parsed = JSON.parse(raw) as Partial<ListVisibility>;
+    return {
+      sector: parsed.sector !== false,
+      taxi: parsed.taxi !== false,
+      freq: parsed.freq !== false,
+    };
   } catch {
-    return false;
+    return DEFAULT_VISIBILITY;
   }
+}
+
+function saveVisibility(value: ListVisibility) {
+  localStorage.setItem(MENU_VISIBILITY_KEY, JSON.stringify(value));
+}
+
+function applyVisibility(value: ListVisibility) {
+  (Object.keys(WINDOW_TITLES) as ListKey[]).forEach((key) => {
+    const element = findScopeWindow(WINDOW_TITLES[key]);
+    if (element) element.style.display = value[key] ? "" : "none";
+  });
 }
 
 function prepareWindowForReload(key: ListKey) {
@@ -73,27 +88,29 @@ export default function ScopeChromeAdditions() {
   const [topBar, setTopBar] = useState<HTMLElement | null>(null);
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const [configDialog, setConfigDialog] = useState<HTMLElement | null>(null);
-  const [listVisibility, setListVisibility] = useState<ListVisibility>({ sector: true, taxi: true, freq: true });
+  const [listVisibility, setListVisibility] = useState<ListVisibility>(DEFAULT_VISIBILITY);
 
   const sync = useCallback(() => {
     setTopBar(findTopBar());
     setMenu(findMenu());
     setConfigDialog(findConfigDialog());
-    setListVisibility({
-      sector: readWindowOpen("sector"),
-      taxi: readWindowOpen("taxi"),
-      freq: readWindowOpen("freq"),
-    });
+    const saved = readSavedVisibility();
+    setListVisibility(saved);
+    applyVisibility(saved);
   }, []);
 
   useEffect(() => {
     sync();
+    const initial = window.setTimeout(sync, 120);
     const onClick = () => window.setTimeout(sync, 0);
     document.addEventListener("click", onClick);
     window.addEventListener("resize", sync);
+    window.addEventListener("storage", sync);
     return () => {
+      window.clearTimeout(initial);
       document.removeEventListener("click", onClick);
       window.removeEventListener("resize", sync);
+      window.removeEventListener("storage", sync);
     };
   }, [sync]);
 
@@ -128,9 +145,11 @@ export default function ScopeChromeAdditions() {
 
       event.preventDefault();
       event.stopImmediatePropagation();
+      const next = { ...readSavedVisibility(), [matched]: false };
+      saveVisibility(next);
+      setListVisibility(next);
       const windowElement = findScopeWindow(WINDOW_TITLES[matched]);
       if (windowElement) windowElement.style.display = "none";
-      setListVisibility((current) => ({ ...current, [matched]: false }));
     };
 
     document.addEventListener("click", onCloseCapture, true);
@@ -138,16 +157,19 @@ export default function ScopeChromeAdditions() {
   }, []);
 
   const toggleWindow = (key: ListKey) => {
-    const next = !listVisibility[key];
-    const windowElement = findScopeWindow(WINDOW_TITLES[key]);
+    const current = readSavedVisibility();
+    const nextValue = !current[key];
+    const next = { ...current, [key]: nextValue };
+    saveVisibility(next);
+    setListVisibility(next);
 
+    const windowElement = findScopeWindow(WINDOW_TITLES[key]);
     if (windowElement) {
-      windowElement.style.display = next ? "" : "none";
-      setListVisibility((current) => ({ ...current, [key]: next }));
+      windowElement.style.display = nextValue ? "" : "none";
       return;
     }
 
-    if (next) {
+    if (nextValue) {
       prepareWindowForReload(key);
       window.location.reload();
     }
