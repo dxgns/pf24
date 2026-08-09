@@ -10,6 +10,7 @@ import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
 import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
 import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
+import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = {
@@ -51,6 +52,7 @@ export default async function ScopePage() {
       <RadarViewport />
       <ScopeFunctionalExtras />
       <ScopeRatingAccess roles={session.user?.discordRoles ?? []} />
+      <ScopeUiRefinements />
     </>
   );
 }
