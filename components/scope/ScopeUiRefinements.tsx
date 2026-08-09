@@ -31,17 +31,6 @@ export default function ScopeUiRefinements() {
     const style = document.createElement("style");
     style.dataset.pf24UiRefinements = "true";
     style.textContent = `
-      /* METAR / ATIS: one window, two clean independent tabs. */
-      [data-pf24-metar-host='true'] { width: 330px !important; }
-      [data-pf24-metar-host='true'] > div:first-child { min-width: 330px !important; }
-      [data-pf24-metar-title='true'] { height: 100% !important; overflow: hidden !important; }
-      [data-pf24-metar-tabs='true'] { height: 100% !important; align-items: stretch !important; font-size: 10px !important; letter-spacing: .4px !important; }
-      [data-pf24-metar-tabs='true'] > button:first-child { width: 62px !important; flex: 0 0 62px !important; border-right: 1px solid #173d38 !important; }
-      [data-pf24-metar-tabs='true'] > button:last-child { flex: 1 1 auto !important; text-align: center !important; }
-      [data-pf24-metar-overlay='true'] { min-height: 25px !important; padding: 2px 5px !important; font-size: 9px !important; line-height: 13px !important; overflow-x: hidden !important; }
-      [data-pf24-metar-row='true'] { display: grid !important; grid-template-columns: 14px 1fr !important; align-items: center !important; width: 100% !important; }
-      [data-pf24-metar-row='true']::before { content: 'X'; display: block; }
-
       /* Timer uses the same palette/borders as HOLD LIST, without changing its layout. */
       [data-pf24-functional-timer='true'] { background: #555c61 !important; color: #e8e8e8 !important; }
       [data-pf24-functional-timer='true'] > div { background: #555c61 !important; }
