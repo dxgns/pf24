@@ -13,6 +13,7 @@ import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
 import ScopeChromeAdditions from "@/components/scope/ScopeChromeAdditions";
 import ScopeAtisDialog from "@/components/scope/ScopeAtisDialog";
+import ScopeAtcPresence from "@/components/scope/ScopeAtcPresence";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = {
@@ -41,11 +42,13 @@ export default async function ScopePage() {
     console.error("PF24 Scope flight plan load error:", error);
   }
 
+  const controllerName = session.user?.name ?? "ATC";
+
   return (
     <>
       <PF24Scope
         initialPlans={(data ?? []) as ScopeFlightPlan[]}
-        controllerName={session.user?.name ?? "ATC"}
+        controllerName={controllerName}
       />
       <ScopeLayoutGuards />
       <WeatherPanel />
@@ -56,7 +59,8 @@ export default async function ScopePage() {
       <ScopeRatingAccess roles={session.user?.discordRoles ?? []} />
       <ScopeUiRefinements />
       <ScopeChromeAdditions />
-      <ScopeAtisDialog controllerName={session.user?.name ?? "ATC"} />
+      <ScopeAtisDialog controllerName={controllerName} />
+      <ScopeAtcPresence controllerName={controllerName} />
     </>
   );
 }
