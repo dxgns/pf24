@@ -7,13 +7,16 @@ type Point = { x: number; y: number };
 type Measurement = { id: number; first: string; second: string };
 type RenderedMeasurement = Measurement & { a: Point; b: Point; distanceNm: number };
 
-const RATING_STORAGE_KEY = "pf24_scope_rating_v1";
 const RADAR_VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const TIMER_PRESETS = [30, 60, 90, 120, 180] as const;
 
 function findScopeWindow(title: string): HTMLElement | null {
   const windows = Array.from(document.querySelectorAll<HTMLElement>("main.fixed > section > div.absolute.z-30"));
   return windows.find((win) => win.firstElementChild?.textContent?.toUpperCase().includes(title.toUpperCase())) ?? null;
+}
+
+function findWeatherWindow(): HTMLElement | null {
+  return findScopeWindow("Metars") ?? findScopeWindow("ATIS");
 }
 
 function findSecondBarButton(label: string): HTMLButtonElement | null {
@@ -54,13 +57,6 @@ function radarZoom() {
   } catch {
     return 1;
   }
-}
-
-function setReactInputValue(input: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-  setter?.call(input, value);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function playTimerSound() {
@@ -130,7 +126,7 @@ export default function ScopeFunctionalExtras() {
   const [renderTick, setRenderTick] = useState(0);
   const suppressDistanceClick = useRef(false);
   const windowVisibility = useRef<Record<string, boolean>>({});
-  const openingAtis = useRef(false);
+  const openingWeatherHost = useRef(false);
 
   const syncHosts = useCallback(() => {
     const timerWindow = findScopeWindow("TIMER");
@@ -140,33 +136,23 @@ export default function ScopeFunctionalExtras() {
     if (body) body.style.position = "relative";
   }, []);
 
-  const syncConnectDialog = useCallback(() => {
+  const syncPasswordLabel = useCallback(() => {
     const dialog = document.querySelector<HTMLElement>(".connectBox");
     if (!dialog) return;
     const rows = Array.from(dialog.querySelectorAll<HTMLElement>("div.mb-1"));
     for (const row of rows) {
       const label = row.firstElementChild;
-      if (!(label instanceof HTMLElement)) continue;
-      if (label.textContent?.trim() === "Password") label.textContent = "Password ATC";
-      if (label.textContent?.trim() === "Rating") {
-        const input = row.querySelector<HTMLInputElement>("input");
-        const saved = localStorage.getItem(RATING_STORAGE_KEY) ?? "";
-        if (input && saved && input.value !== saved) setReactInputValue(input, saved);
-        if (input && !input.dataset.pf24RatingBound) {
-          input.dataset.pf24RatingBound = "true";
-          input.addEventListener("input", () => localStorage.setItem(RATING_STORAGE_KEY, input.value.toUpperCase().slice(0, 2)));
-        }
-      }
+      if (label instanceof HTMLElement && label.textContent?.trim() === "Password") label.textContent = "Password ATC";
     }
   }, []);
 
   useEffect(() => {
     syncHosts();
-    syncConnectDialog();
-    const onClick = () => window.setTimeout(() => { syncHosts(); syncConnectDialog(); }, 0);
+    syncPasswordLabel();
+    const onClick = () => window.setTimeout(() => { syncHosts(); syncPasswordLabel(); }, 0);
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [syncConnectDialog, syncHosts]);
+  }, [syncHosts, syncPasswordLabel]);
 
   useEffect(() => {
     if (measurements.length === 0) return;
@@ -196,31 +182,30 @@ export default function ScopeFunctionalExtras() {
       const label = target.textContent?.trim();
       if (!["CLOCK", "HOLDS", "METAR", "ATIS"].includes(label ?? "")) return;
 
-      const key = label === "CLOCK" ? "TIMER" : label === "HOLDS" ? "HOLD LIST" : "METARS";
-      const before = key === "METARS" ? (findScopeWindow("Metars") ?? findScopeWindow("ATIS")) : findScopeWindow(key);
-      const wasVisible = before ? before.style.display !== "none" : false;
-
       if (label === "METAR" || label === "ATIS") {
-        window.dispatchEvent(new CustomEvent("pf24-metar-tab", { detail: label === "ATIS" ? "atis" : "metar" }));
-      }
+        if (openingWeatherHost.current && label === "METAR") return;
 
-      if (label === "ATIS" && !before && !openingAtis.current) {
-        openingAtis.current = true;
-        window.setTimeout(() => {
+        const panel = label === "ATIS" ? "atis" : "metar";
+        const host = findWeatherWindow();
+        if (!host && label === "ATIS") {
+          openingWeatherHost.current = true;
           const metarButton = findSecondBarButton("METAR");
           metarButton?.click();
-          window.setTimeout(() => {
-            const host = findScopeWindow("Metars") ?? findScopeWindow("ATIS");
-            if (host) host.style.display = "";
-            window.dispatchEvent(new CustomEvent("pf24-metar-tab", { detail: "atis" }));
-            openingAtis.current = false;
-          }, 30);
-        }, 0);
+          openingWeatherHost.current = false;
+          window.setTimeout(() => window.dispatchEvent(new CustomEvent("pf24-weather-toggle", { detail: panel })), 40);
+          return;
+        }
+
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent("pf24-weather-toggle", { detail: panel })), 0);
         return;
       }
 
+      const key = label === "CLOCK" ? "TIMER" : "HOLD LIST";
+      const before = findScopeWindow(key);
+      const wasVisible = before ? before.style.display !== "none" : false;
+
       window.setTimeout(() => {
-        const host = key === "METARS" ? (findScopeWindow("Metars") ?? findScopeWindow("ATIS")) : findScopeWindow(key);
+        const host = findScopeWindow(key);
         if (!host) return;
         const hidden = windowVisibility.current[key] ?? !wasVisible;
         const shouldHide = before && wasVisible && !hidden;
