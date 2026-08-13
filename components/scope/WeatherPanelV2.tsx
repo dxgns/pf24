@@ -7,17 +7,21 @@ import { supabase } from "@/lib/supabase";
 type MetarValue = { raw: string | null; loading: boolean; error: boolean };
 type RunwaySelection = { active?: boolean };
 type WeatherPanelName = "atis" | "metar";
+type WeatherVisibility = { atis: boolean; metar: boolean };
 type Point = { x: number; y: number };
 type AtisRow = { airport_icao: string; info_letter: string; created_at: string };
 
 const RUNWAY_STORAGE_KEY = "pf24_scope_runways_v2";
 const WINDOW_STORAGE_KEY = "pf24_scope_weather_window_v2";
+const VISIBILITY_STORAGE_KEY = "pf24_scope_weather_visibility_v1";
+const ATIS_CONFIG_STORAGE_KEY = "pf24_scope_atis_configs_v1";
 const REFRESH_MS = 60_000;
 const METAR_PANEL_WIDTH = 160;
 const ATIS_WIDTH = 46;
 const CONTROL_WIDTH = 39;
 const HEADER_HEIGHT = 17;
 const ROW_HEIGHT = 16;
+const DEFAULT_VISIBILITY: WeatherVisibility = { metar: true, atis: false };
 
 const TA_BY_AIRPORT: Record<string, 3000 | 4000> = {
   EFKT: 3000, EGHI: 3000, EGKK: 3000, GCLP: 3000, LCLK: 4000, LCPH: 4000, LCRA: 4000,
@@ -37,6 +41,19 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
+function readVisibility(): WeatherVisibility {
+  if (typeof window === "undefined") return DEFAULT_VISIBILITY;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(VISIBILITY_STORAGE_KEY) ?? "{}") as Partial<WeatherVisibility>;
+    return {
+      metar: parsed.metar !== false,
+      atis: parsed.atis === true,
+    };
+  } catch {
+    return DEFAULT_VISIBILITY;
+  }
+}
+
 function getActiveAirports(): string[] {
   try {
     const state = JSON.parse(localStorage.getItem(RUNWAY_STORAGE_KEY) ?? "{}") as Record<string, RunwaySelection>;
@@ -49,6 +66,17 @@ function getActiveAirports(): string[] {
   } catch {
     return [];
   }
+}
+
+function deactivateLocalAtis(airport: string) {
+  try {
+    const configs = JSON.parse(localStorage.getItem(ATIS_CONFIG_STORAGE_KEY) ?? "{}") as Record<string, Record<string, unknown>>;
+    if (configs[airport]) {
+      configs[airport] = { ...configs[airport], active: false };
+      localStorage.setItem(ATIS_CONFIG_STORAGE_KEY, JSON.stringify(configs));
+    }
+  } catch {}
+  window.dispatchEvent(new CustomEvent("pf24-atis-config-sync"));
 }
 
 function extractQnhHpa(raw: string | null): number | null {
@@ -148,7 +176,9 @@ export default function WeatherPanelV2() {
   const [metars, setMetars] = useState<Record<string, MetarValue>>({});
   const [atisLetters, setAtisLetters] = useState<Record<string, string>>({});
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
-  const [visible, setVisible] = useState({ metar: true, atis: false });
+  const [atisPopup, setAtisPopup] = useState<string | null>(null);
+  const [deletingAtis, setDeletingAtis] = useState<string | null>(null);
+  const [visible, setVisible] = useState<WeatherVisibility>(() => readVisibility());
   const [collapsed, setCollapsed] = useState(false);
   const [position, setPosition] = useState<Point>({ x: 1265, y: 48 });
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
@@ -179,6 +209,10 @@ export default function WeatherPanelV2() {
     }
     setAtisLetters(next);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(VISIBILITY_STORAGE_KEY, JSON.stringify(visible));
+  }, [visible]);
 
   useEffect(() => {
     setPosition(readWindowPosition());
@@ -216,6 +250,7 @@ export default function WeatherPanelV2() {
     if (stations.length === 0) {
       setMetars({});
       setSelectedStation(null);
+      setAtisPopup(null);
       return;
     }
     const refresh = async () => {
@@ -248,6 +283,8 @@ export default function WeatherPanelV2() {
   useEffect(() => {
     const onOutsideClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("[data-pf24-atis-letter='true']") || target?.closest("[data-pf24-atis-delete-popup='true']")) return;
+      setAtisPopup(null);
       if (target?.closest("[data-pf24-weather-window='true']")) return;
       setSelectedStation(null);
     };
@@ -283,15 +320,31 @@ export default function WeatherPanelV2() {
     };
   }, [airports.length, collapsed, radar, totalWidth]);
 
+  const deleteAtis = async (station: string) => {
+    try {
+      setDeletingAtis(station);
+      const { error } = await supabase.from("atis_messages").delete().eq("airport_icao", station);
+      if (error) {
+        console.error("PF24 Scope ATIS removal failed:", error);
+        return;
+      }
+      deactivateLocalAtis(station);
+      setAtisPopup(null);
+      await loadAtis();
+    } finally {
+      setDeletingAtis(null);
+    }
+  };
+
   if (!radar || (!visible.metar && !visible.atis)) return null;
 
   const weatherWindow = createPortal(
     <div
       data-pf24-weather-window="true"
-      className="pointer-events-auto absolute z-[31] overflow-hidden bg-[#151515] font-mono"
+      className="pointer-events-auto absolute z-[31] overflow-visible bg-[#151515] font-mono"
       style={{ left: position.x, top: position.y, width: totalWidth, minWidth: totalWidth, maxWidth: totalWidth }}
     >
-      <div className="flex h-[17px] bg-[#064a40] text-[#e9e9e9]">
+      <div className="flex h-[17px] overflow-hidden bg-[#064a40] text-[#e9e9e9]">
         {visible.atis && (
           <div
             className="flex shrink-0 items-center justify-center border border-[#173d38] text-[8px] tracking-[.5px]"
@@ -321,16 +374,49 @@ export default function WeatherPanelV2() {
 
       {!collapsed && airports.map((station) => {
         const entry = metars[station];
+        const atisLetter = atisLetters[station] ?? "-";
         return (
-          <button
-            key={station}
-            type="button"
-            onClick={() => setSelectedStation((current) => current === station ? null : station)}
-            className="flex h-[16px] w-full items-center bg-[#151515] text-left text-[8px] leading-none text-[#00efff]"
-          >
-            {visible.atis && <span className="flex shrink-0 items-center pl-[4px]" style={{ width: ATIS_WIDTH }}>{atisLetters[station] ?? "-"}</span>}
-            {visible.metar && <span className="whitespace-nowrap px-[4px]">{entry?.loading ? `${station} LOADING...` : entry?.error ? `${station} METAR UNAVAILABLE` : compactMetar(station, entry?.raw ?? null)}</span>}
-          </button>
+          <div key={station} className="relative flex h-[16px] w-full items-center bg-[#151515] text-left text-[8px] leading-none text-[#00efff]">
+            {visible.atis && (
+              <button
+                type="button"
+                data-pf24-atis-letter="true"
+                disabled={atisLetter === "-"}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setAtisPopup((current) => current === station ? null : station);
+                }}
+                className="flex h-full shrink-0 items-center pl-[4px] text-left text-[#00efff] disabled:text-[#00efff]"
+                style={{ width: ATIS_WIDTH }}
+              >{atisLetter}</button>
+            )}
+            {visible.metar && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setAtisPopup(null);
+                  setSelectedStation((current) => current === station ? null : station);
+                }}
+                className="h-full min-w-0 flex-1 whitespace-nowrap px-[4px] text-left text-[#00efff]"
+              >{entry?.loading ? `${station} LOADING...` : entry?.error ? `${station} METAR UNAVAILABLE` : compactMetar(station, entry?.raw ?? null)}</button>
+            )}
+
+            {visible.atis && atisPopup === station && atisLetter !== "-" && (
+              <div data-pf24-atis-delete-popup="true" className="absolute left-[2px] top-[16px] z-[95] min-w-[82px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
+                <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-center text-[9px]">ATIS {station}</div>
+                <button
+                  type="button"
+                  disabled={deletingAtis === station}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void deleteAtis(station);
+                  }}
+                  className="block w-full px-[6px] py-[4px] text-left text-[9px] hover:bg-[#0a5b50] disabled:text-[#899]"
+                >{deletingAtis === station ? "DELETING..." : "DELETE ATIS"}</button>
+              </div>
+            )}
+          </div>
         );
       })}
     </div>,
