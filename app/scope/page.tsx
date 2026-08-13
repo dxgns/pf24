@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { supabase } from "@/lib/supabase";
 import PF24Scope from "@/components/scope/PF24Scope";
 import ScopeLayoutGuards from "@/components/scope/ScopeLayoutGuards";
-import WeatherPanel from "@/components/scope/WeatherPanel";
+import WeatherPanelV2 from "@/components/scope/WeatherPanelV2";
 import TrafficSimulation from "@/components/scope/TrafficSimulation";
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
@@ -14,7 +14,7 @@ import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
 import ScopeChromeAdditions from "@/components/scope/ScopeChromeAdditions";
 import ScopeAtisDialogV2 from "@/components/scope/ScopeAtisDialogV2";
 import ScopeAtcPresence from "@/components/scope/ScopeAtcPresence";
-import ScopeWeatherAtisLetters from "@/components/scope/ScopeWeatherAtisLetters";
+import ScopeOperationalSync from "@/components/scope/ScopeOperationalSync";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = {
@@ -47,12 +47,9 @@ export default async function ScopePage() {
 
   return (
     <>
-      <PF24Scope
-        initialPlans={(data ?? []) as ScopeFlightPlan[]}
-        controllerName={controllerName}
-      />
+      <PF24Scope initialPlans={(data ?? []) as ScopeFlightPlan[]} controllerName={controllerName} />
       <ScopeLayoutGuards />
-      <WeatherPanel />
+      <WeatherPanelV2 />
       <TrafficSimulation />
       <ScopePersonalization />
       <RadarViewport />
@@ -62,7 +59,7 @@ export default async function ScopePage() {
       <ScopeChromeAdditions />
       <ScopeAtisDialogV2 controllerName={controllerName} />
       <ScopeAtcPresence controllerName={controllerName} />
-      <ScopeWeatherAtisLetters />
+      <ScopeOperationalSync />
     </>
   );
 }
