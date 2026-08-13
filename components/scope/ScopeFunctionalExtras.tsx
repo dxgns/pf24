@@ -164,6 +164,7 @@ export default function ScopeFunctionalExtras() {
     const onToolbarClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest("button") : null;
       if (!(target instanceof HTMLButtonElement)) return;
+      if (target.dataset.pf24TopAtis === "true") return;
 
       const distanceButton = findDistanceButton();
       if (target === distanceButton) {
@@ -184,18 +185,15 @@ export default function ScopeFunctionalExtras() {
 
       if (label === "METAR" || label === "ATIS") {
         if (openingWeatherHost.current && label === "METAR") return;
-
         const panel = label === "ATIS" ? "atis" : "metar";
         const host = findWeatherWindow();
         if (!host && label === "ATIS") {
           openingWeatherHost.current = true;
-          const metarButton = findSecondBarButton("METAR");
-          metarButton?.click();
+          findSecondBarButton("METAR")?.click();
           openingWeatherHost.current = false;
           window.setTimeout(() => window.dispatchEvent(new CustomEvent("pf24-weather-toggle", { detail: panel })), 40);
           return;
         }
-
         window.setTimeout(() => window.dispatchEvent(new CustomEvent("pf24-weather-toggle", { detail: panel })), 0);
         return;
       }
@@ -203,7 +201,6 @@ export default function ScopeFunctionalExtras() {
       const key = label === "CLOCK" ? "TIMER" : "HOLD LIST";
       const before = findScopeWindow(key);
       const wasVisible = before ? before.style.display !== "none" : false;
-
       window.setTimeout(() => {
         const host = findScopeWindow(key);
         if (!host) return;
@@ -232,13 +229,11 @@ export default function ScopeFunctionalExtras() {
       if (!callsign) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-
       if (!firstTraffic) {
         setFirstTraffic(callsign);
         return;
       }
       if (firstTraffic === callsign) return;
-
       setMeasurements((current) => [...current, { id: Date.now(), first: firstTraffic, second: callsign }]);
       setFirstTraffic(null);
       setDistanceMode(false);
@@ -248,7 +243,6 @@ export default function ScopeFunctionalExtras() {
         window.setTimeout(() => button.click(), 0);
       }
     };
-
     document.addEventListener("click", onTrafficClick, true);
     return () => document.removeEventListener("click", onTrafficClick, true);
   }, [distanceMode, firstTraffic]);
@@ -272,19 +266,7 @@ export default function ScopeFunctionalExtras() {
         const midX = (measurement.a.x + measurement.b.x) / 2;
         const midY = (measurement.a.y + measurement.b.y) / 2;
         return <g key={measurement.id}>
-          <line
-            x1={measurement.a.x}
-            y1={measurement.a.y}
-            x2={measurement.b.x}
-            y2={measurement.b.y}
-            stroke="#8a8a8a"
-            strokeWidth="2"
-            className="pointer-events-auto cursor-pointer"
-            onDoubleClick={(event) => {
-              event.stopPropagation();
-              setMeasurements((current) => current.filter((item) => item.id !== measurement.id));
-            }}
-          />
+          <line x1={measurement.a.x} y1={measurement.a.y} x2={measurement.b.x} y2={measurement.b.y} stroke="#8a8a8a" strokeWidth="2" className="pointer-events-auto cursor-pointer" onDoubleClick={(event) => { event.stopPropagation(); setMeasurements((current) => current.filter((item) => item.id !== measurement.id)); }} />
           <text x={midX + 8} y={midY - 5} fill="#8a8a8a" fontSize="12" fontFamily="monospace">{Math.max(0.1, measurement.distanceNm).toFixed(1)}nm</text>
         </g>;
       })}
