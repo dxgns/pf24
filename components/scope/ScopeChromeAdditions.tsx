@@ -43,6 +43,22 @@ function findScopeWindow(title: string): HTMLElement | null {
   return windows.find((windowElement) => windowElement.firstElementChild?.textContent?.trim().toUpperCase().includes(normalized)) ?? null;
 }
 
+function listKeyFromCloseButton(button: HTMLButtonElement): ListKey | null {
+  const windowElement = button.closest("div.absolute.z-30") as HTMLElement | null;
+  if (!windowElement || windowElement.parentElement?.tagName !== "SECTION") return null;
+
+  const header = windowElement.firstElementChild as HTMLElement | null;
+  if (!header || !header.contains(button)) return null;
+  const headerButtons = Array.from(header.querySelectorAll<HTMLButtonElement>("button"));
+  if (headerButtons.length === 0 || headerButtons[headerButtons.length - 1] !== button) return null;
+
+  const title = header.textContent?.trim().toUpperCase() ?? "";
+  if (title.includes("SECTOR LIST")) return "sector";
+  if (title.includes("COMBINED TAXI LIST")) return "taxi";
+  if (title.includes("FREQ")) return "freq";
+  return null;
+}
+
 function readSavedVisibility(): ListVisibility {
   try {
     const raw = localStorage.getItem(MENU_VISIBILITY_KEY);
@@ -143,8 +159,7 @@ export default function ScopeChromeAdditions() {
     const onCloseCapture = (event: MouseEvent) => {
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
       if (!button) return;
-      const label = button.getAttribute("aria-label") ?? "";
-      const matched = (Object.keys(WINDOW_TITLES) as ListKey[]).find((key) => label === `Cerrar ${WINDOW_TITLES[key]}`);
+      const matched = listKeyFromCloseButton(button);
       if (!matched) return;
 
       const next = { ...readSavedVisibility(), [matched]: false };
