@@ -60,6 +60,7 @@ function readSavedVisibility(): ListVisibility {
 
 function saveVisibility(value: ListVisibility) {
   localStorage.setItem(MENU_VISIBILITY_KEY, JSON.stringify(value));
+  window.dispatchEvent(new CustomEvent("pf24-menu-visibility-sync"));
 }
 
 function applyVisibility(value: ListVisibility) {
@@ -103,14 +104,17 @@ export default function ScopeChromeAdditions() {
     sync();
     const initial = window.setTimeout(sync, 120);
     const onClick = () => window.setTimeout(sync, 0);
+    const onVisibilitySync = () => sync();
     document.addEventListener("click", onClick);
     window.addEventListener("resize", sync);
     window.addEventListener("storage", sync);
+    window.addEventListener("pf24-menu-visibility-sync", onVisibilitySync);
     return () => {
       window.clearTimeout(initial);
       document.removeEventListener("click", onClick);
       window.removeEventListener("resize", sync);
       window.removeEventListener("storage", sync);
+      window.removeEventListener("pf24-menu-visibility-sync", onVisibilitySync);
     };
   }, [sync]);
 
@@ -143,13 +147,9 @@ export default function ScopeChromeAdditions() {
       const matched = (Object.keys(WINDOW_TITLES) as ListKey[]).find((key) => label === `Cerrar ${WINDOW_TITLES[key]}`);
       if (!matched) return;
 
-      event.preventDefault();
-      event.stopImmediatePropagation();
       const next = { ...readSavedVisibility(), [matched]: false };
       saveVisibility(next);
       setListVisibility(next);
-      const windowElement = findScopeWindow(WINDOW_TITLES[matched]);
-      if (windowElement) windowElement.style.display = "none";
     };
 
     document.addEventListener("click", onCloseCapture, true);
