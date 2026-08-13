@@ -36,6 +36,8 @@ function isScopeWindowOrFormControl(target: EventTarget | null) {
   if (!(target instanceof Element)) return false;
   return Boolean(
     target.closest("section > div.absolute.z-30") ||
+    target.closest("[data-pf24-weather-window='true']") ||
+    target.closest("[data-pf24-atis-dialog='true']") ||
     target.closest(".connectBox") ||
     target.closest("input, select, textarea") ||
     target.closest("button:not([data-pf24-traffic-select='true'])")
@@ -44,10 +46,7 @@ function isScopeWindowOrFormControl(target: EventTarget | null) {
 
 function isPanBlocked(target: EventTarget | null) {
   if (!(target instanceof Element)) return false;
-  return Boolean(
-    isScopeWindowOrFormControl(target) ||
-    target.closest("[data-pf24-traffic-detail='true']")
-  );
+  return Boolean(isScopeWindowOrFormControl(target) || target.closest("[data-pf24-traffic-detail='true']"));
 }
 
 export default function RadarViewport() {
@@ -70,18 +69,14 @@ export default function RadarViewport() {
       radar.style.setProperty("--pf24-radar-pan-y", `${viewport.panY}px`);
     };
 
-    const persist = () => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(viewport));
-    };
+    const persist = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(viewport));
 
     publish();
     const initialRetry = window.setTimeout(publish, 300);
 
     const onWheel = (event: WheelEvent) => {
-      // Traffic labels intentionally do not block radar zoom.
       if (isScopeWindowOrFormControl(event.target)) return;
       event.preventDefault();
-
       const rect = radar.getBoundingClientRect();
       const cursorX = event.clientX - rect.left;
       const cursorY = event.clientY - rect.top;
@@ -89,27 +84,20 @@ export default function RadarViewport() {
       const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
       const nextZoom = clamp(oldZoom * factor, MIN_ZOOM, MAX_ZOOM);
       if (nextZoom === oldZoom) return;
-
       const worldX = (cursorX - viewport.panX) / oldZoom;
       const worldY = (cursorY - viewport.panY) / oldZoom;
-      viewport = {
-        zoom: nextZoom,
-        panX: cursorX - worldX * nextZoom,
-        panY: cursorY - worldY * nextZoom,
-      };
+      viewport = { zoom: nextZoom, panX: cursorX - worldX * nextZoom, panY: cursorY - worldY * nextZoom };
       publish();
       persist();
     };
 
     const onMouseDown = (event: MouseEvent) => {
-      const wantsPan = event.button === 1 || (event.button === 0 && event.shiftKey);
-      if (!wantsPan || isPanBlocked(event.target)) return;
+      if (event.button !== 2 || isPanBlocked(event.target)) return;
       event.preventDefault();
       panning = true;
       movedDuringPan = false;
       lastX = event.clientX;
       lastY = event.clientY;
-      radar.style.cursor = "grabbing";
     };
 
     const onMouseMove = (event: MouseEvent) => {
@@ -128,7 +116,6 @@ export default function RadarViewport() {
       panning = false;
       suppressTrafficClick = movedDuringPan;
       movedDuringPan = false;
-      radar.style.cursor = "";
       persist();
     };
 
@@ -142,7 +129,7 @@ export default function RadarViewport() {
     };
 
     const onContextMenu = (event: MouseEvent) => {
-      if (panning) event.preventDefault();
+      if (event.target instanceof Element && radar.contains(event.target) && !isScopeWindowOrFormControl(event.target)) event.preventDefault();
     };
 
     radar.addEventListener("wheel", onWheel, { passive: false });
@@ -162,7 +149,6 @@ export default function RadarViewport() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", stopPan);
       window.removeEventListener("blur", stopPan);
-      radar.style.cursor = "";
       radar.style.removeProperty("--pf24-radar-zoom");
       radar.style.removeProperty("--pf24-radar-pan-x");
       radar.style.removeProperty("--pf24-radar-pan-y");
