@@ -37,6 +37,7 @@ type LocalPlanControls = {
 };
 
 type ControlMap = Record<string, LocalPlanControls>;
+type ProcedureSet = { sid?: string[]; star?: string[]; appr?: string[] };
 
 const MENU_VISIBILITY_KEY = "pf24_scope_menu_visibility_v1";
 const SECTOR_CONTROLS_KEY = "pf24_scope_sector_controls_v1";
@@ -58,6 +59,18 @@ const STATUS_SEQUENCE = [
   "PARKED",
 ] as const;
 
+const STATUS_DISPLAY: Record<string, string> = {
+  STUP: "STUP",
+  PUSH: "PUSH",
+  TAXI_DEP: "TAXI",
+  DEP: "DEP",
+  APP: "APP",
+  ARR: "ARR",
+  TAXI_IN: "TXIN",
+  TAXI_ARR: "TXIN",
+  PARKED: "PARK",
+};
+
 const RUNWAYS: Record<string, string[]> = {
   EFKT: ["16", "34"],
   EGHI: ["20", "02"],
@@ -72,6 +85,37 @@ const RUNWAYS: Record<string, string[]> = {
   MDPC: ["26", "27", "08", "09"],
   MDST: ["11", "29"],
   MTCA: ["26", "08"],
+};
+
+const PROCEDURES: Record<string, Record<string, ProcedureSet>> = {
+  MDST: {
+    "11": {
+      sid: ["PIXE2C PIXES", "VOGE2C VOGEP", "ETBO2C ETBOD"],
+      star: ["PIXE4B", "ETBO4B", "PIXE3R", "VOGE3R", "ETBO3R"],
+      appr: ["ILS"],
+    },
+    "29": {
+      sid: ["PIXE2W PIXES", "VOGE2W VOGEP", "ETBO2W ETBOD"],
+      star: ["PIXE3R", "VOGE3R", "ETBO3R"],
+      appr: ["RNAV"],
+    },
+  },
+  MDPC: {
+    "08": {
+      sid: ["PIXE2T PIXES", "PC20T PC202", "ETBO2T ETBOD", "LETA2T LETAD"],
+      star: ["PIXE1W PIXES", "PC20W PC202", "ETBO1W ETBOD", "LETA1W LETAD"],
+      appr: ["RNAV"],
+    },
+    "09": {
+      sid: ["PIXE2T PIXES", "PC20T PC202", "ETBO2T ETBOD", "LETA2T LETAD"],
+      star: ["PIXE1W PIXES", "PC20W PC202", "ETBO1W ETBOD", "LETA1W LETAD"],
+      appr: ["RNAV"],
+    },
+  },
+  LCPH: {
+    "29": { appr: ["ILS"] },
+    "11": { appr: ["RNP"] },
+  },
 };
 
 const SECTOR_GRID = "grid-cols-[50px_38px_25px_39px_39px_31px_29px_1fr_40px_31px_18px]";
@@ -134,7 +178,7 @@ function phaseFor(plan: LivePlan): Phase {
   return index >= appIndex ? "arr" : "dep";
 }
 
-function displayStatus(plan: LivePlan) {
+function rawStatus(plan: LivePlan) {
   const status = (plan.sector_status || "").toUpperCase();
   if (status !== "STUP") return status;
 
@@ -144,22 +188,26 @@ function displayStatus(plan: LivePlan) {
   return updated - created > 2500 ? "STUP" : "";
 }
 
-function statusOptions(plan: LivePlan) {
-  const shown = displayStatus(plan);
-  if (!shown) return ["STUP", "PUSH"];
-  const index = STATUS_SEQUENCE.indexOf(shown as (typeof STATUS_SEQUENCE)[number]);
-  if (index < 0) return ["STUP", "PUSH"];
-  return STATUS_SEQUENCE.slice(index + 1, index + 3);
+function displayStatus(plan: LivePlan) {
+  const status = rawStatus(plan);
+  if (!status) return "";
+  return STATUS_DISPLAY[status] ?? status;
 }
 
-function routeProcedureOptions(plan: LivePlan, phase: Phase) {
-  const tokens = (plan.route || "")
-    .toUpperCase()
-    .split(/\s+/)
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const ordered = phase === "dep" ? tokens : [...tokens].reverse();
-  return Array.from(new Set(ordered)).slice(0, 6);
+function statusOptions(plan: LivePlan): string[] {
+  const current = rawStatus(plan);
+  if (!current) return ["NSTUP", "STUP", "PUSH"];
+  const index = STATUS_SEQUENCE.indexOf(current as (typeof STATUS_SEQUENCE)[number]);
+  if (index < 0) return ["NSTUP", "STUP", "PUSH"];
+  return ["NSTUP", ...STATUS_SEQUENCE.slice(index + 1, index + 3)];
+}
+
+function procedureOptions(airport: string, runway: string, phase: Phase) {
+  if (!runway) return [];
+  const set = PROCEDURES[airport]?.[runway];
+  if (!set) return [];
+  const values = phase === "dep" ? (set.sid ?? []) : [...(set.star ?? []), ...(set.appr ?? [])];
+  return Array.from(new Set(values));
 }
 
 function validManualSsr(value: string) {
@@ -185,6 +233,20 @@ function generateSsr(plans: LivePlan[], currentPlanId: string) {
 function isRunwaySelectorButton(button: HTMLButtonElement) {
   const dialogs = Array.from(document.querySelectorAll<HTMLElement>("div.absolute"));
   return dialogs.some((dialog) => dialog.contains(button) && dialog.textContent?.includes("Runway selector dialog"));
+}
+
+function listKeyFromCloseButton(button: HTMLButtonElement): ListKey | null {
+  const win = button.closest("div.absolute.z-30") as HTMLElement | null;
+  if (!win || win.parentElement?.tagName !== "SECTION") return null;
+  const header = win.firstElementChild as HTMLElement | null;
+  if (!header || !header.contains(button)) return null;
+  const buttons = Array.from(header.querySelectorAll<HTMLButtonElement>("button"));
+  if (buttons.length === 0 || buttons[buttons.length - 1] !== button) return null;
+  const title = header.textContent?.toUpperCase() ?? "";
+  if (title.includes("SECTOR LIST")) return "sector";
+  if (title.includes("COMBINED TAXI LIST")) return "taxi";
+  if (title.includes("FREQ")) return "freq";
+  return null;
 }
 
 export default function ScopeOperationalSync() {
@@ -316,11 +378,8 @@ export default function ScopeOperationalSync() {
   useEffect(() => {
     const onClose = (event: MouseEvent) => {
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
-      const label = button?.getAttribute("aria-label") ?? "";
-      let key: ListKey | null = null;
-      if (label.toUpperCase().includes("SECTOR LIST")) key = "sector";
-      else if (label.toUpperCase().includes("COMBINED TAXI LIST")) key = "taxi";
-      else if (label.toUpperCase().includes("FREQ")) key = "freq";
+      if (!button) return;
+      const key = listKeyFromCloseButton(button);
       if (!key) return;
       writeVisibility({ ...readVisibility(), [key]: false });
     };
@@ -412,7 +471,7 @@ export default function ScopeOperationalSync() {
         const proc = phase === "dep" ? local.depProc ?? "" : local.arrProc ?? "";
         const airport = phase === "dep" ? plan.departure_icao : plan.arrival_icao;
         const runways = RUNWAYS[airport] ?? [];
-        const procedures = routeProcedureOptions(plan, phase);
+        const procedures = procedureOptions(airport, runway, phase);
         const currentStatus = displayStatus(plan);
         const stsOptions = statusOptions(plan);
         const popupOpen = popup?.planId === plan.id;
@@ -433,10 +492,18 @@ export default function ScopeOperationalSync() {
           </div>
 
           {popupOpen && popup?.type === "status" && (
-            <div data-pf24-sector-popup="true" className="absolute right-[18px] top-[13px] z-[80] w-[78px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
+            <div data-pf24-sector-popup="true" className="absolute right-[18px] top-[13px] z-[80] w-[82px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
               <div className="border-b border-[#0b2f2a] px-[4px] py-[2px] text-center text-[9px]">STS</div>
-              {stsOptions.length === 0 ? <div className="px-[5px] py-[4px] text-center text-[8px] text-[#9aa]">PARKED</div> : stsOptions.map((status) => (
-                <button key={status} type="button" onClick={() => { void updatePlan(plan.id, { sector_status: status }); setPopup(null); }} className="block w-full border-b border-[#0b2f2a] px-[5px] py-[3px] text-left text-[10px] last:border-b-0 hover:bg-[#0a5b50]">{status}</button>
+              {stsOptions.map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => {
+                    void updatePlan(plan.id, { sector_status: status === "NSTUP" ? "" : status });
+                    setPopup(null);
+                  }}
+                  className="block w-full border-b border-[#0b2f2a] px-[5px] py-[3px] text-left text-[10px] last:border-b-0 hover:bg-[#0a5b50]"
+                >{status}</button>
               ))}
             </div>
           )}
@@ -445,23 +512,34 @@ export default function ScopeOperationalSync() {
             <div data-pf24-sector-popup="true" className="absolute left-[228px] top-[13px] z-[80] min-w-[55px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
               <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-center text-[9px]">ARWY</div>
               {runways.length === 0 ? <div className="px-[6px] py-[4px] text-[8px]">---</div> : runways.map((value) => (
-                <button key={value} type="button" onClick={() => { patchControl(plan.id, phase === "dep" ? { depRunway: value } : { arrRunway: value }); setPopup(null); }} className={`block w-full border-b border-[#0b2f2a] px-[8px] py-[3px] text-center text-[12px] last:border-b-0 hover:bg-[#0a5b50] ${runway === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    patchControl(plan.id, phase === "dep" ? { depRunway: value, depProc: "" } : { arrRunway: value, arrProc: "" });
+                    setPopup(null);
+                  }}
+                  className={`block w-full border-b border-[#0b2f2a] px-[8px] py-[3px] text-center text-[12px] last:border-b-0 hover:bg-[#0a5b50] ${runway === value ? "bg-[#0a5b50]" : ""}`}
+                >{value}</button>
               ))}
             </div>
           )}
 
           {popupOpen && popup?.type === "procs" && (
-            <div data-pf24-sector-popup="true" className="absolute left-[257px] top-[13px] z-[80] min-w-[92px] max-w-[150px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
+            <div data-pf24-sector-popup="true" className="absolute left-[257px] top-[13px] z-[80] min-w-[112px] max-w-[180px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
               <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-center text-[9px]">PROCS</div>
-              {procedures.length === 0 ? <div className="px-[6px] py-[4px] text-[8px]">---</div> : procedures.map((value) => (
-                <button key={value} type="button" onClick={() => { patchControl(plan.id, phase === "dep" ? { depProc: value } : { arrProc: value }); setPopup(null); }} className={`block w-full truncate border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[10px] last:border-b-0 hover:bg-[#0a5b50] ${proc === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
+              {procedures.length === 0 ? <div className="px-[6px] py-[4px] text-[8px] text-[#9aa]">---</div> : procedures.map((value) => (
+                <button key={value} type="button" onClick={() => { patchControl(plan.id, phase === "dep" ? { depProc: value } : { arrProc: value }); setPopup(null); }} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] last:border-b-0 hover:bg-[#0a5b50] ${proc === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
               ))}
             </div>
           )}
 
           {popupOpen && popup?.type === "assr" && (
             <div data-pf24-sector-popup="true" className="absolute right-[49px] top-[13px] z-[85] w-[178px] border border-[#e9e9e9] bg-[#555c61] text-[#e9e9e9] shadow-[0_2px_8px_rgba(0,0,0,.65)]">
-              <div className="relative border-b border-[#e9e9e9] px-[6px] py-[4px] text-center text-[11px] text-[#00e000]">{plan.callsign}<span className="absolute right-[3px] top-[3px] h-[10px] w-[10px] bg-[#343a3d]" /></div>
+              <div className="relative border-b border-[#e9e9e9] px-[6px] py-[4px] text-center text-[11px] text-[#00e000]">
+                {plan.callsign}
+                <button type="button" aria-label="Cerrar SSR" onClick={(event) => { event.stopPropagation(); setPopup(null); }} className="absolute right-[3px] top-[3px] h-[10px] w-[10px] bg-[#343a3d] hover:bg-[#252a2c]" />
+              </div>
               <div className="border-b border-[#e9e9e9] py-[8px] text-center text-[15px]">SSR</div>
               <button type="button" onClick={() => setSsrDraft(generateSsr(plans, plan.id))} className="block w-full border-b border-[#e9e9e9] py-[6px] text-center text-[13px] hover:bg-[#60686d]">Get SSR</button>
               <div className="border-b border-[#e9e9e9] px-[12px] py-[6px] text-[15px] tracking-[3px]">{ssrDraft || "----"}</div>
