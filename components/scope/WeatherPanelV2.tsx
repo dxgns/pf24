@@ -18,7 +18,6 @@ const ATIS_WIDTH = 46;
 const CONTROL_WIDTH = 39;
 const HEADER_HEIGHT = 17;
 const ROW_HEIGHT = 16;
-const MAX_ROWS = 5;
 
 const TA_BY_AIRPORT: Record<string, 3000 | 4000> = {
   EFKT: 3000, EGHI: 3000, EGKK: 3000, GCLP: 3000, LCLK: 4000, LCPH: 4000, LCRA: 4000,
@@ -46,7 +45,7 @@ function getActiveAirports(): string[] {
         .filter(([, value]) => Boolean(value?.active))
         .map(([key]) => key.split("-")[0]?.toUpperCase())
         .filter((value): value is string => Boolean(value && /^[A-Z0-9]{4}$/.test(value))),
-    )).sort().slice(0, MAX_ROWS);
+    )).sort();
   } catch {
     return [];
   }
@@ -212,7 +211,7 @@ export default function WeatherPanelV2() {
   }, []);
 
   useEffect(() => {
-    const stations = airportKey ? airportKey.split(",").slice(0, MAX_ROWS) : [];
+    const stations = airportKey ? airportKey.split(",") : [];
     let cancelled = false;
     if (stations.length === 0) {
       setMetars({});
