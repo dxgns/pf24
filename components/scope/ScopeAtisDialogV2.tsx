@@ -11,6 +11,7 @@ type LatestAtis = { info_letter: string; created_at: string };
 
 const STORAGE_KEY = "pf24_scope_atis_configs_v1";
 const HOUR_MS = 60 * 60 * 1000;
+const MAX_PUBLISHED_ATIS = 5;
 const RUNWAYS: Record<string, string[]> = {
   EFKT: ["16", "34"], EGHI: ["20", "02"], EGKK: ["26L", "08R"], GCLP: ["03L", "03R", "21L", "21R"],
   LCLK: ["22", "04"], LCPH: ["11", "29"], LCRA: ["10", "28"], LEMH: ["19", "01"], MDAB: ["11", "29"],
@@ -42,6 +43,16 @@ async function latestAtis(airport: string): Promise<LatestAtis | null> { const {
 async function fetchMetar(airport: string) { const response = await fetch(`/api/scope/metar?station=${encodeURIComponent(airport)}`, { cache: "no-store" }); const data = await response.json() as { raw?: string | null }; if (!response.ok || !data.raw) throw new Error("METAR unavailable"); return data.raw; }
 function scopeConnected() { const top = document.querySelector<HTMLElement>("main.fixed header > div:first-child"); return Array.from(top?.querySelectorAll<HTMLButtonElement>("button") ?? []).some((button) => button.textContent?.trim().toUpperCase() === "DISCONNECT"); }
 
+async function publishedAtisAirports() {
+  const { data } = await supabase.from("atis_messages").select("airport_icao");
+  return new Set((data ?? []).map((row) => String(row.airport_icao || "").toUpperCase()).filter(Boolean));
+}
+
+async function canPublishAirport(airport: string) {
+  const published = await publishedAtisAirports();
+  return published.has(airport) || published.size < MAX_PUBLISHED_ATIS;
+}
+
 export default function ScopeAtisDialogV2({ controllerName }: { controllerName: string }) {
   const airports = useMemo(() => Object.keys(RUNWAYS).sort(), []);
   const [host, setHost] = useState<HTMLElement | null>(null);
@@ -56,6 +67,9 @@ export default function ScopeAtisDialogV2({ controllerName }: { controllerName: 
   const [atisLetters, setAtisLetters] = useState<Record<string, string>>({});
   const config = configs[airport] ?? emptyConfig();
   const runwayOptions = [...(RUNWAYS[airport] ?? []), ...(COMBINED_RUNWAYS[airport] ?? [])];
+  const publishedCount = Object.keys(atisLetters).length;
+  const airportAlreadyPublished = Boolean(atisLetters[airport]);
+  const publicationLimitReached = publishedCount >= MAX_PUBLISHED_ATIS && !airportAlreadyPublished;
 
   const refreshLetters = useCallback(async () => {
     const { data } = await supabase.from("atis_messages").select("airport_icao,info_letter,created_at").order("created_at", { ascending: false });
@@ -88,29 +102,22 @@ export default function ScopeAtisDialogV2({ controllerName }: { controllerName: 
       if (!button) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      setConnected(scopeConnected());
       setOpen((value) => !value);
     };
-    const observer = new MutationObserver(() => setConnected(scopeConnected()));
-    const scope = document.querySelector<HTMLElement>("main.fixed");
-    if (scope) observer.observe(scope, { subtree: true, childList: true, characterData: true, attributes: true });
+    const syncConnection = () => window.setTimeout(() => setConnected(scopeConnected()), 0);
     window.addEventListener("click", guardTopAtis, true);
+    document.addEventListener("click", syncConnection);
 
     const channel = supabase.channel("scope-atis-v2").on("postgres_changes", { event: "*", schema: "public", table: "atis_messages" }, () => void refreshLetters()).subscribe();
-    return () => { observer.disconnect(); window.removeEventListener("click", guardTopAtis, true); supabase.removeChannel(channel); };
+    return () => {
+      window.removeEventListener("click", guardTopAtis, true);
+      document.removeEventListener("click", syncConnection);
+      supabase.removeChannel(channel);
+    };
   }, [refreshLetters]);
 
   useEffect(() => { if (open) void loadAirport(airport); }, [airport, loadAirport, open]);
-
-  useEffect(() => {
-    const weather = document.querySelector<HTMLElement>("[data-pf24-weather-window='true']");
-    if (!weather) return;
-    for (const row of Array.from(weather.querySelectorAll<HTMLElement>("div"))) {
-      const spans = Array.from(row.querySelectorAll<HTMLSpanElement>(":scope > span"));
-      if (spans.length < 2) continue;
-      const station = spans[1]?.textContent?.trim().toUpperCase() ?? "";
-      if (/^[A-Z0-9]{4}$/.test(station) && spans[0]) spans[0].textContent = atisLetters[station] ?? "-";
-    }
-  }, [atisLetters, open]);
 
   const patch = (value: Partial<AirportConfig>) => setConfigs((current) => { const next = { ...current, [airport]: { ...(current[airport] ?? emptyConfig()), ...value } }; writeConfigs(next); return next; });
 
@@ -118,6 +125,7 @@ export default function ScopeAtisDialogV2({ controllerName }: { controllerName: 
     if (!scopeConnected() || !cfg.active || !cfg.dep || !cfg.arr) return false;
     const latest = await latestAtis(icao);
     if (latest && Date.now() - new Date(latest.created_at).getTime() < HOUR_MS) return false;
+    if (!(await canPublishAirport(icao))) return false;
     const raw = await fetchMetar(icao); const letter = latest ? nextLetter(latest.info_letter) : "A"; const tl = transitionLevel(icao, raw);
     const { error } = await supabase.from("atis_messages").insert({ airport_icao: icao, info_letter: letter, metar: raw, approach_primary: cfg.approach || "NO APPR", approach_optional: null, runway: `DEP ${cfg.dep} / ARR ${cfg.arr}`, extra_info: `TA ${TA_BY_AIRPORT[icao]}FT TL FL${tl}`, remarks: cfg.remarks || null, full_text: buildText(icao, letter, raw, cfg, tl), created_by: controllerName });
     if (error) throw error; return true;
@@ -131,7 +139,7 @@ export default function ScopeAtisDialogV2({ controllerName }: { controllerName: 
 
   const setActive = async (active: boolean) => { patch({ active }); if (!active) { await supabase.from("atis_messages").delete().eq("airport_icao", airport).eq("created_by", controllerName); await refreshLetters(); } };
   const send = async () => {
-    if (!connected || !config.active || !config.dep || !config.arr) return;
+    if (!connected || !config.active || !config.dep || !config.arr || !(await canPublishAirport(airport))) return;
     try {
       setBusy(true); const raw = await fetchMetar(airport); const tl = transitionLevel(airport, raw); const letter = infoLetter;
       const { error } = await supabase.from("atis_messages").insert({ airport_icao: airport, info_letter: letter, metar: raw, approach_primary: config.approach || "NO APPR", approach_optional: null, runway: `DEP ${config.dep} / ARR ${config.arr}`, extra_info: `TA ${TA_BY_AIRPORT[airport]}FT TL FL${tl}`, remarks: config.remarks || null, full_text: buildText(airport, letter, raw, config, tl), created_by: controllerName });
@@ -158,7 +166,7 @@ export default function ScopeAtisDialogV2({ controllerName }: { controllerName: 
             <Field label="Appr Procedures"><input value={config.approach} maxLength={15} onChange={(e) => patch({ approach: e.target.value.toUpperCase().slice(0, 15) })} className="h-[23px] w-full bg-[#ececec] px-[4px] uppercase outline-none" /></Field>
           </div>
           <div className="mt-[22px] grid grid-cols-2 gap-[24px] text-center"><div><div className="mb-[9px] text-[16px]">Trans Atl</div><div className="mx-auto flex h-[25px] w-[98px] items-center justify-center bg-[#ececec] text-[16px]">{TA_BY_AIRPORT[airport]}ft</div></div><div><div className="mb-[9px] text-[16px]">Trans Lvl</div><div className="mx-auto flex h-[25px] w-[98px] items-center justify-center bg-[#ececec] text-[16px]">FL{transLvl}</div></div></div>
-          <div className="mt-[45px] flex justify-around"><button type="button" onClick={() => setOpen(false)} className="bg-[#ececec] px-[14px] py-[7px] text-[16px]">Cancel</button><button type="button" disabled={busy || !connected || !config.active || !config.dep || !config.arr} onClick={() => void send()} className="bg-[#ececec] px-[18px] py-[7px] text-[16px] disabled:opacity-40">{busy ? "..." : "Send"}</button></div>
+          <div className="mt-[45px] flex justify-around"><button type="button" onClick={() => setOpen(false)} className="bg-[#ececec] px-[14px] py-[7px] text-[16px]">Cancel</button><button type="button" disabled={busy || !connected || !config.active || !config.dep || !config.arr || publicationLimitReached} onClick={() => void send()} className="bg-[#ececec] px-[18px] py-[7px] text-[16px] disabled:opacity-40">{busy ? "..." : "Send"}</button></div>
         </div>
         <div className="min-w-0 overflow-hidden">
           <div className="h-[215px] w-full overflow-y-auto overflow-x-hidden bg-[#f0f0f0] p-[8px] text-[11px] leading-[1.35] [overflow-wrap:anywhere]">{preview}</div>
