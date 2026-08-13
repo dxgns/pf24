@@ -6,23 +6,12 @@ import { supabase } from "@/lib/supabase";
 import { ATC_FREQUENCIES } from "@/lib/atcFrequencies";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
-type ATCSession = {
-  id: string;
-  controller_name: string;
-  position: string;
-  is_active: boolean;
-};
-
+type ATCSession = { id: string; controller_name: string; position: string; is_active: boolean };
 type ListKey = "sector" | "taxi" | "freq";
 type Visibility = Record<ListKey, boolean>;
 
 const MENU_VISIBILITY_KEY = "pf24_scope_menu_visibility_v1";
 const CALLSIGNS = Object.keys(ATC_FREQUENCIES).sort();
-const WINDOW_TITLES: Record<ListKey, string> = {
-  sector: "SECTOR LIST",
-  taxi: "COMBINED TAXI LIST",
-  freq: "FREQ",
-};
 
 function findScopeWindow(title: string): HTMLElement | null {
   const windows = Array.from(document.querySelectorAll<HTMLElement>("main.fixed > section > div.absolute.z-30"));
@@ -31,19 +20,14 @@ function findScopeWindow(title: string): HTMLElement | null {
 }
 
 function findWindowBody(title: string): HTMLElement | null {
-  const win = findScopeWindow(title);
-  const body = win?.children[1];
+  const body = findScopeWindow(title)?.children[1];
   return body instanceof HTMLElement ? body : null;
 }
 
 function readVisibility(): Visibility {
   try {
     const parsed = JSON.parse(localStorage.getItem(MENU_VISIBILITY_KEY) ?? "{}") as Partial<Visibility>;
-    return {
-      sector: parsed.sector !== false,
-      taxi: parsed.taxi !== false,
-      freq: parsed.freq !== false,
-    };
+    return { sector: parsed.sector !== false, taxi: parsed.taxi !== false, freq: parsed.freq !== false };
   } catch {
     return { sector: true, taxi: true, freq: true };
   }
@@ -51,7 +35,7 @@ function readVisibility(): Visibility {
 
 function writeVisibility(value: Visibility) {
   localStorage.setItem(MENU_VISIBILITY_KEY, JSON.stringify(value));
-  window.dispatchEvent(new CustomEvent("pf24-menu-visibility-sync"));
+  window.dispatchEvent(new Event("storage"));
 }
 
 function setControlledInput(input: HTMLInputElement, value: string) {
@@ -60,6 +44,13 @@ function setControlledInput(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
   input.dispatchEvent(new Event("change", { bubbles: true }));
   input.focus();
+}
+
+function runwaySelectorRoot(button: HTMLButtonElement | null) {
+  if (!button) return null;
+  return Array.from(document.querySelectorAll<HTMLElement>("div.absolute")).find((element) =>
+    element.textContent?.includes("Runway selector dialog") && element.contains(button),
+  ) ?? null;
 }
 
 export default function ScopeOperationalSync() {
@@ -74,67 +65,40 @@ export default function ScopeOperationalSync() {
   const runwayDragRef = useRef(false);
 
   const syncHosts = useCallback(() => {
-    const nextSector = findWindowBody("SECTOR LIST");
-    const nextFreq = findWindowBody("FREQ");
-    setSectorBody(nextSector);
-    setFreqBody(nextFreq);
+    setSectorBody(findWindowBody("SECTOR LIST"));
+    setFreqBody(findWindowBody("FREQ"));
 
     const dialog = document.querySelector<HTMLElement>(".connectBox");
-    if (dialog) {
-      const rows = Array.from(dialog.querySelectorAll<HTMLElement>("div.mb-1"));
-      const row = rows.find((item) => item.firstElementChild?.textContent?.trim() === "Callsign");
-      const input = row?.querySelector<HTMLInputElement>("input");
-      const host = input?.parentElement ?? null;
-      if (input) {
-        input.removeAttribute("list");
-        input.setAttribute("autocomplete", "off");
-        input.style.paddingRight = "20px";
-      }
-      if (host) host.style.position = "relative";
-      setCallsignInput(input ?? null);
-      setCallsignHost(host);
-      setQuery(input?.value ?? "");
-    } else {
-      setCallsignInput(null);
-      setCallsignHost(null);
-      setCallsignFocused(false);
+    const rows = dialog ? Array.from(dialog.querySelectorAll<HTMLElement>("div.mb-1")) : [];
+    const row = rows.find((item) => item.firstElementChild?.textContent?.trim() === "Callsign");
+    const input = row?.querySelector<HTMLInputElement>("input") ?? null;
+    const host = input?.parentElement ?? null;
+    if (input) {
+      input.removeAttribute("list");
+      input.setAttribute("autocomplete", "off");
+      input.style.paddingRight = "20px";
     }
+    if (host) host.style.position = "relative";
+    setCallsignInput(input);
+    setCallsignHost(host);
+    setQuery(input?.value ?? "");
+    if (!input) setCallsignFocused(false);
   }, []);
 
   useEffect(() => {
     const loadPlans = async () => {
-      const { data } = await supabase
-        .from("flight_plans")
-        .select("*")
-        .neq("status", "FINISHED")
-        .order("created_at", { ascending: false });
+      const { data } = await supabase.from("flight_plans").select("*").neq("status", "FINISHED").order("created_at", { ascending: false });
       setPlans((data ?? []) as ScopeFlightPlan[]);
     };
     const loadSessions = async () => {
-      const { data } = await supabase
-        .from("atc_sessions")
-        .select("*")
-        .eq("is_active", true)
-        .order("started_at", { ascending: true });
+      const { data } = await supabase.from("atc_sessions").select("*").eq("is_active", true).order("started_at", { ascending: true });
       setSessions((data ?? []) as ATCSession[]);
     };
-
     void loadPlans();
     void loadSessions();
-    const plansChannel = supabase.channel("scope-sector-list-live").on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "flight_plans" },
-      () => void loadPlans(),
-    ).subscribe();
-    const sessionsChannel = supabase.channel("scope-freq-list-live").on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "atc_sessions" },
-      () => void loadSessions(),
-    ).subscribe();
-    return () => {
-      supabase.removeChannel(plansChannel);
-      supabase.removeChannel(sessionsChannel);
-    };
+    const plansChannel = supabase.channel("scope-sector-list-live").on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans()).subscribe();
+    const sessionsChannel = supabase.channel("scope-freq-list-live").on("postgres_changes", { event: "*", schema: "public", table: "atc_sessions" }, () => void loadSessions()).subscribe();
+    return () => { supabase.removeChannel(plansChannel); supabase.removeChannel(sessionsChannel); };
   }, []);
 
   useEffect(() => {
@@ -143,10 +107,7 @@ export default function ScopeOperationalSync() {
     const scope = document.querySelector<HTMLElement>("main.fixed");
     if (scope) observer.observe(scope, { subtree: true, childList: true });
     document.addEventListener("click", syncHosts, true);
-    return () => {
-      observer.disconnect();
-      document.removeEventListener("click", syncHosts, true);
-    };
+    return () => { observer.disconnect(); document.removeEventListener("click", syncHosts, true); };
   }, [syncHosts]);
 
   useEffect(() => {
@@ -181,14 +142,13 @@ export default function ScopeOperationalSync() {
   useEffect(() => {
     const onClose = (event: MouseEvent) => {
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
-      const label = button?.getAttribute("aria-label") ?? "";
+      const label = button?.getAttribute("aria-label")?.toUpperCase() ?? "";
       let key: ListKey | null = null;
-      if (label.toUpperCase().includes("SECTOR LIST")) key = "sector";
-      else if (label.toUpperCase().includes("COMBINED TAXI LIST")) key = "taxi";
-      else if (label.toUpperCase().includes("FREQ")) key = "freq";
+      if (label.includes("SECTOR LIST")) key = "sector";
+      else if (label.includes("COMBINED TAXI LIST")) key = "taxi";
+      else if (label.includes("FREQ")) key = "freq";
       if (!key) return;
-      const next = { ...readVisibility(), [key]: false };
-      writeVisibility(next);
+      writeVisibility({ ...readVisibility(), [key]: false });
     };
     document.addEventListener("click", onClose, true);
     return () => document.removeEventListener("click", onClose, true);
@@ -198,15 +158,14 @@ export default function ScopeOperationalSync() {
     const onMouseDown = (event: MouseEvent) => {
       if (event.button !== 0) return;
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
-      if (!button?.closest("[data-pf24-runway-selector='true']")) return;
-      if (!button.querySelector("span")) return;
+      if (!runwaySelectorRoot(button) || !button?.querySelector("span")) return;
       runwayDragRef.current = true;
+      button.dataset.pf24DragVisited = "true";
     };
     const onMouseOver = (event: MouseEvent) => {
       if (!runwayDragRef.current || (event.buttons & 1) !== 1) return;
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
-      if (!button?.closest("[data-pf24-runway-selector='true']")) return;
-      if (!button.querySelector("span")) return;
+      if (!runwaySelectorRoot(button) || !button?.querySelector("span")) return;
       if (button.dataset.pf24DragVisited === "true") return;
       button.dataset.pf24DragVisited = "true";
       button.click();
@@ -228,8 +187,7 @@ export default function ScopeOperationalSync() {
   useEffect(() => {
     const disableTransitionButton = (event: MouseEvent) => {
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
-      if (!button) return;
-      const text = button.textContent?.replace(/\s+/g, " ").trim().toUpperCase() ?? "";
+      const text = button?.textContent?.replace(/\s+/g, " ").trim().toUpperCase() ?? "";
       if (!text.includes("TRANS") || !text.includes("LVL")) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -240,8 +198,7 @@ export default function ScopeOperationalSync() {
 
   const filteredCallsigns = useMemo(() => {
     const q = query.trim().toUpperCase();
-    if (!q) return [];
-    return CALLSIGNS.filter((callsign) => callsign.includes(q)).slice(0, 12);
+    return q ? CALLSIGNS.filter((callsign) => callsign.includes(q)).slice(0, 12) : [];
   }, [query]);
 
   const sectorPortal = sectorBody?.parentElement ? createPortal(
@@ -251,16 +208,7 @@ export default function ScopeOperationalSync() {
       </div>
       {plans.map((plan) => (
         <div key={plan.id} className="grid grid-cols-[50px_39px_27px_42px_42px_34px_30px_1fr_42px_34px] text-[#00e000]">
-          <span className="truncate">{plan.callsign}</span>
-          <span>{plan.aircraft_type}</span>
-          <span>{plan.flight_rules}</span>
-          <span>{plan.departure_icao}</span>
-          <span>{plan.arrival_icao}</span>
-          <span>{plan.flight_level}</span>
-          <span>---</span>
-          <span className="truncate">---</span>
-          <span>{plan.transponder}</span>
-          <span>{plan.sector_status || "---"}</span>
+          <span className="truncate">{plan.callsign}</span><span>{plan.aircraft_type}</span><span>{plan.flight_rules}</span><span>{plan.departure_icao}</span><span>{plan.arrival_icao}</span><span>{plan.flight_level}</span><span>---</span><span className="truncate">---</span><span>{plan.transponder}</span><span>{plan.sector_status || "---"}</span>
         </div>
       ))}
     </div>,
@@ -270,10 +218,7 @@ export default function ScopeOperationalSync() {
   const freqPortal = freqBody?.parentElement ? createPortal(
     <div className="px-1 py-1 text-[9px] leading-[13px] text-[#ffff00]" data-pf24-live-freq-list="true">
       {sessions.map((session) => (
-        <div key={session.id} className="flex whitespace-nowrap">
-          <span className="min-w-[78px] truncate">{session.position}</span>
-          <span>{ATC_FREQUENCIES[session.position] ?? "---.---"}</span>
-        </div>
+        <div key={session.id} className="flex whitespace-nowrap"><span className="min-w-[78px] truncate">{session.position}</span><span>{ATC_FREQUENCIES[session.position] ?? "---.---"}</span></div>
       ))}
     </div>,
     freqBody.parentElement,
@@ -285,13 +230,7 @@ export default function ScopeOperationalSync() {
       {callsignFocused && query.trim() && filteredCallsigns.length > 0 && (
         <div className="absolute left-0 right-0 top-[20px] z-[200] max-h-[154px] overflow-y-auto border border-[#999] bg-[#efefef] text-[#111] shadow-sm">
           {filteredCallsigns.map((option) => (
-            <button
-              key={option}
-              type="button"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => setControlledInput(callsignInput, option)}
-              className="block h-[20px] w-full border-b border-[#d3d3d3] px-[5px] text-left text-[10px] hover:bg-[#d7e7f7]"
-            >{option}</button>
+            <button key={option} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setControlledInput(callsignInput, option)} className="block h-[20px] w-full border-b border-[#d3d3d3] px-[5px] text-left text-[10px] hover:bg-[#d7e7f7]">{option}</button>
           ))}
         </div>
       )}
