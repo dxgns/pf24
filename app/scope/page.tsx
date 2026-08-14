@@ -16,6 +16,8 @@ import ScopeAtisDialogV2 from "@/components/scope/ScopeAtisDialogV2";
 import ScopeAtcPresence from "@/components/scope/ScopeAtcPresence";
 import ScopeOperationalSyncV2 from "@/components/scope/ScopeOperationalSyncV2";
 import ScopeNativeListBodyGuard from "@/components/scope/ScopeNativeListBodyGuard";
+import ScopeConnectionPersistence from "@/components/scope/ScopeConnectionPersistence";
+import ScopeAtisDisconnectCleanup from "@/components/scope/ScopeAtisDisconnectCleanup";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = {
@@ -49,6 +51,7 @@ export default async function ScopePage() {
   return (
     <>
       <PF24Scope initialPlans={(data ?? []) as ScopeFlightPlan[]} controllerName={controllerName} />
+      <ScopeConnectionPersistence />
       <ScopeLayoutGuards />
       <WeatherPanelV2 />
       <TrafficSimulation />
@@ -59,6 +62,7 @@ export default async function ScopePage() {
       <ScopeUiRefinements />
       <ScopeChromeAdditions />
       <ScopeAtisDialogV2 controllerName={controllerName} />
+      <ScopeAtisDisconnectCleanup controllerName={controllerName} />
       <ScopeAtcPresence controllerName={controllerName} />
       <ScopeOperationalSyncV2 />
       <ScopeNativeListBodyGuard />
