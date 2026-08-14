@@ -14,7 +14,7 @@ import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
 import ScopeChromeAdditions from "@/components/scope/ScopeChromeAdditions";
 import ScopeAtisDialogV2 from "@/components/scope/ScopeAtisDialogV2";
 import ScopeAtcPresence from "@/components/scope/ScopeAtcPresence";
-import ScopeOperationalSync from "@/components/scope/ScopeOperationalSync";
+import ScopeOperationalSyncV2 from "@/components/scope/ScopeOperationalSyncV2";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = {
@@ -59,7 +59,7 @@ export default async function ScopePage() {
       <ScopeChromeAdditions />
       <ScopeAtisDialogV2 controllerName={controllerName} />
       <ScopeAtcPresence controllerName={controllerName} />
-      <ScopeOperationalSync />
+      <ScopeOperationalSyncV2 />
     </>
   );
 }
