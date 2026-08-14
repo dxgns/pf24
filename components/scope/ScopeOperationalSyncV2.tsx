@@ -128,17 +128,17 @@ const GATES: Record<string, GateDefinition[]> = {
     { name: "C1", maxCode: "D" }, { name: "C2", maxCode: "D" }, { name: "C3", maxCode: "E" }, { name: "C4", maxCode: "E" },
   ],
   LCPH: [
-    { name: "1", maxCode: "C" }, { name: "2", maxCode: "C" }, { name: "3", maxCode: "C" },
-    { name: "4", maxCode: "C" }, { name: "4A", maxCode: "C" }, { name: "4B", maxCode: "C" },
-    { name: "5", maxCode: "C" }, { name: "5A", maxCode: "C" }, { name: "5B", maxCode: "C" },
-    { name: "6", maxCode: "C" }, { name: "6A", maxCode: "C" }, { name: "6B", maxCode: "C" },
-    { name: "7", maxCode: "C" }, { name: "8", maxCode: "C" },
-    { name: "9", maxCode: "D" }, { name: "9A", maxCode: "C" },
-    { name: "10", maxCode: "D" }, { name: "10A", maxCode: "C" },
-    { name: "11", maxCode: "D" }, { name: "11A", maxCode: "C" },
+    { name: "1", maxCode: "D" }, { name: "2", maxCode: "D" }, { name: "3", maxCode: "D" },
+    { name: "4", maxCode: "D" }, { name: "4A", maxCode: "D" }, { name: "4B", maxCode: "D" },
+    { name: "5", maxCode: "D" }, { name: "5A", maxCode: "D" }, { name: "5B", maxCode: "D" },
+    { name: "6", maxCode: "D" }, { name: "6A", maxCode: "D" }, { name: "6B", maxCode: "D" },
+    { name: "7", maxCode: "D" }, { name: "8", maxCode: "C" },
+    { name: "9", maxCode: "D" }, { name: "9A", maxCode: "D" }, { name: "9B", maxCode: "D" },
+    { name: "10", maxCode: "D" }, { name: "10A", maxCode: "D" },
+    { name: "11", maxCode: "D" },
     { name: "13", maxCode: "C" },
-    { name: "14", maxCode: "B" }, { name: "14A", maxCode: "A" },
-    { name: "15", maxCode: "B" }, { name: "15A", maxCode: "A" }, { name: "15B", maxCode: "A" },
+    { name: "14", maxCode: "D" }, { name: "14A", maxCode: "D" },
+    { name: "15", maxCode: "D" }, { name: "15A", maxCode: "D" }, { name: "15B", maxCode: "D" },
   ],
 };
 
@@ -279,10 +279,23 @@ function gatesConflict(airport: string, first: string, second: string) {
   if (firstBase !== secondBase) return false;
   return first === firstBase || second === secondBase;
 }
+function lcphSpecialConflict(candidateGate: string, candidateType: string | null | undefined, occupiedGate: string, occupiedType: string | null | undefined) {
+  const candidateCode = aircraftCode(candidateType);
+  const occupiedCode = aircraftCode(occupiedType);
+  const candidateLarge9B = candidateGate === "9B" && CODE_ORDER[candidateCode] >= CODE_ORDER.C;
+  const occupiedLarge9B = occupiedGate === "9B" && CODE_ORDER[occupiedCode] >= CODE_ORDER.C;
+
+  if (candidateLarge9B && (occupiedGate === "9" || occupiedGate === "10")) return true;
+  if (occupiedLarge9B && (candidateGate === "9" || candidateGate === "10")) return true;
+  return false;
+}
 function gateOccupied(plan: LivePlan, gateName: string, taxiPlans: LivePlan[], controls: ControlMap) {
   return taxiPlans.some((other) => {
     if (other.id === plan.id || other.arrival_icao !== plan.arrival_icao) return false;
-    return gatesConflict(plan.arrival_icao, gateName, controls[other.id]?.gate ?? "");
+    const otherGate = controls[other.id]?.gate ?? "";
+    if (gatesConflict(plan.arrival_icao, gateName, otherGate)) return true;
+    if (plan.arrival_icao === "LCPH" && lcphSpecialConflict(gateName, plan.aircraft_type, otherGate, other.aircraft_type)) return true;
+    return false;
   });
 }
 function gateWarning(plan: LivePlan, gateName: string, taxiPlans: LivePlan[], controls: ControlMap) {
@@ -326,16 +339,16 @@ function gatePreferenceScore(plan: LivePlan, gate: GateDefinition) {
     if (domestic && /^B/.test(gate.name)) score -= 10;
     if (!domestic && /^C/.test(gate.name)) score -= 8;
   } else if (airport === "LCPH") {
-    const mainC = /^(1|2|3|4|5|6|7|8|13)$/.test(gate.name);
-    const auxC = /^(4A|4B|5A|5B|6A|6B|9A|10A|11A)$/.test(gate.name);
-    if (code === "D") score += /^(9|10|11)$/.test(gate.name) ? -80 : 100;
-    else if (code === "C") score += mainC ? -55 : auxC ? -25 : 60;
-    else if (code === "B") score += /^(14|15)$/.test(gate.name) ? -55 : mainC || auxC ? -15 : 30;
-    else score += /^(14A|15A|15B)$/.test(gate.name) ? -65 : 0;
+    const codeCOnly = /^(8|13)$/.test(gate.name);
+    const mainD = /^(1|2|3|4|5|6|7|9|10|11|14|15)$/.test(gate.name);
+    const auxD = /^(4A|4B|5A|5B|6A|6B|9A|9B|10A|14A|15A|15B)$/.test(gate.name);
+    if (code === "D") score += mainD ? -65 : auxD ? -35 : 120;
+    else if (code === "C") score += codeCOnly ? -75 : auxD ? -35 : mainD ? -20 : 50;
+    else if (CODE_ORDER[code] <= CODE_ORDER.B) score += auxD ? -35 : mainD ? -15 : codeCOnly ? 10 : 20;
+    if (gate.name === "9B" && CODE_ORDER[code] >= CODE_ORDER.C) score += 35;
     if (domestic && /^(1|2|3)$/.test(gate.name)) score -= 8;
   }
 
-  // Stable airline/callsign bias spreads equal candidates without falling back to numeric order.
   score += stableHash(`${prefix}:${gate.name}`) % 11;
   return score;
 }
@@ -449,7 +462,7 @@ export default function ScopeOperationalSyncV2() {
   const runwayDragRef = useRef(false);
 
   const sectorPlans = useMemo(() => plans.filter((plan) => !isTaxiArrivalPlan(plan)), [plans]);
-  const taxiPlans = useMemo(() => plans.filter(isTaxiArrivalPlan, plans), [plans]);
+  const taxiPlans = useMemo(() => plans.filter(isTaxiArrivalPlan), [plans]);
 
   const syncConnection = useCallback(() => setConnected(scopeConnected()), []);
   const syncHosts = useCallback(() => {
