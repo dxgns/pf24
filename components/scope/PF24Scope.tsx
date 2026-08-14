@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ATC_FREQUENCIES, ATC_SECTOR_NAMES } from "@/lib/atcFrequencies";
-import type { ScopeFlightPlan, SimAircraft } from "@/lib/scope/types";
+import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 type Props = { initialPlans: ScopeFlightPlan[]; controllerName: string };
 type ATCSession = { id: string; controller_name: string; position: string; is_active: boolean };
@@ -36,7 +36,6 @@ const DEFAULT_WINDOWS: Record<WindowKey, WindowState> = {
   holds: { x: 900, y: 58, open: true, collapsed: false }, freq: { x: 1120, y: 48, open: true, collapsed: false }, metar: { x: 1265, y: 48, open: true, collapsed: false },
 };
 const WINDOW_WIDTHS: Record<WindowKey, number> = { sector: 462, taxi: 190, timer: 178, holds: 232, freq: 134, metar: 330 };
-const SIM_SEED: SimAircraft[] = [{ id: "sim-1", callsign: "LAN337", aircraftType: "A320", altitude: 5000, targetAltitude: 5000, heading: 180, targetHeading: 180, groundSpeed: 180, x: 73, y: 39, squawk: "9999", departure: "MDPC", arrival: "MDST" }];
 const RUNWAYS: Array<{ airport: string; runway: string }> = [
   { airport: "EFKT", runway: "16" }, { airport: "EFKT", runway: "34" }, { airport: "EGHI", runway: "20" }, { airport: "EGHI", runway: "02" },
   { airport: "EGKK", runway: "26L" }, { airport: "EGKK", runway: "08R" }, { airport: "GCLP", runway: "03L" }, { airport: "GCLP", runway: "03R" },
@@ -57,14 +56,11 @@ export default function PF24Scope({ initialPlans }: Props) {
   const [position, setPosition] = useState("");
   const [connected, setConnected] = useState(false);
   const [now, setNow] = useState(new Date());
-  const [simEnabled, setSimEnabled] = useState(true);
-  const [aircraft, setAircraft] = useState<SimAircraft[]>(SIM_SEED);
-  const [selectedId, setSelectedId] = useState<string | null>(SIM_SEED[0].id);
   const [command, setCommand] = useState("");
-  const [consoleLines, setConsoleLines] = useState<string[]>(["129.800: Hola", "118.600: Hola ok"]);
+  const [consoleLines, setConsoleLines] = useState<string[]>([]);
   const [sessions, setSessions] = useState<ATCSession[]>([]);
-  const [metarStation, setMetarStation] = useState("MDST");
-  const [metarText, setMetarText] = useState("MDST 12003KT 01015");
+  const [metarStation, setMetarStation] = useState("");
+  const [metarText, setMetarText] = useState("");
   const [metars, setMetars] = useState<Record<string, MetarEntry>>({});
   const [showChat, setShowChat] = useState(true);
   const [showConnectDialog, setShowConnectDialog] = useState(false);
@@ -81,10 +77,7 @@ export default function PF24Scope({ initialPlans }: Props) {
   const dragRef = useRef<{ key: WindowKey; dx: number; dy: number } | null>(null);
 
   const frequency = position ? ATC_FREQUENCIES[position] ?? "---.---" : "---.---";
-  const selected = aircraft.find((item) => item.id === selectedId) ?? null;
   const facilityShort = position.split("_").at(-1) ?? "";
-  const activePlan = useMemo(() => plans.find((p) => p.callsign?.toUpperCase() === "LAN337") ?? plans[0] ?? null, [plans]);
-  const taxiPlans = useMemo(() => plans.filter((p) => ["STUP", "PUSH", "TAXI_DEP", "TAXI_IN"].includes(p.sector_status)), [plans]);
   const activeMetarAirports = useMemo(() => Array.from(new Set(RUNWAYS.filter(({ airport, runway }) => runwayState[`${airport}-${runway}`]?.active).map(({ airport }) => airport))).sort(), [runwayState]);
   const activeMetarKey = activeMetarAirports.join(",");
   const scopeScale = scopeZoom / 100;
@@ -109,9 +102,7 @@ export default function PF24Scope({ initialPlans }: Props) {
     let cancelled = false;
     const stations = activeMetarKey ? activeMetarKey.split(",") : [];
     if (stations.length === 0) { setMetars({}); return; }
-
     setMetars((current) => Object.fromEntries(stations.map((station) => [station, current[station] ?? { raw: null, loading: true, error: false }])));
-
     const refresh = async () => {
       const results = await Promise.all(stations.map(async (station): Promise<[string, MetarEntry]> => {
         try {
@@ -119,13 +110,10 @@ export default function PF24Scope({ initialPlans }: Props) {
           if (!response.ok) return [station, { raw: null, loading: false, error: true }];
           const data = await response.json() as { raw?: string | null };
           return [station, { raw: data.raw ?? null, loading: false, error: false }];
-        } catch {
-          return [station, { raw: null, loading: false, error: true }];
-        }
+        } catch { return [station, { raw: null, loading: false, error: true }]; }
       }));
       if (!cancelled) setMetars(Object.fromEntries(results));
     };
-
     void refresh();
     const timer = window.setInterval(() => void refresh(), 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
@@ -143,10 +131,9 @@ export default function PF24Scope({ initialPlans }: Props) {
   useEffect(() => {
     const ch = supabase.channel("scope-flight-plans-ui").on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, (payload) => { const next = payload.new as ScopeFlightPlan; const old = payload.old as ScopeFlightPlan; if (payload.eventType === "INSERT" && next.status !== "FINISHED") setPlans((c) => [next, ...c]); if (payload.eventType === "UPDATE") setPlans((c) => next.status === "FINISHED" ? c.filter((p) => p.id !== next.id) : c.some((p) => p.id === next.id) ? c.map((p) => p.id === next.id ? next : p) : [next, ...c]); if (payload.eventType === "DELETE") setPlans((c) => c.filter((p) => p.id !== old.id)); }).subscribe(); return () => { supabase.removeChannel(ch); };
   }, []);
-  useEffect(() => { if (!simEnabled) return; const t = window.setInterval(() => setAircraft((current) => current.map((a) => { const r = a.heading * Math.PI / 180; let x = a.x + Math.sin(r) * .018; let y = a.y - Math.cos(r) * .018; if (x > 95) x = 5; if (x < 5) x = 95; if (y > 88) y = 8; if (y < 8) y = 88; return { ...a, x, y }; })), 1000); return () => window.clearInterval(t); }, [simEnabled]);
 
   async function loadMetar(station: string) { try { const r = await fetch(`/api/scope/metar?station=${encodeURIComponent(station)}`); const d = await r.json() as { raw?: string | null }; if (d.raw) { setMetarStation(station); setMetarText(d.raw); } } catch {} }
-  function executeCommand(raw: string) { const input = raw.trim(); if (!input) return; setConsoleLines((c) => [...c.slice(-5), `118.600: ${input}`]); const [cmd, ...args] = input.split(/\s+/); const upper = args.map((a) => a.toUpperCase()); if (cmd === ".help") setConsoleLines((c) => [...c.slice(-5), "118.600: .fpl .metar .sim .hdg .alt .clear"]); else if (cmd === ".sim") setSimEnabled(upper[0] !== "OFF"); else if (cmd === ".metar") { const s = upper[0] || "MDST"; void loadMetar(s); } else if (cmd === ".clear") setConsoleLines([]); setCommand(""); }
+  function executeCommand(raw: string) { const input = raw.trim(); if (!input) return; setConsoleLines((c) => [...c.slice(-5), input]); const [cmd, ...args] = input.split(/\s+/); const upper = args.map((a) => a.toUpperCase()); if (cmd === ".help") setConsoleLines((c) => [...c.slice(-5), ".fpl .metar .hdg .alt .clear"]); else if (cmd === ".metar") { const s = upper[0] || "MDST"; void loadMetar(s); } else if (cmd === ".clear") setConsoleLines([]); setCommand(""); }
   function startDrag(key: WindowKey, e: React.MouseEvent) { const w = windows[key]; dragRef.current = { key, dx: e.clientX / scopeScale - w.x, dy: e.clientY / scopeScale - w.y }; }
   function closeWindow(key: WindowKey) { setWindows((c) => ({ ...c, [key]: { ...c[key], open: false } })); }
   function collapseWindow(key: WindowKey) { setWindows((c) => ({ ...c, [key]: { ...c[key], collapsed: !c[key].collapsed } })); }
@@ -158,6 +145,7 @@ export default function PF24Scope({ initialPlans }: Props) {
   function openRunwaySelector() { setShowRunwaySelector(true); setToolStates((c) => c.map((v, i) => i === 0 ? true : v)); }
 
   const stripTime = now.toISOString().slice(11, 19);
+  void plans; void sessions;
   return <main className="fixed left-0 top-0 overflow-hidden bg-[#151515] font-mono text-[12px] text-[#d8d8d8] select-none" style={{ width: `${100 / scopeScale}%`, height: `${100 / scopeScale}%`, transform: `scale(${scopeScale})`, transformOrigin: "top left" }}>
     <header className="absolute inset-x-0 top-0 z-50 h-[44px] border-b border-[#202426]">
       <div className="flex h-[21px] items-stretch bg-[#064a40] text-[#e2e2e2]">
@@ -176,22 +164,19 @@ export default function PF24Scope({ initialPlans }: Props) {
     </header>
 
     <section className="absolute inset-x-0 bottom-[112px] top-[44px] overflow-hidden bg-[#151515]">
-      {windows.sector.open && <FloatingWindow windowKey="sector" state={windows.sector} title="SECTOR LIST" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[462px]"><div className="px-1 py-1 text-[9px] leading-[13px]"><div className="grid grid-cols-[50px_39px_27px_42px_42px_34px_30px_1fr_42px_34px]"><span>CALLSIGN</span><span>ATYP</span><span>FR</span><span>DEP</span><span>ARR</span><span>FL</span><span>RWY</span><span>PROCS</span><span>ASSR</span><span>STS</span></div><div className="grid grid-cols-[50px_39px_27px_42px_42px_34px_30px_1fr_42px_34px] text-[#00e000]"><span>{activePlan?.callsign ?? "LAN337"}</span><span>{activePlan?.aircraft_type ?? "A320"}</span><span>{activePlan?.flight_rules ?? "I"}</span><span>{activePlan?.departure_icao ?? "MDPC"}</span><span>{activePlan?.arrival_icao ?? "MDST"}</span><span>{activePlan?.flight_level ?? "050"}</span><span>11X</span><span className="truncate">PIXE6W-PIXE5-ILSZ-R11X</span><span>{activePlan?.transponder ?? "9999"}</span><span>XXX</span></div></div></FloatingWindow>}
-      {windows.taxi.open && <FloatingWindow windowKey="taxi" state={windows.taxi} title="COMBINED TAXI LIST" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[190px]"><div className="px-1 py-1 text-[9px] leading-[13px]"><div className="grid grid-cols-[50px_43px_35px_42px_1fr]"><span>CALLSIGN</span><span>ATYP</span><span>STS</span><span>GATE</span><span>WRN</span></div><div className="grid grid-cols-[50px_43px_35px_42px_1fr] text-[#00e000]"><span>{taxiPlans[0]?.callsign ?? activePlan?.callsign ?? "LAN337"}</span><span>{taxiPlans[0]?.aircraft_type ?? activePlan?.aircraft_type ?? "A320"}</span><span>XXX</span><span>999X</span><span>NORM<br/><span className="text-[#ff6a00]">PROB</span></span></div></div></FloatingWindow>}
+      {windows.sector.open && <FloatingWindow windowKey="sector" state={windows.sector} title="SECTOR LIST" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[462px]"><div data-pf24-native-list-body="sector" /></FloatingWindow>}
+      {windows.taxi.open && <FloatingWindow windowKey="taxi" state={windows.taxi} title="COMBINED TAXI LIST" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[190px]"><div data-pf24-native-list-body="taxi" /></FloatingWindow>}
       {windows.timer.open && <FloatingWindow windowKey="timer" state={windows.timer} title="TIMER" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[178px]" simple><div className="border-x-2 border-b-2 border-[#ededed] bg-[#555c61] px-[10px] py-[12px] text-center text-[38px] leading-none tracking-[-2px] text-[#e8e8e8]">99:99:99</div></FloatingWindow>}
-      {windows.holds.open && <FloatingWindow windowKey="holds" state={windows.holds} title="HOLD LIST" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[232px]" simple><div className="border-x-2 border-b-2 border-[#ededed] bg-[#555c61] text-[14px] leading-[19px]"><div className="grid grid-cols-[28px_1fr_45px_45px] border-b border-[#ededed]"><span className="border-r border-[#ededed]"/><span className="text-center text-[17px]">CALLSIGN</span><span className="text-center text-[17px]">FL</span><span className="text-center text-[17px]">AFL</span></div><div className="grid grid-cols-[28px_1fr_45px_45px] border-b border-[#ededed]"><span className="border-r border-[#ededed] text-center text-[#2f3335]">040</span><span className="text-center text-[#00e000]">LAN337</span><span className="text-center text-[#00e000]">040</span><span className="text-center text-[#00e000]">030</span></div><div className="grid grid-cols-[28px_1fr_45px_45px] border-b border-[#ededed]"><span className="border-r border-[#ededed] text-center text-[#2f3335]">030</span><span/><span/><span/></div><div className="grid grid-cols-[28px_1fr_45px_45px] border-b border-[#ededed]"><span className="border-r border-[#ededed] text-center text-[#2f3335]">020</span><span/><span/><span/></div><div className="grid h-[56px] grid-cols-[28px_1fr_45px_45px]"><span className="border-r border-[#ededed]"/><span/><span/><span/></div></div></FloatingWindow>}
-      {windows.freq.open && <FloatingWindow windowKey="freq" state={windows.freq} title="Freq" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[134px]"><div className="px-1 py-1 text-[9px] text-[#ffff00]">MDCS_CTR&nbsp;&nbsp;199.999</div></FloatingWindow>}
-      {windows.metar.open && <FloatingWindow windowKey="metar" state={windows.metar} title="ATIS        Metars" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[330px]"><div className="max-h-[150px] overflow-y-auto px-1 py-1 text-[9px] leading-[13px] text-[#00efff]">{activeMetarAirports.length === 0 ? <div className="text-[#9ca3a3]">No active airports</div> : activeMetarAirports.map((station) => { const entry = metars[station]; return <div key={station} className="whitespace-nowrap"><span className="mr-2">X</span><span className="mr-2">{station}</span><span>{entry?.loading ? "LOADING..." : entry?.error ? "METAR UNAVAILABLE" : entry?.raw ? entry.raw.replace(new RegExp(`^${station}\\s*`, "i"), "") : "NO METAR"}</span></div>; })}</div></FloatingWindow>}
-      {simEnabled && aircraft.map((a) => <button key={a.id} onClick={() => setSelectedId(a.id)} className="absolute z-10 text-left text-[#00ee00]" style={{ left: `${a.x}%`, top: `${a.y}%` }}><span className="absolute -left-[12px] -top-[28px] text-[20px]">◇</span><span className="absolute -left-[35px] -top-[6px] tracking-[3px]">••••</span><span className="block leading-[13px]"><span className="text-[10px]">I</span><br/><b>{a.callsign}</b><br/>A{String(Math.round(a.altitude/100)).padStart(3,"0")}↓&nbsp;&nbsp;{a.groundSpeed}<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{a.arrival}</span></button>)}
-      {selected && <div className="absolute right-[11px] top-[272px] w-[210px] text-[#00ee00]"><div className="text-[#ffff00]">A9999</div><div>{selected.callsign} -- &nbsp;{selected.aircraftType}</div><div>050↓ VOGEP N250</div><div>060 080 {selected.arrival}</div><div>AHDG ASP TXT</div></div>}
-      <div className="absolute bottom-[2px] left-[2px] text-[8px] leading-[9px]"><div>LAN337</div><div className="text-[#00eaff]">129.800</div><div>118.600</div></div>
+      {windows.holds.open && <FloatingWindow windowKey="holds" state={windows.holds} title="HOLD LIST" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[232px]" simple><div className="border-x-2 border-b-2 border-[#ededed] bg-[#555c61] text-[14px] leading-[19px]"><div className="grid grid-cols-[28px_1fr_45px_45px] border-b border-[#ededed]"><span className="border-r border-[#ededed]"/><span className="text-center text-[17px]">CALLSIGN</span><span className="text-center text-[17px]">FL</span><span className="text-center text-[17px]">AFL</span></div><div className="grid h-[96px] grid-cols-[28px_1fr_45px_45px]"><span className="border-r border-[#ededed]"/><span/><span/><span/></div></div></FloatingWindow>}
+      {windows.freq.open && <FloatingWindow windowKey="freq" state={windows.freq} title="Freq" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[134px]"><div data-pf24-native-list-body="freq" /></FloatingWindow>}
+      {windows.metar.open && <FloatingWindow windowKey="metar" state={windows.metar} title="ATIS        Metars" onDrag={startDrag} onClose={closeWindow} onCollapse={collapseWindow} onReset={resetWindow} className="w-[330px]"><div className="max-h-[150px] overflow-y-auto px-1 py-1 text-[9px] leading-[13px] text-[#00efff]">{activeMetarAirports.length === 0 ? null : activeMetarAirports.map((station) => { const entry = metars[station]; return <div key={station} className="whitespace-nowrap"><span className="mr-2">X</span><span className="mr-2">{station}</span><span>{entry?.loading ? "LOADING..." : entry?.error ? "METAR UNAVAILABLE" : entry?.raw ? entry.raw.replace(new RegExp(`^${station}\\s*`, "i"), "") : "NO METAR"}</span></div>; })}</div></FloatingWindow>}
       {showConnectDialog && <ConnectDialog form={connectForm} setForm={setConnectForm} connected={connected} onConnect={confirmConnect} onDisconnect={disconnect} onClose={() => setShowConnectDialog(false)}/>} 
     </section>
 
     {showScopeConfig && <ScopeConfiguration zoom={scopeZoom} setZoom={setScopeZoom} onClose={() => setShowScopeConfig(false)}/>} 
     {showRunwaySelector && <RunwaySelector state={runwayState} setState={setRunwayState} onClose={() => { setShowRunwaySelector(false); setToolStates((c) => c.map((v, i) => i === 0 ? false : v)); }}/>} 
 
-    {showChat && <footer className="absolute inset-x-0 bottom-0 z-40 h-[112px] bg-[#555c61] text-[9px]"><div className="h-[76px] overflow-hidden px-1 py-2 leading-[12px]">{consoleLines.map((line,index)=><div key={`${line}-${index}`}>{line}</div>)}</div><form className="flex h-[36px] items-center border-t border-[#777] bg-[#efefef] text-[#222]" onSubmit={(e)=>{e.preventDefault();executeCommand(command);}}><span className="pl-16 pr-1 text-[8px]">on 118.600</span><input value={command} onChange={(e)=>setCommand(e.target.value)} className="h-[18px] w-[385px] bg-white px-1 outline-none"/><div className="ml-1 text-[8px]">METAR&nbsp;&nbsp;{metarStation}&nbsp;&nbsp;{metarText.replace(metarStation, "").trim()}</div></form></footer>}
+    {showChat && <footer className="absolute inset-x-0 bottom-0 z-40 h-[112px] bg-[#555c61] text-[9px]"><div className="h-[76px] overflow-hidden px-1 py-2 leading-[12px]">{consoleLines.map((line,index)=><div key={`${line}-${index}`}>{line}</div>)}</div><form className="flex h-[36px] items-center border-t border-[#777] bg-[#efefef] text-[#222]" onSubmit={(e)=>{e.preventDefault();executeCommand(command);}}><input value={command} onChange={(e)=>setCommand(e.target.value)} className="ml-16 h-[18px] w-[385px] bg-white px-1 outline-none"/><div className="ml-1 text-[8px]">{metarStation ? <>METAR&nbsp;&nbsp;{metarStation}&nbsp;&nbsp;{metarText.replace(metarStation, "").trim()}</> : null}</div></form></footer>}
     <style jsx global>{`html,body{overflow:hidden!important;max-width:100vw!important}.scopeTopCell{border-right:1px solid #173d38;display:flex;align-items:center;justify-content:center;min-width:0}.scopeTopGap{border-right:1px solid #173d38}.scopeToolOn{background:#0a5b50}.scopeConnected{border:1px solid #fff!important}.connectBox{border:1px solid #b7b7b7;background:#d8d8d8;box-shadow:inset 1px 1px #f8f8f8,inset -1px -1px #999}.connectField{height:20px;border:1px solid #c0c0c0;background:#efefef;box-shadow:inset 1px 1px #fff;padding:1px 5px;color:#151515}.windowIcon{width:16px;height:12px;display:flex;align-items:center;justify-content:center}.scopeMenu{box-shadow:0 0 0 1px #102f2a}.scopeConfigField{height:24px;border:1px solid #d4d4d4;background:#efefef;color:#111;box-shadow:inset 1px 1px #fff;padding:0 28px 0 8px}`}</style>
   </main>;
 }
