@@ -15,6 +15,7 @@ import ScopeChromeAdditions from "@/components/scope/ScopeChromeAdditions";
 import ScopeAtisDialogV2 from "@/components/scope/ScopeAtisDialogV2";
 import ScopeAtcPresence from "@/components/scope/ScopeAtcPresence";
 import ScopeOperationalSyncV2 from "@/components/scope/ScopeOperationalSyncV2";
+import ScopeNativeListBodyGuard from "@/components/scope/ScopeNativeListBodyGuard";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = {
@@ -60,8 +61,7 @@ export default async function ScopePage() {
       <ScopeAtisDialogV2 controllerName={controllerName} />
       <ScopeAtcPresence controllerName={controllerName} />
       <ScopeOperationalSyncV2 />
+      <ScopeNativeListBodyGuard />
     </>
   );
 }
-
-// Deployment sync marker: LCPH gate rules v2.
