@@ -242,11 +242,11 @@ export async function createFlightPlan(
     created_by: pilotId,
     transponder: getDefaultTransponder(flightRules),
     status: "PENDING",
-    sector_status: "",
+    sector_status: "STUP",
   });
 
   if (error) {
-    console.error(error);
+    console.error("PF24 createFlightPlan insert failed:", error);
 
     return {
       ok: false,
