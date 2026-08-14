@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { supabase } from "@/lib/supabase";
 import PF24Scope from "@/components/scope/PF24Scope";
+import ScopeNativeListCss from "@/components/scope/ScopeNativeListCss";
 import ScopeLayoutGuards from "@/components/scope/ScopeLayoutGuards";
 import WeatherPanelV2 from "@/components/scope/WeatherPanelV2";
 import TrafficSimulation from "@/components/scope/TrafficSimulation";
@@ -50,6 +51,7 @@ export default async function ScopePage() {
 
   return (
     <>
+      <ScopeNativeListCss />
       <PF24Scope initialPlans={(data ?? []) as ScopeFlightPlan[]} controllerName={controllerName} />
       <ScopeConnectionPersistence />
       <ScopeLayoutGuards />
