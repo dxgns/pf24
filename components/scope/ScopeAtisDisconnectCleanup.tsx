@@ -1,0 +1,41 @@
+"use client";
+
+import { useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+
+const ATIS_CONFIG_STORAGE_KEY = "pf24_scope_atis_configs_v1";
+
+type AirportConfig = {
+  active?: boolean;
+  dep?: string;
+  arr?: string;
+  approach?: string;
+  remarks?: string;
+};
+
+type ConfigMap = Record<string, AirportConfig>;
+
+function deactivateAllLocalAtis() {
+  try {
+    const configs = JSON.parse(localStorage.getItem(ATIS_CONFIG_STORAGE_KEY) ?? "{}") as ConfigMap;
+    const next: ConfigMap = {};
+    for (const [icao, config] of Object.entries(configs)) next[icao] = { ...config, active: false };
+    localStorage.setItem(ATIS_CONFIG_STORAGE_KEY, JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("pf24-atis-config-sync"));
+  } catch {}
+}
+
+export default function ScopeAtisDisconnectCleanup({ controllerName }: { controllerName: string }) {
+  useEffect(() => {
+    const onDisconnect = async () => {
+      deactivateAllLocalAtis();
+      const { error } = await supabase.from("atis_messages").delete().eq("created_by", controllerName);
+      if (error) console.error("PF24 Scope owned ATIS cleanup failed:", error);
+    };
+
+    window.addEventListener("pf24-scope-explicit-disconnect", onDisconnect);
+    return () => window.removeEventListener("pf24-scope-explicit-disconnect", onDisconnect);
+  }, [controllerName]);
+
+  return null;
+}
