@@ -20,12 +20,14 @@ type ATCSession = {
 
 type ListKey = "sector" | "taxi" | "freq";
 type Visibility = Record<ListKey, boolean>;
+type AutoMoveState = { sector: boolean; taxi: boolean };
 type Phase = "dep" | "arr";
 type Popup =
   | { type: "status"; planId: string }
   | { type: "runway"; planId: string }
   | { type: "procs"; planId: string }
   | { type: "assr"; planId: string }
+  | { type: "gate"; planId: string }
   | null;
 
 type LocalPlanControls = {
@@ -33,14 +35,19 @@ type LocalPlanControls = {
   depRunway?: string;
   arrRunway?: string;
   depProc?: string;
-  arrProc?: string;
+  arrStar?: string;
+  arrAppr?: string;
+  gate?: string;
 };
 
 type ControlMap = Record<string, LocalPlanControls>;
 type ProcedureSet = { sid?: string[]; star?: string[]; appr?: string[] };
+type AircraftCode = "A" | "B" | "C" | "D" | "E";
+type GateDefinition = { name: string; maxCode: AircraftCode | "ALL" };
 
 const MENU_VISIBILITY_KEY = "pf24_scope_menu_visibility_v1";
 const SECTOR_CONTROLS_KEY = "pf24_scope_sector_controls_v1";
+const AUTO_MOVE_KEY = "pf24_scope_auto_list_move_v1";
 const CALLSIGNS = Object.keys(ATC_FREQUENCIES).sort();
 const WINDOW_TITLES: Record<ListKey, string> = {
   sector: "SECTOR LIST",
@@ -103,12 +110,12 @@ const PROCEDURES: Record<string, Record<string, ProcedureSet>> = {
   MDPC: {
     "08": {
       sid: ["PIXE2T PIXES", "PC20T PC202", "ETBO2T ETBOD", "LETA2T LETAD"],
-      star: ["PIXE1W PIXES", "PC20W PC202", "ETBO1W ETBOD", "LETA1W LETAD"],
+      star: ["PIXE1W", "PC20W", "ETBO1W", "LETA1W"],
       appr: ["RNAV"],
     },
     "09": {
       sid: ["PIXE2T PIXES", "PC20T PC202", "ETBO2T ETBOD", "LETA2T LETAD"],
-      star: ["PIXE1W PIXES", "PC20W PC202", "ETBO1W ETBOD", "LETA1W LETAD"],
+      star: ["PIXE1W", "PC20W", "ETBO1W", "LETA1W"],
       appr: ["RNAV"],
     },
   },
@@ -118,7 +125,51 @@ const PROCEDURES: Record<string, Record<string, ProcedureSet>> = {
   },
 };
 
+const GATES: Record<string, GateDefinition[]> = {
+  MDPC: [
+    { name: "GA", maxCode: "ALL" }, { name: "VIP", maxCode: "ALL" },
+    { name: "B33", maxCode: "C" }, { name: "B32", maxCode: "C" }, { name: "B31", maxCode: "C" },
+    { name: "B30", maxCode: "C" }, { name: "B30L", maxCode: "C" }, { name: "B29", maxCode: "C" },
+    { name: "B28", maxCode: "C" }, { name: "B27", maxCode: "C" }, { name: "B25", maxCode: "E" },
+    { name: "B23", maxCode: "E" }, { name: "B21", maxCode: "C" }, { name: "B26", maxCode: "C" },
+    { name: "B24", maxCode: "C" }, { name: "B22", maxCode: "C" }, { name: "B20", maxCode: "C" },
+    { name: "11A", maxCode: "C" }, { name: "11", maxCode: "C" }, { name: "10", maxCode: "C" },
+    { name: "9A", maxCode: "C" }, { name: "9", maxCode: "C" }, { name: "8", maxCode: "C" },
+    { name: "7", maxCode: "C" }, { name: "6", maxCode: "C" }, { name: "5", maxCode: "C" },
+    { name: "4", maxCode: "C" }, { name: "3", maxCode: "C" }, { name: "2", maxCode: "C" },
+    { name: "1A", maxCode: "C" }, { name: "1", maxCode: "C" }, { name: "N5", maxCode: "C" },
+    { name: "N4", maxCode: "C" }, { name: "N3", maxCode: "C" }, { name: "N2", maxCode: "C" },
+    { name: "N1", maxCode: "C" },
+  ],
+  MDST: [
+    { name: "A1", maxCode: "A" }, { name: "A2", maxCode: "A" }, { name: "A3", maxCode: "A" },
+    { name: "B1", maxCode: "D" }, { name: "B2", maxCode: "D" }, { name: "B3", maxCode: "C" },
+    { name: "B4", maxCode: "D" }, { name: "B5", maxCode: "D" }, { name: "B6", maxCode: "D" },
+    { name: "C1", maxCode: "D" }, { name: "C2", maxCode: "D" }, { name: "C3", maxCode: "E" },
+    { name: "C4", maxCode: "E" },
+  ],
+  LCPH: [
+    { name: "1", maxCode: "C" }, { name: "2", maxCode: "C" }, { name: "3", maxCode: "C" },
+    { name: "4", maxCode: "C" }, { name: "4A", maxCode: "B" }, { name: "4B", maxCode: "B" },
+    { name: "5", maxCode: "C" }, { name: "5A", maxCode: "B" }, { name: "5B", maxCode: "B" },
+    { name: "6", maxCode: "C" }, { name: "6A", maxCode: "B" }, { name: "6B", maxCode: "B" },
+    { name: "7", maxCode: "C" }, { name: "8", maxCode: "C" }, { name: "9", maxCode: "D" },
+    { name: "9A", maxCode: "C" }, { name: "10", maxCode: "D" }, { name: "10A", maxCode: "C" },
+    { name: "11", maxCode: "D" }, { name: "11A", maxCode: "C" }, { name: "13", maxCode: "C" },
+    { name: "14", maxCode: "B" }, { name: "14A", maxCode: "A" }, { name: "15", maxCode: "B" },
+    { name: "15A", maxCode: "A" }, { name: "15B", maxCode: "A" },
+  ],
+};
+
+const AIRCRAFT_CODE: Record<string, AircraftCode> = {
+  C150: "A", BE58: "B", PA46: "B", TBM9: "B", SW3: "B", C550: "B", HAWK: "B", EUFI: "B",
+  DH8D: "C", A220: "C", A319: "C", A320: "C", A321: "C", B717: "C", B727: "C", B737: "C", F100: "C",
+  B757: "D", B767: "D", MD11: "D",
+  A330: "E", A340: "E", A350: "E", B744: "E", B747: "E", B777: "E", B787: "E",
+};
+
 const SECTOR_GRID = "grid-cols-[50px_38px_25px_39px_39px_31px_29px_1fr_40px_31px_18px]";
+const TAXI_GRID = "grid-cols-[50px_43px_35px_42px_1fr]";
 
 function findScopeWindow(title: string): HTMLElement | null {
   const windows = Array.from(document.querySelectorAll<HTMLElement>("main.fixed > section > div.absolute.z-30"));
@@ -150,6 +201,19 @@ function writeVisibility(value: Visibility) {
   window.dispatchEvent(new CustomEvent("pf24-menu-visibility-sync"));
 }
 
+function readAutoMove(): AutoMoveState {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(AUTO_MOVE_KEY) ?? "{}") as Partial<AutoMoveState>;
+    return { sector: parsed.sector !== false, taxi: parsed.taxi !== false };
+  } catch {
+    return { sector: true, taxi: true };
+  }
+}
+
+function writeAutoMove(value: AutoMoveState) {
+  localStorage.setItem(AUTO_MOVE_KEY, JSON.stringify(value));
+}
+
 function readControls(): ControlMap {
   try {
     const parsed = JSON.parse(localStorage.getItem(SECTOR_CONTROLS_KEY) ?? "{}") as ControlMap;
@@ -171,17 +235,23 @@ function setControlledInput(input: HTMLInputElement, value: string) {
   input.focus();
 }
 
+function normalizeStatus(value?: string | null) {
+  const status = (value || "").toUpperCase();
+  return status === "TAXI_ARR" ? "TAXI_IN" : status;
+}
+
 function phaseFor(plan: LivePlan): Phase {
-  const status = (plan.sector_status || "").toUpperCase();
+  const status = normalizeStatus(plan.sector_status);
   const index = STATUS_SEQUENCE.indexOf(status as (typeof STATUS_SEQUENCE)[number]);
   const appIndex = STATUS_SEQUENCE.indexOf("APP");
   return index >= appIndex ? "arr" : "dep";
 }
 
 function rawStatus(plan: LivePlan) {
-  const status = (plan.sector_status || "").toUpperCase();
+  const status = normalizeStatus(plan.sector_status);
   if (status !== "STUP") return status;
 
+  // Compatibility with flights created before NSTUP was stored explicitly.
   const created = plan.created_at ? new Date(plan.created_at).getTime() : Number.NaN;
   const updated = plan.updated_at ? new Date(plan.updated_at).getTime() : Number.NaN;
   if (!Number.isFinite(created) || !Number.isFinite(updated)) return "";
@@ -202,12 +272,13 @@ function statusOptions(plan: LivePlan): string[] {
   return ["NSTUP", ...STATUS_SEQUENCE.slice(index + 1, index + 3)];
 }
 
-function procedureOptions(airport: string, runway: string, phase: Phase) {
-  if (!runway) return [];
-  const set = PROCEDURES[airport]?.[runway];
-  if (!set) return [];
-  const values = phase === "dep" ? (set.sid ?? []) : [...(set.star ?? []), ...(set.appr ?? [])];
-  return Array.from(new Set(values));
+function isTaxiArrivalPlan(plan: LivePlan) {
+  const status = normalizeStatus(plan.sector_status);
+  return status === "TAXI_IN" || status === "PARKED";
+}
+
+function procedureSet(airport: string, runway: string) {
+  return runway ? PROCEDURES[airport]?.[runway] : undefined;
 }
 
 function validManualSsr(value: string) {
@@ -230,6 +301,52 @@ function generateSsr(plans: LivePlan[], currentPlanId: string) {
   return "2000";
 }
 
+function aircraftCode(type?: string | null): AircraftCode {
+  const value = (type || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (AIRCRAFT_CODE[value]) return AIRCRAFT_CODE[value];
+  if (/^(A33|A34|A35|B74|B77|B78)/.test(value)) return "E";
+  if (/^(B75|B76|MD11)/.test(value)) return "D";
+  if (/^(A22|A31|A32|B71|B72|B73|E1|E17|E19|F100|DH8)/.test(value)) return "C";
+  if (/^(C1|C5|BE|PA|TBM|SW)/.test(value)) return "B";
+  return "C";
+}
+
+function gateFitsAircraft(gate: GateDefinition, type?: string | null) {
+  if (gate.maxCode === "ALL") return true;
+  const order: Record<AircraftCode, number> = { A: 1, B: 2, C: 3, D: 4, E: 5 };
+  return order[aircraftCode(type)] <= order[gate.maxCode];
+}
+
+function gateBase(airport: string, gate: string) {
+  const names = (GATES[airport] ?? []).map((item) => item.name);
+  const candidates = names
+    .filter((name) => name !== gate && gate.startsWith(name) && gate.slice(name.length).length === 1 && /^[A-Z]$/.test(gate.slice(name.length)))
+    .sort((a, b) => b.length - a.length);
+  return candidates[0] ?? gate;
+}
+
+function gatesConflict(airport: string, first: string, second: string) {
+  if (!first || !second) return false;
+  if (first === second) return true;
+  const firstBase = gateBase(airport, first);
+  const secondBase = gateBase(airport, second);
+  if (firstBase !== secondBase) return false;
+  return first === firstBase || second === secondBase;
+}
+
+function gateWarning(plan: LivePlan, gateName: string, taxiPlans: LivePlan[], controls: ControlMap) {
+  if (!gateName) return "";
+  const gate = (GATES[plan.arrival_icao] ?? []).find((item) => item.name === gateName);
+  if (!gate || !gateFitsAircraft(gate, plan.aircraft_type)) return "PROB";
+
+  const conflicting = taxiPlans.some((other) => {
+    if (other.id === plan.id || other.arrival_icao !== plan.arrival_icao) return false;
+    const otherGate = controls[other.id]?.gate ?? "";
+    return gatesConflict(plan.arrival_icao, gateName, otherGate);
+  });
+  return conflicting ? "PROB" : "NORM";
+}
+
 function isRunwaySelectorButton(button: HTMLButtonElement) {
   const dialogs = Array.from(document.querySelectorAll<HTMLElement>("div.absolute"));
   return dialogs.some((dialog) => dialog.contains(button) && dialog.textContent?.includes("Runway selector dialog"));
@@ -249,10 +366,97 @@ function listKeyFromCloseButton(button: HTMLButtonElement): ListKey | null {
   return null;
 }
 
+function autoButtonKey(button: HTMLButtonElement): "sector" | "taxi" | null {
+  const win = button.closest("div.absolute.z-30") as HTMLElement | null;
+  if (!win || win.parentElement?.tagName !== "SECTION") return null;
+  const header = win.firstElementChild as HTMLElement | null;
+  if (!header || !header.contains(button)) return null;
+  const buttons = Array.from(header.querySelectorAll<HTMLButtonElement>("button"));
+  if (buttons[0] !== button) return null;
+  const title = header.textContent?.toUpperCase() ?? "";
+  if (title.includes("SECTOR LIST")) return "sector";
+  if (title.includes("COMBINED TAXI LIST")) return "taxi";
+  return null;
+}
+
+function setAutoButtonVisual(key: "sector" | "taxi", active: boolean) {
+  const win = findScopeWindow(WINDOW_TITLES[key]);
+  const header = win?.firstElementChild as HTMLElement | null;
+  const button = header?.querySelector<HTMLButtonElement>("button");
+  if (!button) return;
+  button.style.backgroundColor = active ? "#0a5b50" : "";
+  button.title = active ? "Automatic movement: ON" : "Automatic movement: OFF";
+}
+
+function moveWindowVertically(win: HTMLElement, targetTop: number) {
+  const section = win.parentElement;
+  const header = win.firstElementChild as HTMLElement | null;
+  if (!section || section.tagName !== "SECTION" || !header) return;
+  const sectionRect = section.getBoundingClientRect();
+  const winRect = win.getBoundingClientRect();
+  const currentTop = winRect.top - sectionRect.top;
+  const delta = targetTop - currentTop;
+  if (Math.abs(delta) < 1) return;
+
+  const headerRect = header.getBoundingClientRect();
+  const startX = headerRect.left + Math.min(36, Math.max(8, headerRect.width / 3));
+  const startY = headerRect.top + Math.min(8, Math.max(4, headerRect.height / 2));
+  header.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: startX, clientY: startY, button: 0, buttons: 1 }));
+  window.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: startX, clientY: startY + delta, buttons: 1 }));
+  window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: startX, clientY: startY + delta, button: 0 }));
+}
+
+function arrangeAutoWindows(autoMove: AutoMoveState) {
+  const sector = findScopeWindow("SECTOR LIST");
+  const taxi = findScopeWindow("COMBINED TAXI LIST");
+  if (!sector || !taxi || sector.style.display === "none" || taxi.style.display === "none") return;
+  const radar = sector.parentElement;
+  if (!radar || radar.tagName !== "SECTION") return;
+
+  const radarRect = radar.getBoundingClientRect();
+  const sectorRect = sector.getBoundingClientRect();
+  const taxiRect = taxi.getBoundingClientRect();
+  const overlapX = sectorRect.left < taxiRect.right && sectorRect.right > taxiRect.left;
+  if (!overlapX) return;
+
+  const gap = 2;
+  const sectorTop = sectorRect.top - radarRect.top;
+  const taxiTop = taxiRect.top - radarRect.top;
+  const sectorHeight = sectorRect.height;
+  const taxiHeight = taxiRect.height;
+  const maxBottom = radarRect.height - 2;
+
+  if (autoMove.taxi) {
+    const desiredTaxi = sectorTop + sectorHeight + gap;
+    if (desiredTaxi + taxiHeight <= maxBottom) {
+      moveWindowVertically(taxi, desiredTaxi);
+      return;
+    }
+
+    if (autoMove.sector) {
+      const desiredSector = Math.max(2, maxBottom - sectorHeight - taxiHeight - gap);
+      moveWindowVertically(sector, desiredSector);
+      window.setTimeout(() => moveWindowVertically(taxi, desiredSector + sectorHeight + gap), 0);
+      return;
+    }
+
+    const above = sectorTop - taxiHeight - gap;
+    if (above >= 2) moveWindowVertically(taxi, above);
+    return;
+  }
+
+  if (autoMove.sector) {
+    const desiredAbove = taxiTop - sectorHeight - gap;
+    if (desiredAbove >= 2) moveWindowVertically(sector, desiredAbove);
+    else if (taxiTop + taxiHeight + sectorHeight + gap <= maxBottom) moveWindowVertically(sector, taxiTop + taxiHeight + gap);
+  }
+}
+
 export default function ScopeOperationalSync() {
   const [plans, setPlans] = useState<LivePlan[]>([]);
   const [sessions, setSessions] = useState<ATCSession[]>([]);
   const [sectorBody, setSectorBody] = useState<HTMLElement | null>(null);
+  const [taxiBody, setTaxiBody] = useState<HTMLElement | null>(null);
   const [freqBody, setFreqBody] = useState<HTMLElement | null>(null);
   const [callsignHost, setCallsignHost] = useState<HTMLElement | null>(null);
   const [callsignInput, setCallsignInput] = useState<HTMLInputElement | null>(null);
@@ -261,12 +465,18 @@ export default function ScopeOperationalSync() {
   const [controls, setControls] = useState<ControlMap>({});
   const [popup, setPopup] = useState<Popup>(null);
   const [ssrDraft, setSsrDraft] = useState("");
+  const [autoMove, setAutoMove] = useState<AutoMoveState>({ sector: true, taxi: true });
   const runwayDragRef = useRef(false);
+
+  const sectorPlans = useMemo(() => plans.filter((plan) => !isTaxiArrivalPlan(plan)), [plans]);
+  const taxiPlans = useMemo(() => plans.filter(isTaxiArrivalPlan), [plans]);
 
   const syncHosts = useCallback(() => {
     const nextSector = findWindowBody("SECTOR LIST");
+    const nextTaxi = findWindowBody("COMBINED TAXI LIST");
     const nextFreq = findWindowBody("FREQ");
     setSectorBody(nextSector);
+    setTaxiBody(nextTaxi);
     setFreqBody(nextFreq);
 
     const dialog = document.querySelector<HTMLElement>(".connectBox");
@@ -311,6 +521,10 @@ export default function ScopeOperationalSync() {
 
   useEffect(() => {
     setControls(readControls());
+    const storedAuto = readAutoMove();
+    setAutoMove(storedAuto);
+    setAutoButtonVisual("sector", storedAuto.sector);
+    setAutoButtonVisual("taxi", storedAuto.taxi);
     void loadPlans();
     void loadSessions();
 
@@ -354,6 +568,13 @@ export default function ScopeOperationalSync() {
   }, [sectorBody]);
 
   useEffect(() => {
+    if (!taxiBody) return;
+    const previous = taxiBody.style.display;
+    taxiBody.style.display = "none";
+    return () => { taxiBody.style.display = previous; };
+  }, [taxiBody]);
+
+  useEffect(() => {
     if (!freqBody) return;
     const previous = freqBody.style.display;
     freqBody.style.display = "none";
@@ -386,6 +607,33 @@ export default function ScopeOperationalSync() {
     document.addEventListener("click", onClose, true);
     return () => document.removeEventListener("click", onClose, true);
   }, []);
+
+  useEffect(() => {
+    const onAutoMoveClick = (event: MouseEvent) => {
+      const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
+      if (!button) return;
+      const key = autoButtonKey(button);
+      if (!key) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setAutoMove((current) => {
+        const next = { ...current, [key]: !current[key] };
+        writeAutoMove(next);
+        setAutoButtonVisual(key, next[key]);
+        if (next[key]) window.setTimeout(() => arrangeAutoWindows(next), 0);
+        return next;
+      });
+    };
+    document.addEventListener("click", onAutoMoveClick, true);
+    return () => document.removeEventListener("click", onAutoMoveClick, true);
+  }, []);
+
+  useEffect(() => {
+    setAutoButtonVisual("sector", autoMove.sector);
+    setAutoButtonVisual("taxi", autoMove.taxi);
+    const timer = window.setTimeout(() => arrangeAutoWindows(autoMove), 40);
+    return () => window.clearTimeout(timer);
+  }, [autoMove, sectorPlans.length, taxiPlans.length, sectorBody, taxiBody]);
 
   useEffect(() => {
     const onMouseDown = (event: MouseEvent) => {
@@ -444,8 +692,8 @@ export default function ScopeOperationalSync() {
     });
   };
 
-  const updatePlan = async (planId: string, patch: Partial<LivePlan>) => {
-    const nextPatch = { ...patch, updated_at: new Date().toISOString() };
+  const updatePlan = async (planId: string, patch: Partial<LivePlan>, touchUpdatedAt = true) => {
+    const nextPatch = touchUpdatedAt ? { ...patch, updated_at: new Date().toISOString() } : patch;
     setPlans((current) => current.map((plan) => plan.id === planId ? { ...plan, ...nextPatch } : plan));
     const { error } = await supabase.from("flight_plans").update(nextPatch).eq("id", planId);
     if (error) {
@@ -459,21 +707,42 @@ export default function ScopeOperationalSync() {
     setSsrDraft(/^[0-7]{1,4}$/.test(plan.transponder || "") ? plan.transponder : "");
   };
 
+  const renderStatusPopup = (plan: LivePlan, className: string) => {
+    if (popup?.type !== "status" || popup.planId !== plan.id) return null;
+    return (
+      <div data-pf24-sector-popup="true" className={`${className} z-[80] w-[82px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]`}>
+        <div className="border-b border-[#0b2f2a] px-[4px] py-[2px] text-center text-[9px]">STS</div>
+        {statusOptions(plan).map((status) => (
+          <button
+            key={status}
+            type="button"
+            onClick={() => {
+              void updatePlan(plan.id, { sector_status: status === "NSTUP" ? "" : status });
+              setPopup(null);
+            }}
+            className="block w-full border-b border-[#0b2f2a] px-[5px] py-[3px] text-left text-[10px] last:border-b-0 hover:bg-[#0a5b50]"
+          >{status}</button>
+        ))}
+      </div>
+    );
+  };
+
   const sectorPortal = sectorBody?.parentElement ? createPortal(
     <div className="px-1 py-1 text-[9px] leading-[13px]" data-pf24-live-sector-list="true">
       <div className={`grid ${SECTOR_GRID}`}>
         <span>CALLSIGN</span><span>ATYP</span><span>FR</span><span>DEP</span><span>ARR</span><span>FL</span><span>RWY</span><span>PROCS</span><span>ASSR</span><span>STS</span><span className="text-center">C</span>
       </div>
-      {plans.map((plan) => {
+      {sectorPlans.map((plan) => {
         const phase = phaseFor(plan);
         const local = controls[plan.id] ?? {};
         const runway = phase === "dep" ? local.depRunway ?? "" : local.arrRunway ?? "";
-        const proc = phase === "dep" ? local.depProc ?? "" : local.arrProc ?? "";
+        const proc = phase === "dep"
+          ? local.depProc ?? ""
+          : [local.arrStar, local.arrAppr].filter(Boolean).join("-");
         const airport = phase === "dep" ? plan.departure_icao : plan.arrival_icao;
         const runways = RUNWAYS[airport] ?? [];
-        const procedures = procedureOptions(airport, runway, phase);
+        const procedures = procedureSet(airport, runway);
         const currentStatus = displayStatus(plan);
-        const stsOptions = statusOptions(plan);
         const popupOpen = popup?.planId === plan.id;
 
         return <div key={plan.id} className="relative">
@@ -491,22 +760,7 @@ export default function ScopeOperationalSync() {
             <button type="button" onClick={() => patchControl(plan.id, { c: !local.c })} className={`mx-auto mt-[1px] h-[11px] w-[11px] border border-[#e9e9e9] ${local.c ? "bg-[#00d600]" : "bg-transparent"}`} aria-label={`Alternar C ${plan.callsign}`} />
           </div>
 
-          {popupOpen && popup?.type === "status" && (
-            <div data-pf24-sector-popup="true" className="absolute right-[18px] top-[13px] z-[80] w-[82px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
-              <div className="border-b border-[#0b2f2a] px-[4px] py-[2px] text-center text-[9px]">STS</div>
-              {stsOptions.map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => {
-                    void updatePlan(plan.id, { sector_status: status === "NSTUP" ? "" : status });
-                    setPopup(null);
-                  }}
-                  className="block w-full border-b border-[#0b2f2a] px-[5px] py-[3px] text-left text-[10px] last:border-b-0 hover:bg-[#0a5b50]"
-                >{status}</button>
-              ))}
-            </div>
-          )}
+          {renderStatusPopup(plan, "absolute right-[18px] top-[13px]")}
 
           {popupOpen && popup?.type === "runway" && (
             <div data-pf24-sector-popup="true" className="absolute left-[228px] top-[13px] z-[80] min-w-[55px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
@@ -516,7 +770,9 @@ export default function ScopeOperationalSync() {
                   key={value}
                   type="button"
                   onClick={() => {
-                    patchControl(plan.id, phase === "dep" ? { depRunway: value, depProc: "" } : { arrRunway: value, arrProc: "" });
+                    patchControl(plan.id, phase === "dep"
+                      ? { depRunway: value, depProc: "" }
+                      : { arrRunway: value, arrStar: "", arrAppr: "" });
                     setPopup(null);
                   }}
                   className={`block w-full border-b border-[#0b2f2a] px-[8px] py-[3px] text-center text-[12px] last:border-b-0 hover:bg-[#0a5b50] ${runway === value ? "bg-[#0a5b50]" : ""}`}
@@ -526,11 +782,29 @@ export default function ScopeOperationalSync() {
           )}
 
           {popupOpen && popup?.type === "procs" && (
-            <div data-pf24-sector-popup="true" className="absolute left-[257px] top-[13px] z-[80] min-w-[112px] max-w-[180px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
+            <div data-pf24-sector-popup="true" className="absolute left-[257px] top-[13px] z-[80] min-w-[118px] max-w-[190px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
               <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-center text-[9px]">PROCS</div>
-              {procedures.length === 0 ? <div className="px-[6px] py-[4px] text-[8px] text-[#9aa]">---</div> : procedures.map((value) => (
-                <button key={value} type="button" onClick={() => { patchControl(plan.id, phase === "dep" ? { depProc: value } : { arrProc: value }); setPopup(null); }} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] last:border-b-0 hover:bg-[#0a5b50] ${proc === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
-              ))}
+              {!procedures ? (
+                <div className="px-[6px] py-[4px] text-[8px] text-[#9aa]">---</div>
+              ) : phase === "dep" ? (
+                <>
+                  <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-[8px] text-[#a9c7c1]">SID</div>
+                  {(procedures.sid ?? []).length === 0 ? <div className="px-[6px] py-[4px] text-[8px] text-[#9aa]">---</div> : (procedures.sid ?? []).map((value) => (
+                    <button key={value} type="button" onClick={() => { patchControl(plan.id, { depProc: value }); setPopup(null); }} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] last:border-b-0 hover:bg-[#0a5b50] ${local.depProc === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-[8px] text-[#a9c7c1]">STAR</div>
+                  {(procedures.star ?? []).length === 0 ? <div className="px-[6px] py-[3px] text-[8px] text-[#9aa]">---</div> : (procedures.star ?? []).map((value) => (
+                    <button key={value} type="button" onClick={() => patchControl(plan.id, { arrStar: value })} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] hover:bg-[#0a5b50] ${local.arrStar === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
+                  ))}
+                  <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-[8px] text-[#a9c7c1]">APPR</div>
+                  {(procedures.appr ?? []).length === 0 ? <div className="px-[6px] py-[3px] text-[8px] text-[#9aa]">---</div> : (procedures.appr ?? []).map((value) => (
+                    <button key={value} type="button" onClick={() => patchControl(plan.id, { arrAppr: value })} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] last:border-b-0 hover:bg-[#0a5b50] ${local.arrAppr === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
+                  ))}
+                </>
+              )}
             </div>
           )}
 
@@ -553,7 +827,7 @@ export default function ScopeOperationalSync() {
                     disabled={disabledDigit || (ok && !validManualSsr(ssrDraft))}
                     onClick={() => {
                       if (key === "Dlt") { setSsrDraft(""); return; }
-                      if (key === "Ok") { void updatePlan(plan.id, { transponder: ssrDraft }); setPopup(null); return; }
+                      if (key === "Ok") { void updatePlan(plan.id, { transponder: ssrDraft }, false); setPopup(null); return; }
                       if (/^[0-7]$/.test(key)) setSsrDraft((current) => (current + key).slice(0, 4));
                     }}
                     className="h-[34px] border-b border-r border-[#e9e9e9] text-[13px] hover:bg-[#60686d] disabled:text-[#777] disabled:hover:bg-transparent"
@@ -566,6 +840,53 @@ export default function ScopeOperationalSync() {
       })}
     </div>,
     sectorBody.parentElement,
+  ) : null;
+
+  const taxiPortal = taxiBody?.parentElement ? createPortal(
+    <div className="px-1 py-1 text-[9px] leading-[13px]" data-pf24-live-taxi-list="true">
+      <div className={`grid ${TAXI_GRID}`}>
+        <span>CALLSIGN</span><span>ATYP</span><span>STS</span><span>GATE</span><span>WRN</span>
+      </div>
+      {taxiPlans.map((plan) => {
+        const local = controls[plan.id] ?? {};
+        const gates = GATES[plan.arrival_icao] ?? [];
+        const warning = gateWarning(plan, local.gate ?? "", taxiPlans, controls);
+        const popupOpen = popup?.planId === plan.id;
+        return (
+          <div key={plan.id} className="relative">
+            <div className={`grid ${TAXI_GRID} text-[#00e000]`}>
+              <span className="truncate">{plan.callsign}</span>
+              <span>{plan.aircraft_type}</span>
+              <button type="button" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "status" && current.planId === plan.id ? null : { type: "status", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{displayStatus(plan)}</button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "gate" && current.planId === plan.id ? null : { type: "gate", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{local.gate ?? ""}</button>
+              <span className={warning === "PROB" ? "text-[#ff6a00]" : warning === "NORM" ? "text-[#00e000]" : ""}>{warning}</span>
+            </div>
+
+            {renderStatusPopup(plan, "absolute left-[88px] top-[13px]")}
+
+            {popupOpen && popup?.type === "gate" && (
+              <div data-pf24-sector-popup="true" className="absolute left-[124px] top-[13px] z-[82] min-w-[62px] max-h-[180px] overflow-y-auto border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
+                <div className="sticky top-0 border-b border-[#0b2f2a] bg-[#064a40] px-[5px] py-[2px] text-center text-[9px]">GATE</div>
+                {gates.length === 0 ? <div className="px-[6px] py-[4px] text-[8px] text-[#9aa]">---</div> : gates.map((gate) => {
+                  const fits = gateFitsAircraft(gate, plan.aircraft_type);
+                  const occupied = taxiPlans.some((other) => other.id !== plan.id && other.arrival_icao === plan.arrival_icao && gatesConflict(plan.arrival_icao, gate.name, controls[other.id]?.gate ?? ""));
+                  const problem = !fits || occupied;
+                  return (
+                    <button
+                      key={gate.name}
+                      type="button"
+                      onClick={() => { patchControl(plan.id, { gate: gate.name }); setPopup(null); }}
+                      className={`block w-full border-b border-[#0b2f2a] px-[6px] py-[3px] text-center text-[10px] last:border-b-0 hover:bg-[#0a5b50] ${local.gate === gate.name ? "bg-[#0a5b50]" : ""} ${problem ? "text-[#ff9b52]" : ""}`}
+                    >{gate.name}</button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>,
+    taxiBody.parentElement,
   ) : null;
 
   const freqPortal = freqBody?.parentElement ? createPortal(
@@ -600,5 +921,5 @@ export default function ScopeOperationalSync() {
     callsignHost,
   ) : null;
 
-  return <>{sectorPortal}{freqPortal}{callsignPortal}</>;
+  return <>{sectorPortal}{taxiPortal}{freqPortal}{callsignPortal}</>;
 }
