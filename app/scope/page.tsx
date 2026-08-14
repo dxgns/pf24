@@ -63,3 +63,5 @@ export default async function ScopePage() {
     </>
   );
 }
+
+// Deployment sync marker: LCPH gate rules v2.
