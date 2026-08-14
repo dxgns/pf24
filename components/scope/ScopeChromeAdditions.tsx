@@ -13,11 +13,6 @@ const WINDOW_TITLES: Record<ListKey, string> = {
   taxi: "COMBINED TAXI LIST",
   freq: "Freq",
 };
-const WINDOW_DEFAULTS: Record<ListKey, { x: number; y: number }> = {
-  sector: { x: 8, y: 50 },
-  taxi: { x: 8, y: 104 },
-  freq: { x: 1120, y: 48 },
-};
 const DEFAULT_VISIBILITY: ListVisibility = { sector: true, taxi: true, freq: true };
 
 function findTopBar(): HTMLElement | null {
@@ -46,12 +41,10 @@ function findScopeWindow(title: string): HTMLElement | null {
 function listKeyFromCloseButton(button: HTMLButtonElement): ListKey | null {
   const windowElement = button.closest("div.absolute.z-30") as HTMLElement | null;
   if (!windowElement || windowElement.parentElement?.tagName !== "SECTION") return null;
-
   const header = windowElement.firstElementChild as HTMLElement | null;
   if (!header || !header.contains(button)) return null;
   const headerButtons = Array.from(header.querySelectorAll<HTMLButtonElement>("button"));
   if (headerButtons.length === 0 || headerButtons[headerButtons.length - 1] !== button) return null;
-
   const title = header.textContent?.trim().toUpperCase() ?? "";
   if (title.includes("SECTOR LIST")) return "sector";
   if (title.includes("COMBINED TAXI LIST")) return "taxi";
@@ -79,26 +72,27 @@ function saveVisibility(value: ListVisibility) {
   window.dispatchEvent(new CustomEvent("pf24-menu-visibility-sync"));
 }
 
+function keepListWindowsMounted() {
+  try {
+    const raw = localStorage.getItem(WINDOW_LAYOUT_KEY);
+    if (!raw) return;
+    const layout = JSON.parse(raw) as Record<string, { open?: boolean; collapsed?: boolean; x?: number; y?: number }>;
+    let changed = false;
+    for (const key of Object.keys(WINDOW_TITLES) as ListKey[]) {
+      if (layout[key] && layout[key].open === false) {
+        layout[key] = { ...layout[key], open: true };
+        changed = true;
+      }
+    }
+    if (changed) localStorage.setItem(WINDOW_LAYOUT_KEY, JSON.stringify(layout));
+  } catch {}
+}
+
 function applyVisibility(value: ListVisibility) {
   (Object.keys(WINDOW_TITLES) as ListKey[]).forEach((key) => {
     const element = findScopeWindow(WINDOW_TITLES[key]);
     if (element) element.style.display = value[key] ? "" : "none";
   });
-}
-
-function prepareWindowForReload(key: ListKey) {
-  try {
-    const raw = localStorage.getItem(WINDOW_LAYOUT_KEY);
-    const layout = raw ? JSON.parse(raw) as Record<string, { x?: number; y?: number; open?: boolean; collapsed?: boolean }> : {};
-    const current = layout[key] ?? WINDOW_DEFAULTS[key];
-    layout[key] = {
-      x: typeof current.x === "number" ? current.x : WINDOW_DEFAULTS[key].x,
-      y: typeof current.y === "number" ? current.y : WINDOW_DEFAULTS[key].y,
-      open: true,
-      collapsed: false,
-    };
-    localStorage.setItem(WINDOW_LAYOUT_KEY, JSON.stringify(layout));
-  } catch {}
 }
 
 export default function ScopeChromeAdditions() {
@@ -108,6 +102,7 @@ export default function ScopeChromeAdditions() {
   const [listVisibility, setListVisibility] = useState<ListVisibility>(DEFAULT_VISIBILITY);
 
   const sync = useCallback(() => {
+    keepListWindowsMounted();
     setTopBar(findTopBar());
     setMenu(findMenu());
     setConfigDialog(findConfigDialog());
@@ -162,9 +157,14 @@ export default function ScopeChromeAdditions() {
       const matched = listKeyFromCloseButton(button);
       if (!matched) return;
 
+      // These three windows stay mounted in React. Closing/showing them is only a visibility change,
+      // so MENU never needs to reload the page to recreate a window.
+      event.preventDefault();
+      event.stopImmediatePropagation();
       const next = { ...readSavedVisibility(), [matched]: false };
       saveVisibility(next);
       setListVisibility(next);
+      applyVisibility(next);
     };
 
     document.addEventListener("click", onCloseCapture, true);
@@ -173,21 +173,11 @@ export default function ScopeChromeAdditions() {
 
   const toggleWindow = (key: ListKey) => {
     const current = readSavedVisibility();
-    const nextValue = !current[key];
-    const next = { ...current, [key]: nextValue };
+    const next = { ...current, [key]: !current[key] };
+    keepListWindowsMounted();
     saveVisibility(next);
     setListVisibility(next);
-
-    const windowElement = findScopeWindow(WINDOW_TITLES[key]);
-    if (windowElement) {
-      windowElement.style.display = nextValue ? "" : "none";
-      return;
-    }
-
-    if (nextValue) {
-      prepareWindowForReload(key);
-      window.location.reload();
-    }
+    applyVisibility(next);
   };
 
   const topAtis = topBar ? createPortal(
