@@ -32,11 +32,13 @@ type Popup =
 
 type LocalPlanControls = {
   c?: boolean;
+  nstup?: boolean;
   depRunway?: string;
   arrRunway?: string;
   depProc?: string;
   arrStar?: string;
   arrAppr?: string;
+  arrCustomProc?: string;
   gate?: string;
 };
 
@@ -152,7 +154,7 @@ const GATES: Record<string, GateDefinition[]> = {
     { name: "1", maxCode: "C" }, { name: "2", maxCode: "C" }, { name: "3", maxCode: "C" },
     { name: "4", maxCode: "C" }, { name: "4A", maxCode: "B" }, { name: "4B", maxCode: "B" },
     { name: "5", maxCode: "C" }, { name: "5A", maxCode: "B" }, { name: "5B", maxCode: "B" },
-    { name: "6", maxCode: "C" }, { name: "6A", maxCode: "B" }, { name: "6B", maxCode: "B" },
+    { name: "6", maxCode: "C" }, { name: "6A", maxCode: "C" }, { name: "6B", maxCode: "C" },
     { name: "7", maxCode: "C" }, { name: "8", maxCode: "C" }, { name: "9", maxCode: "D" },
     { name: "9A", maxCode: "C" }, { name: "10", maxCode: "D" }, { name: "10A", maxCode: "C" },
     { name: "11", maxCode: "D" }, { name: "11A", maxCode: "C" }, { name: "13", maxCode: "C" },
@@ -168,6 +170,7 @@ const AIRCRAFT_CODE: Record<string, AircraftCode> = {
   A330: "E", A340: "E", A350: "E", B744: "E", B747: "E", B777: "E", B787: "E",
 };
 
+const CODE_ORDER: Record<AircraftCode, number> = { A: 1, B: 2, C: 3, D: 4, E: 5 };
 const SECTOR_GRID = "grid-cols-[50px_38px_25px_39px_39px_31px_29px_1fr_40px_31px_18px]";
 const TAXI_GRID = "grid-cols-[50px_43px_35px_42px_1fr]";
 
@@ -181,6 +184,13 @@ function findWindowBody(title: string): HTMLElement | null {
   const win = findScopeWindow(title);
   const body = win?.children[1];
   return body instanceof HTMLElement ? body : null;
+}
+
+function scopeConnected() {
+  const top = document.querySelector<HTMLElement>("main.fixed header > div:first-child");
+  return Array.from(top?.querySelectorAll<HTMLButtonElement>("button") ?? []).some(
+    (button) => button.textContent?.trim().toUpperCase() === "DISCONNECT",
+  );
 }
 
 function readVisibility(): Visibility {
@@ -247,25 +257,25 @@ function phaseFor(plan: LivePlan): Phase {
   return index >= appIndex ? "arr" : "dep";
 }
 
-function rawStatus(plan: LivePlan) {
+function rawStatus(plan: LivePlan, local?: LocalPlanControls) {
+  if (local?.nstup) return "";
   const status = normalizeStatus(plan.sector_status);
   if (status !== "STUP") return status;
 
-  // Compatibility with flights created before NSTUP was stored explicitly.
   const created = plan.created_at ? new Date(plan.created_at).getTime() : Number.NaN;
   const updated = plan.updated_at ? new Date(plan.updated_at).getTime() : Number.NaN;
   if (!Number.isFinite(created) || !Number.isFinite(updated)) return "";
   return updated - created > 2500 ? "STUP" : "";
 }
 
-function displayStatus(plan: LivePlan) {
-  const status = rawStatus(plan);
+function displayStatus(plan: LivePlan, local?: LocalPlanControls) {
+  const status = rawStatus(plan, local);
   if (!status) return "";
   return STATUS_DISPLAY[status] ?? status;
 }
 
-function statusOptions(plan: LivePlan): string[] {
-  const current = rawStatus(plan);
+function statusOptions(plan: LivePlan, local?: LocalPlanControls): string[] {
+  const current = rawStatus(plan, local);
   if (!current) return ["NSTUP", "STUP", "PUSH"];
   const index = STATUS_SEQUENCE.indexOf(current as (typeof STATUS_SEQUENCE)[number]);
   if (index < 0) return ["NSTUP", "STUP", "PUSH"];
@@ -313,8 +323,7 @@ function aircraftCode(type?: string | null): AircraftCode {
 
 function gateFitsAircraft(gate: GateDefinition, type?: string | null) {
   if (gate.maxCode === "ALL") return true;
-  const order: Record<AircraftCode, number> = { A: 1, B: 2, C: 3, D: 4, E: 5 };
-  return order[aircraftCode(type)] <= order[gate.maxCode];
+  return CODE_ORDER[aircraftCode(type)] <= CODE_ORDER[gate.maxCode];
 }
 
 function gateBase(airport: string, gate: string) {
@@ -334,17 +343,31 @@ function gatesConflict(airport: string, first: string, second: string) {
   return first === firstBase || second === secondBase;
 }
 
-function gateWarning(plan: LivePlan, gateName: string, taxiPlans: LivePlan[], controls: ControlMap) {
-  if (!gateName) return "";
-  const gate = (GATES[plan.arrival_icao] ?? []).find((item) => item.name === gateName);
-  if (!gate || !gateFitsAircraft(gate, plan.aircraft_type)) return "PROB";
-
-  const conflicting = taxiPlans.some((other) => {
+function gateBlockedByTraffic(plan: LivePlan, gateName: string, taxiPlans: LivePlan[], controls: ControlMap) {
+  return taxiPlans.some((other) => {
     if (other.id === plan.id || other.arrival_icao !== plan.arrival_icao) return false;
     const otherGate = controls[other.id]?.gate ?? "";
     return gatesConflict(plan.arrival_icao, gateName, otherGate);
   });
-  return conflicting ? "PROB" : "NORM";
+}
+
+function gateWarning(plan: LivePlan, gateName: string, taxiPlans: LivePlan[], controls: ControlMap) {
+  if (!gateName) return "";
+  const gate = (GATES[plan.arrival_icao] ?? []).find((item) => item.name === gateName);
+  if (!gate || !gateFitsAircraft(gate, plan.aircraft_type)) return "PROB";
+  return gateBlockedByTraffic(plan, gateName, taxiPlans, controls) ? "PROB" : "NORM";
+}
+
+function gateCapacityRank(gate: GateDefinition, type?: string | null) {
+  if (gate.maxCode === "ALL") return 99;
+  return Math.max(0, CODE_ORDER[gate.maxCode] - CODE_ORDER[aircraftCode(type)]);
+}
+
+function automaticGateForPlan(plan: LivePlan, taxiPlans: LivePlan[], controls: ControlMap) {
+  const gates = [...(GATES[plan.arrival_icao] ?? [])]
+    .filter((gate) => gateFitsAircraft(gate, plan.aircraft_type))
+    .sort((a, b) => gateCapacityRank(a, plan.aircraft_type) - gateCapacityRank(b, plan.aircraft_type));
+  return gates.find((gate) => !gateBlockedByTraffic(plan, gate.name, taxiPlans, controls))?.name ?? "";
 }
 
 function isRunwaySelectorButton(button: HTMLButtonElement) {
@@ -432,14 +455,12 @@ function arrangeAutoWindows(autoMove: AutoMoveState) {
       moveWindowVertically(taxi, desiredTaxi);
       return;
     }
-
     if (autoMove.sector) {
       const desiredSector = Math.max(2, maxBottom - sectorHeight - taxiHeight - gap);
       moveWindowVertically(sector, desiredSector);
       window.setTimeout(() => moveWindowVertically(taxi, desiredSector + sectorHeight + gap), 0);
       return;
     }
-
     const above = sectorTop - taxiHeight - gap;
     if (above >= 2) moveWindowVertically(taxi, above);
     return;
@@ -455,6 +476,7 @@ function arrangeAutoWindows(autoMove: AutoMoveState) {
 export default function ScopeOperationalSync() {
   const [plans, setPlans] = useState<LivePlan[]>([]);
   const [sessions, setSessions] = useState<ATCSession[]>([]);
+  const [connected, setConnected] = useState(false);
   const [sectorBody, setSectorBody] = useState<HTMLElement | null>(null);
   const [taxiBody, setTaxiBody] = useState<HTMLElement | null>(null);
   const [freqBody, setFreqBody] = useState<HTMLElement | null>(null);
@@ -472,12 +494,10 @@ export default function ScopeOperationalSync() {
   const taxiPlans = useMemo(() => plans.filter(isTaxiArrivalPlan), [plans]);
 
   const syncHosts = useCallback(() => {
-    const nextSector = findWindowBody("SECTOR LIST");
-    const nextTaxi = findWindowBody("COMBINED TAXI LIST");
-    const nextFreq = findWindowBody("FREQ");
-    setSectorBody(nextSector);
-    setTaxiBody(nextTaxi);
-    setFreqBody(nextFreq);
+    setSectorBody(findWindowBody("SECTOR LIST"));
+    setTaxiBody(findWindowBody("COMBINED TAXI LIST"));
+    setFreqBody(findWindowBody("FREQ"));
+    setConnected(scopeConnected());
 
     const dialog = document.querySelector<HTMLElement>(".connectBox");
     if (dialog) {
@@ -523,8 +543,6 @@ export default function ScopeOperationalSync() {
     setControls(readControls());
     const storedAuto = readAutoMove();
     setAutoMove(storedAuto);
-    setAutoButtonVisual("sector", storedAuto.sector);
-    setAutoButtonVisual("taxi", storedAuto.taxi);
     void loadPlans();
     void loadSessions();
 
@@ -636,6 +654,24 @@ export default function ScopeOperationalSync() {
   }, [autoMove, sectorPlans.length, taxiPlans.length, sectorBody, taxiBody]);
 
   useEffect(() => {
+    if (!connected || taxiPlans.length === 0) return;
+    setControls((current) => {
+      const next: ControlMap = { ...current };
+      let changed = false;
+      for (const plan of taxiPlans) {
+        if (next[plan.id]?.gate) continue;
+        const gate = automaticGateForPlan(plan, taxiPlans, next);
+        if (!gate) continue;
+        next[plan.id] = { ...(next[plan.id] ?? {}), gate };
+        changed = true;
+      }
+      if (!changed) return current;
+      writeControls(next);
+      return next;
+    });
+  }, [connected, taxiPlans]);
+
+  useEffect(() => {
     const onMouseDown = (event: MouseEvent) => {
       if (event.button !== 0) return;
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
@@ -702,22 +738,32 @@ export default function ScopeOperationalSync() {
     }
   };
 
+  const setOperationalStatus = (plan: LivePlan, local: LocalPlanControls, status: string) => {
+    if (status === "NSTUP") {
+      patchControl(plan.id, { nstup: true });
+      void updatePlan(plan.id, { sector_status: "STUP" }, false);
+      return;
+    }
+    if (local.nstup) patchControl(plan.id, { nstup: false });
+    void updatePlan(plan.id, { sector_status: status });
+  };
+
   const openAssr = (plan: LivePlan) => {
     setPopup({ type: "assr", planId: plan.id });
     setSsrDraft(/^[0-7]{1,4}$/.test(plan.transponder || "") ? plan.transponder : "");
   };
 
-  const renderStatusPopup = (plan: LivePlan, className: string) => {
+  const renderStatusPopup = (plan: LivePlan, local: LocalPlanControls, className: string) => {
     if (popup?.type !== "status" || popup.planId !== plan.id) return null;
     return (
       <div data-pf24-sector-popup="true" className={`${className} z-[80] w-[82px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]`}>
         <div className="border-b border-[#0b2f2a] px-[4px] py-[2px] text-center text-[9px]">STS</div>
-        {statusOptions(plan).map((status) => (
+        {statusOptions(plan, local).map((status) => (
           <button
             key={status}
             type="button"
             onClick={() => {
-              void updatePlan(plan.id, { sector_status: status === "NSTUP" ? "" : status });
+              setOperationalStatus(plan, local, status);
               setPopup(null);
             }}
             className="block w-full border-b border-[#0b2f2a] px-[5px] py-[3px] text-left text-[10px] last:border-b-0 hover:bg-[#0a5b50]"
@@ -729,169 +775,194 @@ export default function ScopeOperationalSync() {
 
   const sectorPortal = sectorBody?.parentElement ? createPortal(
     <div className="px-1 py-1 text-[9px] leading-[13px]" data-pf24-live-sector-list="true">
-      <div className={`grid ${SECTOR_GRID}`}>
-        <span>CALLSIGN</span><span>ATYP</span><span>FR</span><span>DEP</span><span>ARR</span><span>FL</span><span>RWY</span><span>PROCS</span><span>ASSR</span><span>STS</span><span className="text-center">C</span>
-      </div>
-      {sectorPlans.map((plan) => {
-        const phase = phaseFor(plan);
-        const local = controls[plan.id] ?? {};
-        const runway = phase === "dep" ? local.depRunway ?? "" : local.arrRunway ?? "";
-        const proc = phase === "dep"
-          ? local.depProc ?? ""
-          : [local.arrStar, local.arrAppr].filter(Boolean).join("-");
-        const airport = phase === "dep" ? plan.departure_icao : plan.arrival_icao;
-        const runways = RUNWAYS[airport] ?? [];
-        const procedures = procedureSet(airport, runway);
-        const currentStatus = displayStatus(plan);
-        const popupOpen = popup?.planId === plan.id;
-
-        return <div key={plan.id} className="relative">
-          <div className={`grid ${SECTOR_GRID} text-[#00e000]`}>
-            <span className="truncate">{plan.callsign}</span>
-            <span>{plan.aircraft_type}</span>
-            <span>{plan.flight_rules === "IFR" ? "I" : plan.flight_rules === "VFR" ? "V" : plan.flight_rules?.slice(0, 1)}</span>
-            <span>{plan.departure_icao}</span>
-            <span>{plan.arrival_icao}</span>
-            <span>{plan.flight_level}</span>
-            <button type="button" data-pf24-sector-action="true" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "runway" && current.planId === plan.id ? null : { type: "runway", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{runway}</button>
-            <button type="button" data-pf24-sector-action="true" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "procs" && current.planId === plan.id ? null : { type: "procs", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{proc}</button>
-            <button type="button" data-pf24-sector-action="true" onClick={(event) => { event.stopPropagation(); openAssr(plan); }} className="text-left text-[#00e000]">{plan.transponder || "----"}</button>
-            <button type="button" data-pf24-sector-action="true" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "status" && current.planId === plan.id ? null : { type: "status", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{currentStatus}</button>
-            <button type="button" onClick={() => patchControl(plan.id, { c: !local.c })} className={`mx-auto mt-[1px] h-[11px] w-[11px] border border-[#e9e9e9] ${local.c ? "bg-[#00d600]" : "bg-transparent"}`} aria-label={`Alternar C ${plan.callsign}`} />
+      {connected && (
+        <>
+          <div className={`grid ${SECTOR_GRID}`}>
+            <span>CALLSIGN</span><span>ATYP</span><span>FR</span><span>DEP</span><span>ARR</span><span>FL</span><span>RWY</span><span>PROCS</span><span>ASSR</span><span>STS</span><span className="text-center">C</span>
           </div>
+          {sectorPlans.map((plan) => {
+            const phase = phaseFor(plan);
+            const local = controls[plan.id] ?? {};
+            const runway = phase === "dep" ? local.depRunway ?? "" : local.arrRunway ?? "";
+            const proc = phase === "dep"
+              ? local.depProc ?? ""
+              : local.arrCustomProc || [local.arrStar, local.arrAppr].filter(Boolean).join("-");
+            const airport = phase === "dep" ? plan.departure_icao : plan.arrival_icao;
+            const runways = RUNWAYS[airport] ?? [];
+            const procedures = procedureSet(airport, runway);
+            const hasPublishedProcedures = phase === "dep"
+              ? Boolean(procedures?.sid?.length)
+              : Boolean((procedures?.star?.length ?? 0) + (procedures?.appr?.length ?? 0));
+            const currentStatus = displayStatus(plan, local);
+            const popupOpen = popup?.planId === plan.id;
 
-          {renderStatusPopup(plan, "absolute right-[18px] top-[13px]")}
+            return <div key={plan.id} className="relative">
+              <div className={`grid ${SECTOR_GRID} text-[#00e000]`}>
+                <span className="truncate">{plan.callsign}</span>
+                <span>{plan.aircraft_type}</span>
+                <span>{plan.flight_rules === "IFR" ? "I" : plan.flight_rules === "VFR" ? "V" : plan.flight_rules?.slice(0, 1)}</span>
+                <span>{plan.departure_icao}</span>
+                <span>{plan.arrival_icao}</span>
+                <span>{plan.flight_level}</span>
+                <button type="button" data-pf24-sector-action="true" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "runway" && current.planId === plan.id ? null : { type: "runway", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{runway}</button>
+                <button type="button" data-pf24-sector-action="true" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "procs" && current.planId === plan.id ? null : { type: "procs", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{proc}</button>
+                <button type="button" data-pf24-sector-action="true" onClick={(event) => { event.stopPropagation(); openAssr(plan); }} className="text-left text-[#00e000]">{plan.transponder || "----"}</button>
+                <button type="button" data-pf24-sector-action="true" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "status" && current.planId === plan.id ? null : { type: "status", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{currentStatus}</button>
+                <button type="button" onClick={() => patchControl(plan.id, { c: !local.c })} className={`mx-auto mt-[1px] h-[11px] w-[11px] border border-[#e9e9e9] ${local.c ? "bg-[#00d600]" : "bg-transparent"}`} aria-label={`Alternar C ${plan.callsign}`} />
+              </div>
 
-          {popupOpen && popup?.type === "runway" && (
-            <div data-pf24-sector-popup="true" className="absolute left-[228px] top-[13px] z-[80] min-w-[55px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
-              <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-center text-[9px]">ARWY</div>
-              {runways.length === 0 ? <div className="px-[6px] py-[4px] text-[8px]">---</div> : runways.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => {
-                    patchControl(plan.id, phase === "dep"
-                      ? { depRunway: value, depProc: "" }
-                      : { arrRunway: value, arrStar: "", arrAppr: "" });
-                    setPopup(null);
-                  }}
-                  className={`block w-full border-b border-[#0b2f2a] px-[8px] py-[3px] text-center text-[12px] last:border-b-0 hover:bg-[#0a5b50] ${runway === value ? "bg-[#0a5b50]" : ""}`}
-                >{value}</button>
-              ))}
-            </div>
-          )}
+              {renderStatusPopup(plan, local, "absolute right-[18px] top-[13px]")}
 
-          {popupOpen && popup?.type === "procs" && (
-            <div data-pf24-sector-popup="true" className="absolute left-[257px] top-[13px] z-[80] min-w-[118px] max-w-[190px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
-              <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-center text-[9px]">PROCS</div>
-              {!procedures ? (
-                <div className="px-[6px] py-[4px] text-[8px] text-[#9aa]">---</div>
-              ) : phase === "dep" ? (
-                <>
-                  <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-[8px] text-[#a9c7c1]">SID</div>
-                  {(procedures.sid ?? []).length === 0 ? <div className="px-[6px] py-[4px] text-[8px] text-[#9aa]">---</div> : (procedures.sid ?? []).map((value) => (
-                    <button key={value} type="button" onClick={() => { patchControl(plan.id, { depProc: value }); setPopup(null); }} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] last:border-b-0 hover:bg-[#0a5b50] ${local.depProc === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
+              {popupOpen && popup?.type === "runway" && (
+                <div data-pf24-sector-popup="true" className="absolute left-[228px] top-[13px] z-[80] min-w-[55px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
+                  <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-center text-[9px]">ARWY</div>
+                  {runways.length === 0 ? <div className="px-[6px] py-[4px] text-[8px]">---</div> : runways.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        patchControl(plan.id, phase === "dep"
+                          ? { depRunway: value, depProc: "" }
+                          : { arrRunway: value, arrStar: "", arrAppr: "", arrCustomProc: "" });
+                        setPopup(null);
+                      }}
+                      className={`block w-full border-b border-[#0b2f2a] px-[8px] py-[3px] text-center text-[12px] last:border-b-0 hover:bg-[#0a5b50] ${runway === value ? "bg-[#0a5b50]" : ""}`}
+                    >{value}</button>
                   ))}
-                </>
-              ) : (
-                <>
-                  <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-[8px] text-[#a9c7c1]">STAR</div>
-                  {(procedures.star ?? []).length === 0 ? <div className="px-[6px] py-[3px] text-[8px] text-[#9aa]">---</div> : (procedures.star ?? []).map((value) => (
-                    <button key={value} type="button" onClick={() => patchControl(plan.id, { arrStar: value })} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] hover:bg-[#0a5b50] ${local.arrStar === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
-                  ))}
-                  <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-[8px] text-[#a9c7c1]">APPR</div>
-                  {(procedures.appr ?? []).length === 0 ? <div className="px-[6px] py-[3px] text-[8px] text-[#9aa]">---</div> : (procedures.appr ?? []).map((value) => (
-                    <button key={value} type="button" onClick={() => patchControl(plan.id, { arrAppr: value })} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] last:border-b-0 hover:bg-[#0a5b50] ${local.arrAppr === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
-                  ))}
-                </>
+                </div>
               )}
-            </div>
-          )}
 
-          {popupOpen && popup?.type === "assr" && (
-            <div data-pf24-sector-popup="true" className="absolute right-[49px] top-[13px] z-[85] w-[178px] border border-[#e9e9e9] bg-[#555c61] text-[#e9e9e9] shadow-[0_2px_8px_rgba(0,0,0,.65)]">
-              <div className="relative border-b border-[#e9e9e9] px-[6px] py-[4px] text-center text-[11px] text-[#00e000]">
-                {plan.callsign}
-                <button type="button" aria-label="Cerrar SSR" onClick={(event) => { event.stopPropagation(); setPopup(null); }} className="absolute right-[3px] top-[3px] h-[10px] w-[10px] bg-[#343a3d] hover:bg-[#252a2c]" />
-              </div>
-              <div className="border-b border-[#e9e9e9] py-[8px] text-center text-[15px]">SSR</div>
-              <button type="button" onClick={() => setSsrDraft(generateSsr(plans, plan.id))} className="block w-full border-b border-[#e9e9e9] py-[6px] text-center text-[13px] hover:bg-[#60686d]">Get SSR</button>
-              <div className="border-b border-[#e9e9e9] px-[12px] py-[6px] text-[15px] tracking-[3px]">{ssrDraft || "----"}</div>
-              <div className="grid grid-cols-3">
-                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "Dlt", "0", "Ok"].map((key) => {
-                  const disabledDigit = key === "8" || key === "9";
-                  const ok = key === "Ok";
-                  return <button
-                    key={key}
-                    type="button"
-                    disabled={disabledDigit || (ok && !validManualSsr(ssrDraft))}
-                    onClick={() => {
-                      if (key === "Dlt") { setSsrDraft(""); return; }
-                      if (key === "Ok") { void updatePlan(plan.id, { transponder: ssrDraft }, false); setPopup(null); return; }
-                      if (/^[0-7]$/.test(key)) setSsrDraft((current) => (current + key).slice(0, 4));
-                    }}
-                    className="h-[34px] border-b border-r border-[#e9e9e9] text-[13px] hover:bg-[#60686d] disabled:text-[#777] disabled:hover:bg-transparent"
-                  >{key}</button>;
-                })}
-              </div>
-            </div>
-          )}
-        </div>;
-      })}
+              {popupOpen && popup?.type === "procs" && (
+                <div data-pf24-sector-popup="true" className="absolute left-[257px] top-[13px] z-[80] min-w-[118px] max-w-[210px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
+                  <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-center text-[9px]">PROCS</div>
+                  {!hasPublishedProcedures ? (
+                    <div className="flex items-center gap-[3px] p-[4px]">
+                      <input
+                        autoFocus
+                        maxLength={30}
+                        value={phase === "dep" ? local.depProc ?? "" : local.arrCustomProc ?? ""}
+                        onChange={(event) => {
+                          const value = event.target.value.toUpperCase().slice(0, 30);
+                          patchControl(plan.id, phase === "dep" ? { depProc: value } : { arrCustomProc: value, arrStar: "", arrAppr: "" });
+                        }}
+                        onKeyDown={(event) => { if (event.key === "Enter") setPopup(null); }}
+                        className="h-[20px] min-w-[120px] flex-1 bg-[#e9e9e9] px-[4px] text-[9px] uppercase text-[#111] outline-none"
+                        placeholder="FREE TEXT"
+                      />
+                      <button type="button" onClick={() => setPopup(null)} className="h-[20px] bg-[#0a5b50] px-[5px] text-[8px]">OK</button>
+                    </div>
+                  ) : phase === "dep" ? (
+                    <>
+                      <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-[8px] text-[#a9c7c1]">SID</div>
+                      {(procedures?.sid ?? []).map((value) => (
+                        <button key={value} type="button" onClick={() => { patchControl(plan.id, { depProc: value }); setPopup(null); }} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] last:border-b-0 hover:bg-[#0a5b50] ${local.depProc === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-[8px] text-[#a9c7c1]">STAR</div>
+                      {(procedures?.star ?? []).length === 0 ? <div className="px-[6px] py-[3px] text-[8px] text-[#9aa]">---</div> : (procedures?.star ?? []).map((value) => (
+                        <button key={value} type="button" onClick={() => patchControl(plan.id, { arrStar: value, arrCustomProc: "" })} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] hover:bg-[#0a5b50] ${local.arrStar === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
+                      ))}
+                      <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-[8px] text-[#a9c7c1]">APPR</div>
+                      {(procedures?.appr ?? []).length === 0 ? <div className="px-[6px] py-[3px] text-[8px] text-[#9aa]">---</div> : (procedures?.appr ?? []).map((value) => (
+                        <button key={value} type="button" onClick={() => patchControl(plan.id, { arrAppr: value, arrCustomProc: "" })} className={`block w-full whitespace-nowrap border-b border-[#0b2f2a] px-[6px] py-[3px] text-left text-[9px] last:border-b-0 hover:bg-[#0a5b50] ${local.arrAppr === value ? "bg-[#0a5b50]" : ""}`}>{value}</button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {popupOpen && popup?.type === "assr" && (
+                <div data-pf24-sector-popup="true" className="absolute right-[49px] top-[13px] z-[85] w-[178px] border border-[#e9e9e9] bg-[#555c61] text-[#e9e9e9] shadow-[0_2px_8px_rgba(0,0,0,.65)]">
+                  <div className="relative border-b border-[#e9e9e9] px-[6px] py-[4px] text-center text-[11px] text-[#00e000]">
+                    {plan.callsign}
+                    <button type="button" aria-label="Cerrar SSR" onClick={(event) => { event.stopPropagation(); setPopup(null); }} className="absolute right-[3px] top-[3px] h-[10px] w-[10px] bg-[#343a3d] hover:bg-[#252a2c]" />
+                  </div>
+                  <div className="border-b border-[#e9e9e9] py-[8px] text-center text-[15px]">SSR</div>
+                  <button type="button" onClick={() => setSsrDraft(generateSsr(plans, plan.id))} className="block w-full border-b border-[#e9e9e9] py-[6px] text-center text-[13px] hover:bg-[#60686d]">Get SSR</button>
+                  <div className="border-b border-[#e9e9e9] px-[12px] py-[6px] text-[15px] tracking-[3px]">{ssrDraft || "----"}</div>
+                  <div className="grid grid-cols-3">
+                    {["1", "2", "3", "4", "5", "6", "7", "8", "9", "Dlt", "0", "Ok"].map((key) => {
+                      const disabledDigit = key === "8" || key === "9";
+                      const ok = key === "Ok";
+                      return <button
+                        key={key}
+                        type="button"
+                        disabled={disabledDigit || (ok && !validManualSsr(ssrDraft))}
+                        onClick={() => {
+                          if (key === "Dlt") { setSsrDraft(""); return; }
+                          if (key === "Ok") { void updatePlan(plan.id, { transponder: ssrDraft }, false); setPopup(null); return; }
+                          if (/^[0-7]$/.test(key)) setSsrDraft((current) => (current + key).slice(0, 4));
+                        }}
+                        className="h-[34px] border-b border-r border-[#e9e9e9] text-[13px] hover:bg-[#60686d] disabled:text-[#777] disabled:hover:bg-transparent"
+                      >{key}</button>;
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>;
+          })}
+        </>
+      )}
     </div>,
     sectorBody.parentElement,
   ) : null;
 
   const taxiPortal = taxiBody?.parentElement ? createPortal(
     <div className="px-1 py-1 text-[9px] leading-[13px]" data-pf24-live-taxi-list="true">
-      <div className={`grid ${TAXI_GRID}`}>
-        <span>CALLSIGN</span><span>ATYP</span><span>STS</span><span>GATE</span><span>WRN</span>
-      </div>
-      {taxiPlans.map((plan) => {
-        const local = controls[plan.id] ?? {};
-        const gates = GATES[plan.arrival_icao] ?? [];
-        const warning = gateWarning(plan, local.gate ?? "", taxiPlans, controls);
-        const popupOpen = popup?.planId === plan.id;
-        return (
-          <div key={plan.id} className="relative">
-            <div className={`grid ${TAXI_GRID} text-[#00e000]`}>
-              <span className="truncate">{plan.callsign}</span>
-              <span>{plan.aircraft_type}</span>
-              <button type="button" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "status" && current.planId === plan.id ? null : { type: "status", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{displayStatus(plan)}</button>
-              <button type="button" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "gate" && current.planId === plan.id ? null : { type: "gate", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{local.gate ?? ""}</button>
-              <span className={warning === "PROB" ? "text-[#ff6a00]" : warning === "NORM" ? "text-[#00e000]" : ""}>{warning}</span>
-            </div>
-
-            {renderStatusPopup(plan, "absolute left-[88px] top-[13px]")}
-
-            {popupOpen && popup?.type === "gate" && (
-              <div data-pf24-sector-popup="true" className="absolute left-[124px] top-[13px] z-[82] min-w-[62px] max-h-[180px] overflow-y-auto border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
-                <div className="sticky top-0 border-b border-[#0b2f2a] bg-[#064a40] px-[5px] py-[2px] text-center text-[9px]">GATE</div>
-                {gates.length === 0 ? <div className="px-[6px] py-[4px] text-[8px] text-[#9aa]">---</div> : gates.map((gate) => {
-                  const fits = gateFitsAircraft(gate, plan.aircraft_type);
-                  const occupied = taxiPlans.some((other) => other.id !== plan.id && other.arrival_icao === plan.arrival_icao && gatesConflict(plan.arrival_icao, gate.name, controls[other.id]?.gate ?? ""));
-                  const problem = !fits || occupied;
-                  return (
-                    <button
-                      key={gate.name}
-                      type="button"
-                      onClick={() => { patchControl(plan.id, { gate: gate.name }); setPopup(null); }}
-                      className={`block w-full border-b border-[#0b2f2a] px-[6px] py-[3px] text-center text-[10px] last:border-b-0 hover:bg-[#0a5b50] ${local.gate === gate.name ? "bg-[#0a5b50]" : ""} ${problem ? "text-[#ff9b52]" : ""}`}
-                    >{gate.name}</button>
-                  );
-                })}
-              </div>
-            )}
+      {connected && (
+        <>
+          <div className={`grid ${TAXI_GRID}`}>
+            <span>CALLSIGN</span><span>ATYP</span><span>STS</span><span>GATE</span><span>WRN</span>
           </div>
-        );
-      })}
+          {taxiPlans.map((plan) => {
+            const local = controls[plan.id] ?? {};
+            const gates = GATES[plan.arrival_icao] ?? [];
+            const warning = gateWarning(plan, local.gate ?? "", taxiPlans, controls);
+            const popupOpen = popup?.planId === plan.id;
+            return (
+              <div key={plan.id} className="relative">
+                <div className={`grid ${TAXI_GRID} text-[#00e000]`}>
+                  <span className="truncate">{plan.callsign}</span>
+                  <span>{plan.aircraft_type}</span>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "status" && current.planId === plan.id ? null : { type: "status", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{displayStatus(plan, local)}</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); setPopup((current) => current?.type === "gate" && current.planId === plan.id ? null : { type: "gate", planId: plan.id }); }} className="truncate text-left text-[#00e000]">{local.gate ?? ""}</button>
+                  <span className={warning === "PROB" ? "text-[#ff6a00]" : warning === "NORM" ? "text-[#00e000]" : ""}>{warning}</span>
+                </div>
+
+                {renderStatusPopup(plan, local, "absolute left-[88px] top-[13px]")}
+
+                {popupOpen && popup?.type === "gate" && (
+                  <div data-pf24-sector-popup="true" data-pf24-gate-list="true" className="absolute left-[124px] top-[13px] z-[82] min-w-[62px] max-h-[180px] overflow-y-auto border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]" style={{ scrollbarWidth: "none" }}>
+                    <div className="sticky top-0 border-b border-[#0b2f2a] bg-[#064a40] px-[5px] py-[2px] text-center text-[9px]">GATE</div>
+                    {gates.length === 0 ? <div className="px-[6px] py-[4px] text-[8px] text-[#9aa]">---</div> : gates.map((gate) => {
+                      const fits = gateFitsAircraft(gate, plan.aircraft_type);
+                      const blocked = gateBlockedByTraffic(plan, gate.name, taxiPlans, controls);
+                      return (
+                        <button
+                          key={gate.name}
+                          type="button"
+                          disabled={blocked}
+                          onClick={() => { patchControl(plan.id, { gate: gate.name }); setPopup(null); }}
+                          className={`block w-full border-b border-[#0b2f2a] px-[6px] py-[3px] text-center text-[10px] last:border-b-0 hover:bg-[#0a5b50] ${local.gate === gate.name ? "bg-[#0a5b50]" : ""} ${blocked ? "bg-[#343a3d] text-[#777]" : !fits ? "text-[#ff9b52]" : ""}`}
+                        >{gate.name}</button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
     </div>,
     taxiBody.parentElement,
   ) : null;
 
   const freqPortal = freqBody?.parentElement ? createPortal(
     <div className="px-1 py-1 text-[9px] leading-[13px] text-[#ffff00]" data-pf24-live-freq-list="true">
-      {sessions.map((session) => (
+      {connected && sessions.map((session) => (
         <div key={session.id} className="flex whitespace-nowrap">
           <span className="min-w-[78px] truncate">{session.position}</span>
           <span>{ATC_FREQUENCIES[session.position] ?? "---.---"}</span>
@@ -921,5 +992,8 @@ export default function ScopeOperationalSync() {
     callsignHost,
   ) : null;
 
-  return <>{sectorPortal}{taxiPortal}{freqPortal}{callsignPortal}</>;
+  return <>
+    <style>{`[data-pf24-gate-list='true']::-webkit-scrollbar{display:none}`}</style>
+    {sectorPortal}{taxiPortal}{freqPortal}{callsignPortal}
+  </>;
 }
