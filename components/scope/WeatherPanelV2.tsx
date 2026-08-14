@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
-type MetarValue = { raw: string | null; loading: boolean; error: boolean };
+type MetarValue = { raw: string | null; loading: boolean; error: boolean; sourceStation?: string };
 type RunwaySelection = { active?: boolean };
 type WeatherPanelName = "atis" | "metar";
 type WeatherVisibility = { atis: boolean; metar: boolean };
@@ -254,15 +254,20 @@ export default function WeatherPanelV2() {
       return;
     }
     const refresh = async () => {
-      setMetars((current) => Object.fromEntries(stations.map((station) => [station, current[station] ?? { raw: null, loading: true, error: false }])));
+      setMetars((current) => Object.fromEntries(stations.map((station) => [station, current[station] ?? { raw: null, loading: true, error: false, sourceStation: station }])));
       const results = await Promise.all(stations.map(async (station): Promise<[string, MetarValue]> => {
         try {
           const response = await fetch(`/api/scope/metar?station=${encodeURIComponent(station)}`, { cache: "no-store" });
-          if (!response.ok) return [station, { raw: null, loading: false, error: true }];
-          const data = await response.json() as { raw?: string | null };
-          return [station, { raw: data.raw ?? null, loading: false, error: false }];
+          if (!response.ok) return [station, { raw: null, loading: false, error: true, sourceStation: station }];
+          const data = await response.json() as { raw?: string | null; sourceStation?: string };
+          return [station, {
+            raw: data.raw ?? null,
+            loading: false,
+            error: false,
+            sourceStation: data.sourceStation?.toUpperCase() || station,
+          }];
         } catch {
-          return [station, { raw: null, loading: false, error: true }];
+          return [station, { raw: null, loading: false, error: true, sourceStation: station }];
         }
       }));
       if (!cancelled) setMetars(Object.fromEntries(results));
@@ -375,6 +380,7 @@ export default function WeatherPanelV2() {
       {!collapsed && airports.map((station) => {
         const entry = metars[station];
         const atisLetter = atisLetters[station] ?? "-";
+        const metarStation = entry?.sourceStation || station;
         return (
           <div key={station} className="relative flex h-[16px] w-full items-center bg-[#151515] text-left text-[8px] leading-none text-[#00efff]">
             {visible.atis && (
@@ -393,13 +399,14 @@ export default function WeatherPanelV2() {
             {visible.metar && (
               <button
                 type="button"
+                title={metarStation !== station ? `${station} usa METAR de ${metarStation}` : undefined}
                 onClick={(event) => {
                   event.stopPropagation();
                   setAtisPopup(null);
                   setSelectedStation((current) => current === station ? null : station);
                 }}
                 className="h-full min-w-0 flex-1 whitespace-nowrap px-[4px] text-left text-[#00efff]"
-              >{entry?.loading ? `${station} LOADING...` : entry?.error ? `${station} METAR UNAVAILABLE` : compactMetar(station, entry?.raw ?? null)}</button>
+              >{entry?.loading ? `${station} LOADING...` : entry?.error ? `${station} METAR UNAVAILABLE` : compactMetar(metarStation, entry?.raw ?? null)}</button>
             )}
 
             {visible.atis && atisPopup === station && atisLetter !== "-" && (
