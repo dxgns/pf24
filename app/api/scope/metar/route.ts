@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         station,
         sourceStation: station,
+        fallbackSourceStation: null,
         fallback: false,
         raw: primary.raw,
         data: primary.data,
@@ -60,7 +61,10 @@ export async function GET(request: NextRequest) {
       if (fallback.raw) {
         return NextResponse.json({
           station,
-          sourceStation: fallbackStation,
+          // WeatherPanel usa sourceStation como prefijo visible. Mantener primero
+          // el aeropuerto solicitado y mostrar después la estación METAR real.
+          sourceStation: `${station}(${fallbackStation})`,
+          fallbackSourceStation: fallbackStation,
           fallback: true,
           raw: fallback.raw,
           data: fallback.data,
@@ -71,6 +75,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       station,
       sourceStation: station,
+      fallbackSourceStation: null,
       fallback: false,
       raw: null,
       data: null,
