@@ -74,6 +74,7 @@ export default function SectorListTable({ flightPlans }: { flightPlans: FlightPl
                   </select>
 
                   <select name="sectorStatus" defaultValue={plan.sector_status} className="rounded-lg bg-slate-800 p-2">
+                    <option value="">NSTUP</option>
                     <option value="STUP">STUP</option>
                     <option value="PUSH">PUSH</option>
                     <option value="TAXI_DEP">TAXI_DEP</option>
