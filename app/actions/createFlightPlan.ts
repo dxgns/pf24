@@ -242,7 +242,7 @@ export async function createFlightPlan(
     created_by: pilotId,
     transponder: getDefaultTransponder(flightRules),
     status: "PENDING",
-    sector_status: "STUP",
+    sector_status: "",
   });
 
   if (error) {
