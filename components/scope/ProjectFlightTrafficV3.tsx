@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
+import { normalizeAirlineCallsign, spokenAirlineCallsign } from "@/lib/scope/airlines";
 import {
   DEFAULT_TRAFFIC_SETTINGS,
   readTrafficSettings,
@@ -47,52 +48,18 @@ const VIEWPORT_EVENT = "pf24-radar-viewport";
 const CONNECTION_EVENT = "pf24-scope-connection-change";
 const CONTROLS_KEY = "pf24_scope_traffic_controls_v1";
 const TARGET_SIZE = 18;
-const SIMPLE_WIDTH = 132;
-const SIMPLE_HEIGHT = 58;
-const DETAIL_WIDTH = 250;
-const DETAIL_HEIGHT = 92;
+const SIMPLE_WIDTH = 58;
+const SIMPLE_HEIGHT = 29;
+const DETAIL_WIDTH = 100;
+const DETAIL_HEIGHT = 41;
 const VECTOR_PIXELS_PER_NM = 28;
-const TRAIL_SAMPLE_MS = 750;
+const TRAIL_SAMPLE_MS = 1500;
 const STALE_TRAFFIC_MS = 15000;
 
 const MIN_X = -180000;
 const MAX_X = 180000;
 const MIN_Z = -180000;
 const MAX_Z = 180000;
-
-const TELEPHONY_TO_ICAO: Record<string, string> = {
-  SPEEDBIRD: "BAW",
-  RYANAIR: "RYR",
-  EASY: "EZY",
-  IBERIA: "IBE",
-  VUELING: "VLG",
-  LUFTHANSA: "DLH",
-  AIRFRANCE: "AFR",
-  AMERICAN: "AAL",
-  DELTA: "DAL",
-  UNITED: "UAL",
-  SOUTHWEST: "SWA",
-  JETBLUE: "JBU",
-  SPIRIT: "NKS",
-  KLM: "KLM",
-};
-
-const ICAO_TO_TELEPHONY: Record<string, string> = {
-  BAW: "SPEEDBIRD",
-  RYR: "RYANAIR",
-  EZY: "EASY",
-  IBE: "IBERIA",
-  VLG: "VUELING",
-  DLH: "LUFTHANSA",
-  AFR: "AIRFRANCE",
-  AAL: "AMERICAN",
-  DAL: "DELTA",
-  UAL: "UNITED",
-  SWA: "SOUTHWEST",
-  JBU: "JETBLUE",
-  NKS: "SPIRIT",
-  KLM: "KLM",
-};
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -173,21 +140,11 @@ function trend(verticalRate: number) {
 }
 
 function normalizeCallsign(raw: string) {
-  const upper = raw.trim().toUpperCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-  for (const [telephony, icao] of Object.entries(TELEPHONY_TO_ICAO)) {
-    if (upper.startsWith(telephony)) {
-      const rest = upper.slice(telephony.length).replace(/\s+/g, "");
-      return `${icao}${rest}`;
-    }
-  }
-  return upper.replace(/\s+/g, "");
+  return normalizeAirlineCallsign(raw);
 }
 
-function spokenCallsign(shortCallsign: string) {
-  const match = shortCallsign.match(/^([A-Z]{3})([A-Z0-9]+)$/);
-  if (!match) return shortCallsign;
-  const telephony = ICAO_TO_TELEPHONY[match[1]] ?? match[1];
-  return `${telephony} ${match[2]}`;
+function spokenCallsign(shortCallsign: string, rawCallsign?: string) {
+  return spokenAirlineCallsign(shortCallsign, rawCallsign);
 }
 
 function aircraftCode(raw: string) {
@@ -522,6 +479,8 @@ export default function ProjectFlightTrafficV3({ initialPlans }: Props) {
       main.fixed > section > button.absolute.z-10 { display:none!important; }
       main.fixed > section > div.absolute.right-\\[11px\\].top-\\[272px\\] { display:none!important; }
       [data-pf24-live-traffic='true'] { transform:none!important; transform-origin:initial!important; }
+      [data-pf24-traffic-popup='true'] { scrollbar-width:none; }
+      [data-pf24-traffic-popup='true']::-webkit-scrollbar { display:none; }
       .notranslate { translate:no; }
     `;
     document.head.appendChild(style);
@@ -560,7 +519,7 @@ export default function ProjectFlightTrafficV3({ initialPlans }: Props) {
             if (oldLive) {
               const lastSample = lastTrailSampleRef.current.get(item.id) ?? 0;
               const distance = Math.hypot(item.x - oldLive.x, item.y - oldLive.y);
-              if (now - lastSample >= TRAIL_SAMPLE_MS && distance >= 0.01) {
+              if (now - lastSample >= TRAIL_SAMPLE_MS && distance >= 0.03) {
                 const history = trailsRef.current.get(item.id) ?? [];
                 trailsRef.current.set(item.id, [...history, { x: oldLive.x, y: oldLive.y, time: now }].slice(-5));
                 lastTrailSampleRef.current.set(item.id, now);
@@ -690,7 +649,7 @@ export default function ProjectFlightTrafficV3({ initialPlans }: Props) {
             {showTrail && history.map((trailPoint, index) => {
               const point = screenPoint(hostSize, trailPoint.x, trailPoint.y, viewport);
               const opacity = settings.trailFade ? 0.25 + ((index + 1) / Math.max(1, history.length)) * 0.75 : 1;
-              return <circle key={`${item.id}-trail-${trailPoint.time}`} cx={point.x} cy={point.y} r="2.2" fill="#00d000" opacity={opacity}/>;
+              return <circle key={`${item.id}-trail-${trailPoint.time}`} cx={point.x} cy={point.y} r="3" fill="#00d000" opacity={opacity}/>;
             })}
             {showHeading && <line x1={marker.x} y1={marker.y} x2={marker.x + unit.x * vectorLength} y2={marker.y + unit.y * vectorLength} stroke="#00e000" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}
             <line x1={marker.x} y1={marker.y} x2={end.x} y2={end.y} stroke="#00e000" strokeWidth="1.2" vectorEffect="non-scaling-stroke"/>
@@ -814,12 +773,16 @@ export default function ProjectFlightTrafficV3({ initialPlans }: Props) {
                 placeholder="TXT"
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  updateControl(item.id, { freeText: "" });
+                }}
                 onChange={(event) => updateControl(item.id, { freeText: event.target.value.toUpperCase().replace(/[^A-Z0-9 .\-_/]/g, "").slice(0, 20) })}
                 className="min-w-0 bg-transparent uppercase text-[#00e000] outline-none placeholder:text-[#00e000]"
               />
             </div>
 
-            {popup?.id === item.id && <div data-pf24-traffic-popup="true" className="absolute left-0 top-[92px] z-[30] max-h-[160px] min-w-[92px] overflow-y-auto border border-[#0b392f] bg-[#064a40] text-[10px] text-[#e6e6e6] shadow-lg">
+            {popup?.id === item.id && <div data-pf24-traffic-popup="true" className="absolute left-0 top-[42px] z-[30] max-h-[160px] min-w-[92px] overflow-y-auto border border-[#0b392f] bg-[#064a40] text-[10px] text-[#e6e6e6] shadow-lg">
               {popup.type === "altitude" && ["000", "005", "010", "015", "020"].map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedAltitude: value }); setPopup(null); }} className="block w-full px-3 py-1 text-left hover:bg-[#0a5b50]">{value}</button>)}
               {popup.type === "speed" && Array.from({ length: 41 }, (_, index) => 50 + index * 5).map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedSpeed: value }); setPopup(null); }} className="block w-full px-3 py-1 text-left hover:bg-[#0a5b50]">{value} KT</button>)}
               {popup.type === "waypoint" && waypoints.map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { waypoint: value }); setPopup(null); }} className="block w-full px-3 py-1 text-left hover:bg-[#0a5b50]">{value}</button>)}
@@ -837,7 +800,7 @@ export default function ProjectFlightTrafficV3({ initialPlans }: Props) {
       translate="no"
       className="notranslate pointer-events-none absolute bottom-[36px] left-[132px] right-0 z-[60] h-[18px] truncate border-y border-[#aaa] bg-[#d8d8d8] px-[7px] font-mono text-[9px] leading-[17px] text-[#111]"
     >
-      {selected.username || "USUARIOXXXX"} &nbsp;|&nbsp; {selected.callsign} [<span translate="no" className="notranslate">{spokenCallsign(selected.callsign)}</span>] &nbsp;|&nbsp; {(selectedPlan?.departure_icao || "XXXX").toUpperCase()} - {(selectedPlan?.arrival_icao || "XXXX").toUpperCase()}
+      {selected.username || "USUARIOXXXX"} &nbsp;|&nbsp; {selected.callsign} [<span translate="no" className="notranslate">{spokenCallsign(selected.callsign, selected.rawCallsign)}</span>] &nbsp;|&nbsp; {(selectedPlan?.departure_icao || "XXXX").toUpperCase()} - {(selectedPlan?.arrival_icao || "XXXX").toUpperCase()}
     </div>,
     footer,
   ) : null;
