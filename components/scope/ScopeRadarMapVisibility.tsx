@@ -18,15 +18,37 @@ function findMapLayer() {
   }) as HTMLElement | undefined;
 }
 
+function styleInlineSvg(svg: SVGSVGElement) {
+  svg.style.position = "absolute";
+  svg.style.left = "0";
+  svg.style.top = "0";
+  svg.style.width = "100%";
+  svg.style.height = "100%";
+  svg.style.maxWidth = "none";
+  svg.style.maxHeight = "none";
+  svg.style.display = "block";
+  svg.style.opacity = "1";
+  svg.style.visibility = "visible";
+  svg.style.pointerEvents = "none";
+  svg.style.filter = "brightness(1.65) contrast(1.08)";
+  svg.setAttribute("preserveAspectRatio", "none");
+}
+
 function applyViewportToInlineMap(viewport: Viewport) {
   const layer = findMapLayer();
   const svg = layer?.querySelector<SVGSVGElement>("[data-pf24-map-inline-holder='true'] svg");
   if (!svg) return;
+  styleInlineSvg(svg);
+  svg.style.transformOrigin = "0 0";
   svg.style.transform = `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`;
 }
 
 async function renderInline(layer: HTMLElement, image: HTMLImageElement) {
-  if (layer.dataset.pf24MapInline === "true") return true;
+  const existing = layer.querySelector<SVGSVGElement>("[data-pf24-map-inline-holder='true'] svg");
+  if (existing) {
+    styleInlineSvg(existing);
+    return true;
+  }
 
   try {
     const response = await fetch(image.src);
@@ -40,27 +62,21 @@ async function renderInline(layer: HTMLElement, image: HTMLImageElement) {
     holder.style.inset = "0";
     holder.style.width = "100%";
     holder.style.height = "100%";
+    holder.style.zIndex = "0";
     holder.style.pointerEvents = "none";
+    holder.style.overflow = "hidden";
     holder.innerHTML = svgText;
 
     const svg = holder.querySelector<SVGSVGElement>("svg");
     if (!svg) return false;
 
-    svg.style.position = "absolute";
-    svg.style.left = "0";
-    svg.style.top = "0";
-    svg.style.width = "100%";
-    svg.style.height = "100%";
-    svg.style.maxWidth = "none";
-    svg.style.maxHeight = "none";
-    svg.style.display = "block";
-    svg.style.opacity = "1";
-    svg.style.visibility = "visible";
+    styleInlineSvg(svg);
     svg.style.transformOrigin = image.style.transformOrigin || "0 0";
     svg.style.transform = image.style.transform;
 
     layer.appendChild(holder);
     image.style.opacity = "0";
+    image.style.visibility = "hidden";
     image.style.pointerEvents = "none";
     layer.dataset.pf24MapInline = "true";
     return true;
@@ -82,23 +98,31 @@ export default function ScopeRadarMapVisibility() {
 
       if (layer) {
         layer.dataset.pf24AirspaceMap = "true";
-        layer.style.zIndex = "4";
+        layer.style.position = "absolute";
+        layer.style.inset = "0";
+        layer.style.zIndex = "7";
         layer.style.opacity = "1";
         layer.style.visibility = "visible";
         layer.style.display = "block";
         layer.style.pointerEvents = "none";
+        layer.style.overflow = "hidden";
 
         const image = layer.querySelector<HTMLImageElement>("img");
         if (image) {
+          image.style.width = "100%";
+          image.style.height = "100%";
           image.style.visibility = "visible";
           image.style.display = "block";
           image.style.objectFit = "fill";
           await renderInline(layer, image);
         }
+
+        const svg = layer.querySelector<SVGSVGElement>("[data-pf24-map-inline-holder='true'] svg");
+        if (svg) styleInlineSvg(svg);
       }
 
-      const ready = Boolean(layer?.dataset.pf24MapInline === "true");
-      if (!ready && attempts < 30) {
+      const ready = Boolean(layer?.querySelector("[data-pf24-map-inline-holder='true'] svg"));
+      if (!ready && attempts < 40) {
         timer = window.setTimeout(() => void apply(), 150);
       }
     };
@@ -106,6 +130,7 @@ export default function ScopeRadarMapVisibility() {
     const onViewport = (event: Event) => {
       const viewport = (event as CustomEvent<Viewport>).detail;
       if (viewport) applyViewportToInlineMap(viewport);
+      void apply();
     };
 
     window.addEventListener(VIEWPORT_EVENT, onViewport);
