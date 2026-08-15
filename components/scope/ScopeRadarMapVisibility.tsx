@@ -2,6 +2,9 @@
 
 import { useEffect } from "react";
 
+type Viewport = { zoom: number; panX: number; panY: number };
+const VIEWPORT_EVENT = "pf24-radar-viewport";
+
 function findMapLayer() {
   const radar = document.querySelector<HTMLElement>("main.fixed > section");
   if (!radar) return null;
@@ -15,6 +18,13 @@ function findMapLayer() {
   }) as HTMLElement | undefined;
 }
 
+function applyViewportToInlineMap(viewport: Viewport) {
+  const layer = findMapLayer();
+  const svg = layer?.querySelector<SVGSVGElement>("[data-pf24-map-inline-holder='true'] svg");
+  if (!svg) return;
+  svg.style.transform = `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`;
+}
+
 async function renderInline(layer: HTMLElement, image: HTMLImageElement) {
   if (layer.dataset.pf24MapInline === "true") return true;
 
@@ -23,9 +33,6 @@ async function renderInline(layer: HTMLElement, image: HTMLImageElement) {
     if (!response.ok) return false;
     const svgText = await response.text();
     if (!svgText.includes("<svg")) return false;
-
-    const transform = image.style.transform;
-    const transformOrigin = image.style.transformOrigin || "0 0";
 
     const holder = document.createElement("div");
     holder.dataset.pf24MapInlineHolder = "true";
@@ -49,10 +56,12 @@ async function renderInline(layer: HTMLElement, image: HTMLImageElement) {
     svg.style.display = "block";
     svg.style.opacity = "1";
     svg.style.visibility = "visible";
-    svg.style.transformOrigin = transformOrigin;
-    svg.style.transform = transform;
+    svg.style.transformOrigin = image.style.transformOrigin || "0 0";
+    svg.style.transform = image.style.transform;
 
-    image.replaceWith(holder);
+    layer.appendChild(holder);
+    image.style.opacity = "0";
+    image.style.pointerEvents = "none";
     layer.dataset.pf24MapInline = "true";
     return true;
   } catch {
@@ -81,7 +90,6 @@ export default function ScopeRadarMapVisibility() {
 
         const image = layer.querySelector<HTMLImageElement>("img");
         if (image) {
-          image.style.opacity = "1";
           image.style.visibility = "visible";
           image.style.display = "block";
           image.style.objectFit = "fill";
@@ -95,10 +103,17 @@ export default function ScopeRadarMapVisibility() {
       }
     };
 
+    const onViewport = (event: Event) => {
+      const viewport = (event as CustomEvent<Viewport>).detail;
+      if (viewport) applyViewportToInlineMap(viewport);
+    };
+
+    window.addEventListener(VIEWPORT_EVENT, onViewport);
     void apply();
 
     return () => {
       disposed = true;
+      window.removeEventListener(VIEWPORT_EVENT, onViewport);
       if (timer !== null) window.clearTimeout(timer);
     };
   }, []);
