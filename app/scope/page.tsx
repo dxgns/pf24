@@ -6,7 +6,8 @@ import PF24Scope from "@/components/scope/PF24Scope";
 import ScopeNativeListCss from "@/components/scope/ScopeNativeListCss";
 import ScopeLayoutGuards from "@/components/scope/ScopeLayoutGuards";
 import WeatherPanelV2 from "@/components/scope/WeatherPanelV2";
-import ProjectFlightTrafficV2 from "@/components/scope/ProjectFlightTrafficV2";
+import ProjectFlightTrafficV3 from "@/components/scope/ProjectFlightTrafficV3";
+import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
 import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
@@ -48,15 +49,17 @@ export default async function ScopePage() {
   }
 
   const controllerName = session.user?.name ?? "ATC";
+  const plans = (data ?? []) as ScopeFlightPlan[];
 
   return (
     <>
       <ScopeNativeListCss />
-      <PF24Scope initialPlans={(data ?? []) as ScopeFlightPlan[]} controllerName={controllerName} />
+      <PF24Scope initialPlans={plans} controllerName={controllerName} />
       <ScopeConnectionPersistence />
       <ScopeLayoutGuards />
       <WeatherPanelV2 />
-      <ProjectFlightTrafficV2 />
+      <ProjectFlightTrafficV3 initialPlans={plans} />
+      <ScopeTrafficSettings />
       <ScopePersonalization />
       <RadarViewport />
       <ScopeFunctionalExtras />
