@@ -10,6 +10,7 @@ import ProjectFlightTrafficConfigured from "@/components/scope/ProjectFlightTraf
 import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopeTrafficLabelUX from "@/components/scope/ScopeTrafficLabelUX";
 import ScopeTrafficOperations from "@/components/scope/ScopeTrafficOperations";
+import ScopeTrafficColorSync from "@/components/scope/ScopeTrafficColorSync";
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
 import ScopeRadarMap from "@/components/scope/ScopeRadarMap";
@@ -69,6 +70,7 @@ export default async function ScopePage() {
       <ScopeTrafficSettings />
       <ScopeTrafficLabelUX />
       <ScopeTrafficOperations initialPlans={plans} />
+      <ScopeTrafficColorSync />
       <ScopePersonalization />
       <RadarViewport />
       <ScopeFunctionalExtras />
