@@ -6,7 +6,7 @@ import PF24Scope from "@/components/scope/PF24Scope";
 import ScopeNativeListCss from "@/components/scope/ScopeNativeListCss";
 import ScopeLayoutGuards from "@/components/scope/ScopeLayoutGuards";
 import WeatherPanelV2 from "@/components/scope/WeatherPanelV2";
-import ProjectFlightTrafficV3 from "@/components/scope/ProjectFlightTrafficV3";
+import ProjectFlightTrafficV4 from "@/components/scope/ProjectFlightTrafficV4";
 import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
@@ -58,7 +58,7 @@ export default async function ScopePage() {
       <ScopeConnectionPersistence />
       <ScopeLayoutGuards />
       <WeatherPanelV2 />
-      <ProjectFlightTrafficV3 initialPlans={plans} />
+      <ProjectFlightTrafficV4 initialPlans={plans} />
       <ScopeTrafficSettings />
       <ScopePersonalization />
       <RadarViewport />
