@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createFlightPlan } from "@/app/actions/createFlightPlan";
+import { normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
 
 const AIRCRAFT_TYPES = [
   "A220", "A320", "A330", "A350", "B717", "B727", "B737",
@@ -18,6 +19,9 @@ export default function PilotFlightPlanForm() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [callsign, setCallsign] = useState("");
+  const [gameCallsign, setGameCallsign] = useState("");
+  const [gameCallsignEdited, setGameCallsignEdited] = useState(false);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,6 +45,9 @@ export default function PilotFlightPlanForm() {
 
     setSuccess("Plan de vuelo creado correctamente.");
     form.reset();
+    setCallsign("");
+    setGameCallsign("");
+    setGameCallsignEdited(false);
   }
 
   return (
@@ -69,16 +76,35 @@ export default function PilotFlightPlanForm() {
       <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
         <input
           name="callsign"
-          placeholder="Callsign"
+          placeholder="Callsign del plan"
+          value={callsign}
           maxLength={12}
           onChange={(e) => {
-            e.target.value = e.target.value
-              .toUpperCase()
-              .replace(/\s/g, "");
+            const value = normalizeGameCallsign(e.target.value);
+            setCallsign(value);
+            if (!gameCallsignEdited) setGameCallsign(value);
           }}
           className="input-control rounded-xl p-3"
           required
         />
+
+        <div>
+          <input
+            name="gameCallsign"
+            placeholder="Callsign en el juego"
+            value={gameCallsign}
+            maxLength={12}
+            onChange={(e) => {
+              setGameCallsignEdited(true);
+              setGameCallsign(normalizeGameCallsign(e.target.value));
+            }}
+            className="input-control w-full rounded-xl p-3"
+            required
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Debe coincidir con el callsign que aparece en Project Flight. Si es el mismo que el plan, no necesitas cambiarlo.
+          </p>
+        </div>
 
         <select
           name="aircraftType"
