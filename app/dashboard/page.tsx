@@ -1,6 +1,5 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import Image from "next/image";
 import LogoutButton from "@/components/LogoutButton";
 import UserAvatar from "@/components/UserAvatar";
 import UtcClock from "@/components/UtcClock";
@@ -20,53 +19,30 @@ export default async function DashboardPage() {
   const canAccessATC = session.user?.permissions?.canAccessATC;
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#050612] px-6 py-10 text-white md:py-14">
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-cover bg-center opacity-20"
-        style={{
-          backgroundImage:
-            "url('https://framerusercontent.com/images/lKs77AFnsbHG3ATgS3hBMy8iCOw.png')",
-        }}
-      />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-gradient-to-b from-[#050612]/30 via-[#050612]/85 to-[#050612]" />
+    <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
+      <section className="section-container max-w-7xl">
+        <div className="panel rounded-3xl p-8">
+          <div className="mb-6 flex items-center justify-between">
+            <a
+              href="/"
+              className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300"
+            >
+              ← Inicio
+            </a>
 
-      <section className="section-container relative z-10 max-w-7xl">
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <a href="/" className="flex items-center gap-3">
-            <Image src="/logo.png" alt="PF24" width={38} height={38} priority />
-            <div className="text-xl font-extrabold tracking-tight">
-              PF<span className="text-sky-400">24</span>
-            </div>
-          </a>
+            <div className="mono text-sm tracking-[0.25em] text-slate-400">PF24</div>
+          </div>
 
-          <a
-            href="/"
-            className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white/80 backdrop-blur transition hover:border-[#8095ff]/60 hover:bg-white/10 hover:text-white"
-          >
-            ← Volver al inicio
-          </a>
-        </div>
-
-        <div className="rounded-[2rem] border border-white/10 bg-slate-900/75 p-7 shadow-2xl shadow-black/20 backdrop-blur-xl md:p-9">
           <div className="flex flex-wrap items-center justify-between gap-6">
-            <div className="flex items-center gap-4 md:gap-5">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-1">
-                <UserAvatar image={session.user?.image} name={session.user?.name} />
-              </div>
-
+            <div className="flex items-center gap-4">
+              <UserAvatar image={session.user?.image} name={session.user?.name} />
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#8095ff]">
-                  Panel de usuario
-                </p>
-                <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-white md:text-4xl">
+                <h1 className="mt-2 text-4xl font-extrabold">
                   Bienvenido, {session.user?.name ?? "usuario"}.
                 </h1>
-                <p className="mt-2 text-slate-400">
-                  Accede a las herramientas operacionales de PF24.
-                </p>
+                <p className="mt-2 text-slate-400">Dashboard</p>
               </div>
             </div>
-
             <LogoutButton />
           </div>
         </div>
@@ -77,19 +53,7 @@ export default async function DashboardPage() {
           <InfoCard label="Sistema" value="ONLINE" accent="green" />
         </div>
 
-        <div className="mb-5 mt-10">
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#8095ff]">
-            Plataforma operacional
-          </p>
-          <h2 className="mt-2 text-2xl font-extrabold text-white md:text-3xl">
-            Selecciona un módulo
-          </h2>
-          <p className="mt-2 max-w-2xl text-slate-400">
-            Todas tus herramientas mantienen sus accesos y funciones habituales.
-          </p>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-8 grid gap-6 lg:grid-cols-2 xl:grid-cols-4">
           <PortalCard
             href="/piloto"
             eyebrow="Pilot Operations"
@@ -135,15 +99,9 @@ function InfoCard({
   accent?: "green";
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 shadow-lg shadow-black/10 backdrop-blur">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8095ff]">
-        {label}
-      </p>
-      <p
-        className={`mt-2 text-xl font-bold ${
-          accent === "green" ? "text-green-300" : "text-white"
-        }`}
-      >
+    <div className="panel rounded-2xl p-5">
+      <p className="mono text-xs text-sky-300/70">{label}</p>
+      <p className={`mono mt-2 text-xl font-bold ${accent === "green" ? "text-green-300" : "text-white"}`}>
         {value}
       </p>
     </div>
@@ -164,18 +122,12 @@ function PortalCard({
   return (
     <a
       href={href}
-      className="group flex min-h-[260px] flex-col rounded-3xl border border-white/10 bg-slate-900/80 p-7 shadow-xl shadow-black/10 transition duration-200 hover:-translate-y-1 hover:border-[#8095ff]/55 hover:bg-slate-900"
+      className="panel group rounded-3xl p-8 transition hover:-translate-y-1 hover:border-sky-400/60"
     >
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8095ff]">
-        {eyebrow}
-      </p>
-      <h2 className="mt-4 text-2xl font-extrabold text-white transition group-hover:text-[#a9b5ff]">
-        {title}
-      </h2>
+      <p className="mono text-xs uppercase tracking-[0.25em] text-sky-300/70">{eyebrow}</p>
+      <h2 className="mt-4 text-2xl font-extrabold text-white group-hover:text-sky-300">{title}</h2>
       <p className="mt-4 leading-7 text-slate-400">{text}</p>
-      <p className="mt-auto pt-7 text-sm font-semibold text-[#8095ff]">
-        Abrir módulo →
-      </p>
+      <p className="mt-6 mono text-sm text-sky-300">Abrir módulo →</p>
     </a>
   );
 }
