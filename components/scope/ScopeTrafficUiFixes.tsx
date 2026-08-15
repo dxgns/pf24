@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { normalizeAirlineCallsign, spokenAirlineCallsign } from "@/lib/scope/airlines";
 
 const LABEL_SELECTOR = "[data-pf24-traffic-label='true']";
 const MENU_SELECTOR = "[data-pf24-callsign-menu='true']";
@@ -42,27 +43,28 @@ function createEdge(label: HTMLElement, side: "top" | "right" | "bottom" | "left
   edge.style.pointerEvents = "auto";
   edge.style.zIndex = "3";
   edge.style.background = "transparent";
+  edge.style.cursor = "move";
 
   if (side === "top") {
-    edge.style.left = "-3px";
-    edge.style.top = "-4px";
-    edge.style.width = `${width + 6}px`;
-    edge.style.height = "5px";
-  } else if (side === "bottom") {
-    edge.style.left = "-3px";
-    edge.style.top = `${height - 1}px`;
-    edge.style.width = `${width + 6}px`;
-    edge.style.height = "5px";
-  } else if (side === "left") {
     edge.style.left = "-4px";
-    edge.style.top = "-1px";
-    edge.style.width = "5px";
-    edge.style.height = `${height + 2}px`;
+    edge.style.top = "-5px";
+    edge.style.width = `${width + 8}px`;
+    edge.style.height = "7px";
+  } else if (side === "bottom") {
+    edge.style.left = "-4px";
+    edge.style.top = `${height - 2}px`;
+    edge.style.width = `${width + 8}px`;
+    edge.style.height = "7px";
+  } else if (side === "left") {
+    edge.style.left = "-5px";
+    edge.style.top = "-2px";
+    edge.style.width = "7px";
+    edge.style.height = `${height + 4}px`;
   } else {
-    edge.style.left = `${width - 1}px`;
-    edge.style.top = "-1px";
-    edge.style.width = "5px";
-    edge.style.height = `${height + 2}px`;
+    edge.style.left = `${width - 2}px`;
+    edge.style.top = "-2px";
+    edge.style.width = "7px";
+    edge.style.height = `${height + 4}px`;
   }
 
   label.appendChild(edge);
@@ -74,8 +76,8 @@ function ensureLabelHitboxes() {
     const detail = first?.tagName === "DIV";
     label.dataset.pf24TrafficMode = detail ? "detail" : "simple";
 
-    const width = detail ? 96 : 56;
-    const height = detail ? 40 : 28;
+    const width = detail ? 98 : 58;
+    const height = detail ? 41 : 29;
 
     const existing = Array.from(label.querySelectorAll<HTMLElement>(":scope > [data-pf24-traffic-drag-edge]"));
     if (existing.length === 4 && label.dataset.pf24HitboxMode === (detail ? "detail" : "simple")) return;
@@ -88,6 +90,23 @@ function ensureLabelHitboxes() {
   });
 }
 
+function syncCallsignLabels() {
+  document.querySelectorAll<HTMLElement>(LABEL_SELECTOR).forEach((label) => {
+    const detail = label.dataset.pf24TrafficMode === "detail";
+    const callsignNode = detail
+      ? label.querySelector<HTMLElement>(":scope > div:nth-child(2) > span:first-child")
+      : label.querySelector<HTMLElement>(":scope > span:nth-child(2)");
+    if (!callsignNode) return;
+
+    const raw = (callsignNode.dataset.pf24RawCallsign || callsignNode.textContent || "").trim();
+    if (!raw) return;
+    if (!callsignNode.dataset.pf24RawCallsign) callsignNode.dataset.pf24RawCallsign = raw;
+
+    const normalized = normalizeAirlineCallsign(raw);
+    if (normalized && callsignNode.textContent !== normalized) callsignNode.textContent = normalized;
+  });
+}
+
 function syncFooterState() {
   const footer = document.querySelector<HTMLElement>("main.fixed footer");
   if (!footer) return;
@@ -96,57 +115,84 @@ function syncFooterState() {
   else delete footer.dataset.pf24HasSelectedTraffic;
 }
 
+function syncFooterCallsign() {
+  const info = document.querySelector<HTMLElement>(FOOTER_INFO_SELECTOR);
+  if (!info) return;
+  const spoken = info.querySelector<HTMLElement>("span.notranslate");
+  if (!spoken) return;
+
+  const firstText = Array.from(info.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+  if (!firstText?.textContent) return;
+
+  const source = firstText.textContent;
+  const pipe = source.lastIndexOf("|");
+  const bracket = source.lastIndexOf("[");
+  if (pipe < 0 || bracket <= pipe) return;
+
+  const raw = source.slice(pipe + 1, bracket).trim();
+  if (!raw) return;
+  const normalized = normalizeAirlineCallsign(raw);
+  if (!normalized) return;
+
+  const prefix = source.slice(0, pipe + 1);
+  const nextText = `${prefix}  ${normalized} [`;
+  if (firstText.textContent !== nextText) firstText.textContent = nextText;
+
+  const spokenValue = spokenAirlineCallsign(normalized, raw);
+  if (spoken.textContent !== spokenValue) spoken.textContent = spokenValue;
+}
+
 export default function ScopeTrafficUiFixes() {
   useEffect(() => {
     const style = document.createElement("style");
     style.dataset.pf24TrafficUiFixes = "true";
     style.textContent = `
       ${LABEL_SELECTOR} {
-        letter-spacing: -0.15px !important;
+        letter-spacing: -0.2px !important;
       }
 
       ${LABEL_SELECTOR}[data-pf24-traffic-mode='simple'] {
         pointer-events: none !important;
-        width: 72px !important;
+        width: 62px !important;
         font-size: 9px !important;
         line-height: 8px !important;
       }
       ${LABEL_SELECTOR}[data-pf24-traffic-mode='simple'] > *:not([data-pf24-traffic-drag-edge]) {
         pointer-events: auto;
       }
-      ${LABEL_SELECTOR}[data-pf24-traffic-mode='simple'] > span:first-child {
+      ${LABEL_SELECTOR}[data-pf24-traffic-mode='simple'] > span:nth-child(1) {
+        display: block !important;
         width: 10px !important;
         height: 7px !important;
         font-size: 8px !important;
         line-height: 7px !important;
       }
-      ${LABEL_SELECTOR}[data-pf24-traffic-mode='simple'] > div:nth-child(2) {
-        width: 56px !important;
-        height: 8px !important;
-      }
-      ${LABEL_SELECTOR}[data-pf24-traffic-mode='simple'] > div:nth-child(2) > button {
-        width: 56px !important;
+      ${LABEL_SELECTOR}[data-pf24-traffic-mode='simple'] > span:nth-child(2) {
+        display: block !important;
+        width: 58px !important;
         height: 8px !important;
         font-size: 9px !important;
         line-height: 8px !important;
       }
       ${LABEL_SELECTOR}[data-pf24-traffic-mode='simple'] > span:nth-child(3) {
-        width: 54px !important;
-        grid-template-columns: 28px 26px !important;
-        column-gap: 0 !important;
+        display: block !important;
+        width: 58px !important;
+        height: 8px !important;
         font-size: 9px !important;
         line-height: 8px !important;
       }
       ${LABEL_SELECTOR}[data-pf24-traffic-mode='simple'] > span:nth-child(4) {
-        width: 54px !important;
-        padding-left: 28px !important;
+        display: block !important;
+        width: 58px !important;
+        height: 7px !important;
+        padding-left: 30px !important;
         font-size: 9px !important;
         line-height: 7px !important;
       }
 
       ${LABEL_SELECTOR}[data-pf24-traffic-mode='detail'] {
         pointer-events: none !important;
-        width: 126px !important;
+        width: 104px !important;
         font-size: 9px !important;
         line-height: 8px !important;
       }
@@ -159,27 +205,31 @@ export default function ScopeTrafficUiFixes() {
         line-height: 8px !important;
       }
       ${LABEL_SELECTOR}[data-pf24-traffic-mode='detail'] > div:nth-child(2) {
-        width: 88px !important;
-        grid-template-columns: 47px 7px 34px !important;
+        width: 94px !important;
+        grid-template-columns: 50px 8px 36px !important;
         column-gap: 0 !important;
+        height: 8px !important;
         line-height: 8px !important;
       }
       ${LABEL_SELECTOR}[data-pf24-traffic-mode='detail'] > div:nth-child(3) {
-        width: 96px !important;
-        grid-template-columns: 27px 39px 30px !important;
+        width: 100px !important;
+        grid-template-columns: 29px 42px 29px !important;
         column-gap: 0 !important;
+        height: 8px !important;
         line-height: 8px !important;
       }
       ${LABEL_SELECTOR}[data-pf24-traffic-mode='detail'] > div:nth-child(4) {
-        width: 88px !important;
-        grid-template-columns: 27px 26px 35px !important;
+        width: 94px !important;
+        grid-template-columns: 29px 28px 37px !important;
         column-gap: 0 !important;
+        height: 8px !important;
         line-height: 8px !important;
       }
       ${LABEL_SELECTOR}[data-pf24-traffic-mode='detail'] > div:nth-child(5) {
-        width: 96px !important;
-        grid-template-columns: 40px 25px 31px !important;
+        width: 100px !important;
+        grid-template-columns: 43px 26px 31px !important;
         column-gap: 0 !important;
+        height: 8px !important;
         line-height: 8px !important;
       }
       ${LABEL_SELECTOR}[data-pf24-traffic-mode='detail'] button,
@@ -213,6 +263,9 @@ export default function ScopeTrafficUiFixes() {
     let headingDrag = false;
     let labelDrag = false;
     let protectedLabel: HTMLElement | null = null;
+    let dragStart = { x: 0, y: 0 };
+    let dragMoved = false;
+    let suppressClickUntil = 0;
     let lastPointer = { x: 0, y: 0 };
 
     const onMouseDown = (event: MouseEvent) => {
@@ -226,6 +279,8 @@ export default function ScopeTrafficUiFixes() {
 
       if (edge) {
         labelDrag = true;
+        dragMoved = false;
+        dragStart = { x: event.clientX, y: event.clientY };
         protectedLabel = label;
       } else if (button && text.startsWith("AHDG")) {
         headingDrag = true;
@@ -235,6 +290,7 @@ export default function ScopeTrafficUiFixes() {
 
     const onMouseMove = (event: MouseEvent) => {
       lastPointer = { x: event.clientX, y: event.clientY };
+      if (labelDrag && Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) >= 4) dragMoved = true;
     };
 
     const onMouseOut = (event: MouseEvent) => {
@@ -249,8 +305,10 @@ export default function ScopeTrafficUiFixes() {
     const onMouseUp = () => {
       const label = protectedLabel;
       const wasProtected = headingDrag || labelDrag;
+      if (labelDrag && dragMoved) suppressClickUntil = performance.now() + 250;
       headingDrag = false;
       labelDrag = false;
+      dragMoved = false;
       protectedLabel = null;
 
       if (!wasProtected || !label) return;
@@ -261,15 +319,26 @@ export default function ScopeTrafficUiFixes() {
       }, 60);
     };
 
+    const onClick = (event: MouseEvent) => {
+      if (performance.now() > suppressClickUntil || !(event.target instanceof Element)) return;
+      if (!event.target.closest(LABEL_SELECTOR)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
     document.addEventListener("mousedown", onMouseDown, true);
     document.addEventListener("mousemove", onMouseMove, true);
     document.addEventListener("mouseout", onMouseOut, true);
+    document.addEventListener("click", onClick, true);
     window.addEventListener("mouseup", onMouseUp, true);
 
     const sync = () => {
       ensureContactMe();
       ensureLabelHitboxes();
+      syncCallsignLabels();
       syncFooterState();
+      syncFooterCallsign();
     };
 
     sync();
@@ -280,6 +349,7 @@ export default function ScopeTrafficUiFixes() {
       document.removeEventListener("mousedown", onMouseDown, true);
       document.removeEventListener("mousemove", onMouseMove, true);
       document.removeEventListener("mouseout", onMouseOut, true);
+      document.removeEventListener("click", onClick, true);
       window.removeEventListener("mouseup", onMouseUp, true);
       style.remove();
     };
