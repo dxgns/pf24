@@ -62,8 +62,9 @@ const SIMPLE_HEIGHT = 36;
 const DETAIL_WIDTH = 156;
 const DETAIL_HEIGHT = 64;
 const VECTOR_PIXELS_PER_NM = 28;
-const TRAIL_SAMPLE_MS = 1100;
-const TRAIL_MIN_DISTANCE = 0.12;
+const TRAIL_SAMPLE_MS = 900;
+const TRAIL_MIN_DISTANCE = 0.065;
+const TRAIL_FIRST_POINT_DISTANCE = 0.025;
 const STALE_TRAFFIC_MS = 15000;
 
 const MIN_X = -180000;
@@ -323,8 +324,13 @@ export default function ProjectFlightTrafficV5({ initialPlans }: Props) {
           if (oldLive) {
             const lastSample = lastTrailSampleRef.current.get(item.id) ?? 0, history = trailsRef.current.get(item.id) ?? [], lastPoint = history[history.length - 1] ?? { x: oldLive.x, y: oldLive.y };
             const distance = Math.hypot(oldLive.x - lastPoint.x, oldLive.y - lastPoint.y), aircraftMoved = Math.hypot(item.x - oldLive.x, item.y - oldLive.y);
-            if (now - lastSample >= TRAIL_SAMPLE_MS && aircraftMoved > 0.002 && distance >= TRAIL_MIN_DISTANCE) { trailsRef.current.set(item.id, [...history, { x: oldLive.x, y: oldLive.y, time: now }].slice(-5)); lastTrailSampleRef.current.set(item.id, now); }
-            else if (history.length === 0 && now - lastSample >= TRAIL_SAMPLE_MS && aircraftMoved >= TRAIL_MIN_DISTANCE) { trailsRef.current.set(item.id, [{ x: oldLive.x, y: oldLive.y, time: now }]); lastTrailSampleRef.current.set(item.id, now); }
+            if (history.length === 0 && now - lastSample >= TRAIL_SAMPLE_MS && aircraftMoved >= TRAIL_FIRST_POINT_DISTANCE) {
+              trailsRef.current.set(item.id, [{ x: oldLive.x, y: oldLive.y, time: now }]);
+              lastTrailSampleRef.current.set(item.id, now);
+            } else if (now - lastSample >= TRAIL_SAMPLE_MS && aircraftMoved > 0.002 && distance >= TRAIL_MIN_DISTANCE) {
+              trailsRef.current.set(item.id, [...history, { x: oldLive.x, y: oldLive.y, time: now }].slice(-5));
+              lastTrailSampleRef.current.set(item.id, now);
+            }
           }
           liveRef.current.set(item.id, { traffic: { ...item, verticalRate }, lastSeen: now });
         }
