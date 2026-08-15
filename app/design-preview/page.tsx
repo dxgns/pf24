@@ -51,7 +51,7 @@ export default async function DesignPreviewPage() {
               </a>
 
               <a
-                href={session ? "/dashboard" : "/login"}
+                href={session ? "/design-preview/dashboard" : "/login"}
                 className="rounded-2xl border border-white/20 px-10 py-4 text-xl font-semibold text-white transition hover:bg-white/10"
               >
                 {session ? "Ir al Dashboard" : "Iniciar sesión"}
