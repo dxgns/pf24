@@ -76,7 +76,7 @@ export default function PilotFlightPlanForm() {
       <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
         <input
           name="callsign"
-          placeholder="Callsign del plan"
+          placeholder="Callsign"
           value={callsign}
           maxLength={12}
           onChange={(e) => {
