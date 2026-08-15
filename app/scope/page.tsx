@@ -9,6 +9,7 @@ import WeatherPanelV2 from "@/components/scope/WeatherPanelV2";
 import ProjectFlightTrafficConfigured from "@/components/scope/ProjectFlightTrafficConfigured";
 import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopeTrafficLabelUX from "@/components/scope/ScopeTrafficLabelUX";
+import ScopeTrafficOperations from "@/components/scope/ScopeTrafficOperations";
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
 import ScopeRadarMap from "@/components/scope/ScopeRadarMap";
@@ -67,6 +68,7 @@ export default async function ScopePage() {
       <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
       <ScopeTrafficSettings />
       <ScopeTrafficLabelUX />
+      <ScopeTrafficOperations initialPlans={plans} />
       <ScopePersonalization />
       <RadarViewport />
       <ScopeFunctionalExtras />
