@@ -31,6 +31,7 @@ type Viewport = { zoom: number; panX: number; panY: number };
 type WireField = { field: number; wire: number; bytes?: Uint8Array; number?: number };
 type PopupType = "altitude" | "speed" | "waypoint";
 type PopupState = { id: string; type: PopupType } | null;
+type CallsignMenuState = { id: string; expanded: boolean } | null;
 type ControlState = {
   assignedAltitude: string;
   assignedHeading: number | null;
@@ -57,10 +58,10 @@ const CONNECTION_EVENT = "pf24-scope-connection-change";
 const CONTROLS_KEY = "pf24_scope_traffic_controls_v1";
 
 const TARGET_SIZE = 18;
-const SIMPLE_WIDTH = 86;
-const SIMPLE_HEIGHT = 36;
-const DETAIL_WIDTH = 156;
-const DETAIL_HEIGHT = 64;
+const SIMPLE_WIDTH = 72;
+const SIMPLE_HEIGHT = 30;
+const DETAIL_WIDTH = 132;
+const DETAIL_HEIGHT = 50;
 const VECTOR_PIXELS_PER_NM = 28;
 const TRAIL_SAMPLE_MS = 900;
 const TRAIL_MIN_DISTANCE = 0.065;
@@ -262,6 +263,7 @@ export default function ProjectFlightTrafficV5({ initialPlans }: Props) {
   const [controls, setControls] = useState<Record<string, ControlState>>({});
   const [labelOffsets, setLabelOffsets] = useState<Record<string, Point>>({});
   const [popup, setPopup] = useState<PopupState>(null);
+  const [callsignMenu, setCallsignMenu] = useState<CallsignMenuState>(null);
 
   const socketRef = useRef<WebSocket | null>(null), reconnectRef = useRef<number | null>(null);
   const liveRef = useRef<Map<string, { traffic: Traffic; lastSeen: number }>>(new Map());
@@ -336,11 +338,13 @@ export default function ProjectFlightTrafficV5({ initialPlans }: Props) {
         }
         for (const [id, value] of liveRef.current) if (now - value.lastSeen > STALE_TRAFFIC_MS) { liveRef.current.delete(id); trailsRef.current.delete(id); previousAltitudeRef.current.delete(id); lastTrailSampleRef.current.delete(id); }
         const next = Array.from(liveRef.current.values()).map((value) => value.traffic).sort((a, b) => a.callsign.localeCompare(b.callsign)); setTraffic(next);
-        const ids = new Set(next.map((item) => item.id)); setSelectedId((current) => current && ids.has(current) ? current : null);
+        const ids = new Set(next.map((item) => item.id));
+        setSelectedId((current) => current && ids.has(current) ? current : null);
+        setCallsignMenu((current) => current && ids.has(current.id) ? current : null);
       }); };
       socket.onclose = () => { if (socketRef.current === socket) socketRef.current = null; if (disposed || !connected) return; reconnectRef.current = window.setTimeout(() => { reconnectRef.current = null; open(); }, 2000); };
     };
-    if (connected) open(); else { stop(); setTraffic([]); setSelectedId(null); liveRef.current.clear(); trailsRef.current.clear(); previousAltitudeRef.current.clear(); }
+    if (connected) open(); else { stop(); setTraffic([]); setSelectedId(null); setCallsignMenu(null); liveRef.current.clear(); trailsRef.current.clear(); previousAltitudeRef.current.clear(); }
     return () => { disposed = true; stop(); };
   }, [connected]);
 
@@ -375,7 +379,11 @@ export default function ProjectFlightTrafficV5({ initialPlans }: Props) {
   }, [host, hostSize, viewport]);
 
   useEffect(() => {
-    const deselect = (event: MouseEvent) => { const target = event.target instanceof Element ? event.target : null; if (target?.closest("[data-pf24-traffic-select='true']") || target?.closest("[data-pf24-traffic-label='true']") || target?.closest("[data-pf24-traffic-popup='true']")) return; setSelectedId(null); setPopup(null); };
+    const deselect = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("[data-pf24-traffic-select='true']") || target?.closest("[data-pf24-traffic-label='true']") || target?.closest("[data-pf24-traffic-popup='true']") || target?.closest("[data-pf24-callsign-menu='true']")) return;
+      setSelectedId(null); setPopup(null); setCallsignMenu(null);
+    };
     document.addEventListener("click", deselect, true); return () => document.removeEventListener("click", deselect, true);
   }, []);
 
@@ -385,7 +393,7 @@ export default function ProjectFlightTrafficV5({ initialPlans }: Props) {
     <div data-pf24-live-traffic="true" className="pointer-events-none absolute inset-0 z-[8] overflow-hidden">
       <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${hostSize.x} ${hostSize.y}`} preserveAspectRatio="none" aria-hidden="true">
         {traffic.map((item) => {
-          const marker = screenPoint(hostSize, item.x, item.y, viewport), unit = headingUnit(item.heading), offset = labelOffsets[item.id] ?? { x: 18, y: 16 }, label = { x: marker.x + offset.x, y: marker.y + offset.y }, active = item.id === selectedId;
+          const marker = screenPoint(hostSize, item.x, item.y, viewport), unit = headingUnit(item.heading), offset = labelOffsets[item.id] ?? { x: 16, y: 14 }, label = { x: marker.x + offset.x, y: marker.y + offset.y }, active = item.id === selectedId;
           const width = active ? DETAIL_WIDTH : SIMPLE_WIDTH, height = active ? DETAIL_HEIGHT : SIMPLE_HEIGHT, end = connectorEnd(marker, label, width, height), vectorLength = VECTOR_PIXELS_PER_NM * settings.vectorMiles * viewport.zoom;
           const history = (trailsRef.current.get(item.id) ?? []).slice(-settings.trailCount);
           return <g key={item.id}>
@@ -400,39 +408,70 @@ export default function ProjectFlightTrafficV5({ initialPlans }: Props) {
       </svg>
 
       {traffic.map((item) => {
-        const active = item.id === selectedId, marker = screenPoint(hostSize, item.x, item.y, viewport), offset = labelOffsets[item.id] ?? { x: 18, y: 16 }, labelPoint = { x: marker.x + offset.x, y: marker.y + offset.y };
+        const active = item.id === selectedId, marker = screenPoint(hostSize, item.x, item.y, viewport), offset = labelOffsets[item.id] ?? { x: 16, y: 14 }, labelPoint = { x: marker.x + offset.x, y: marker.y + offset.y };
         const control = controls[item.id] ?? defaultControl(), plan = planMap.get(item.callsign), displayCallsign = plan?.callsign?.toUpperCase() || item.callsign, waypoints = routeWaypoints(plan), currentWaypoint = control.waypoint ?? waypoints[0] ?? "XXXXX", destination = plan?.arrival_icao?.toUpperCase() || "XXXX", cruise = cruiseLevel(plan);
         const speedText = control.assignedSpeed === null ? "ASP" : String(control.assignedSpeed).padStart(3, "0"), headingText = control.assignedHeading === null ? "AHDG" : `AHDG${String(control.assignedHeading).padStart(3, "0")}`;
-        const startLabelDrag = (event: React.MouseEvent<HTMLElement>) => { if (event.button !== 0) return; event.stopPropagation(); dragLabelRef.current = { id: item.id, dx: event.clientX - (host.getBoundingClientRect().left + labelPoint.x), dy: event.clientY - (host.getBoundingClientRect().top + labelPoint.y), startX: event.clientX, startY: event.clientY, moved: false }; };
+        const menuOpen = callsignMenu?.id === item.id;
+        const startLabelDrag = (event: React.MouseEvent<HTMLElement>) => { if (event.button !== 0) return; if ((event.target as Element).closest("button,input,[data-pf24-callsign-menu='true']")) return; event.stopPropagation(); dragLabelRef.current = { id: item.id, dx: event.clientX - (host.getBoundingClientRect().left + labelPoint.x), dy: event.clientY - (host.getBoundingClientRect().top + labelPoint.y), startX: event.clientX, startY: event.clientY, moved: false }; };
         const activateLabel = (event: React.MouseEvent<HTMLElement>) => { event.stopPropagation(); if (suppressLabelClickRef.current === item.id) { suppressLabelClickRef.current = null; return; } setSelectedId(item.id); setPopup(null); };
+        const openCallsignMenu = (event: React.MouseEvent<HTMLElement>) => { event.stopPropagation(); setCallsignMenu({ id: item.id, expanded: false }); };
+
+        const callsignMenuNode = menuOpen ? <div
+          data-pf24-callsign-menu="true"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          onMouseLeave={() => setCallsignMenu(null)}
+          className="pointer-events-auto absolute left-0 top-[12px] z-[50] w-[118px] border border-[#f2f2f2] bg-[#555c60] font-mono text-[10px] leading-[18px] text-[#ededed] shadow-[0_2px_8px_rgba(0,0,0,.45)]"
+        >
+          <div className="border-b border-[#f2f2f2] px-2 text-center text-[11px] leading-[20px] text-[#22e000]">{displayCallsign}</div>
+          <button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Callsign</button>
+          <button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Assume</button>
+          <button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">FPL</button>
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); setCallsignMenu({ id: item.id, expanded: !callsignMenu.expanded }); }}
+            className="flex w-full items-center justify-center gap-2 border-b border-[#f2f2f2] px-2 hover:bg-[#626a6f]"
+          ><span className={`inline-block text-[9px] transition-transform ${callsignMenu.expanded ? "rotate-180" : ""}`}>▽</span><span>More</span></button>
+          {callsignMenu.expanded && <>
+            <button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">MAPP</button>
+            <button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">HOLD</button>
+            <button type="button" className="block w-full px-2 text-center hover:bg-[#626a6f]">FREE</button>
+          </>}
+        </div> : null;
 
         return <div key={item.id}>
           <button type="button" data-pf24-traffic-select="true" onClick={(event) => { event.stopPropagation(); setSelectedId(item.id); setPopup(null); }} className="pointer-events-auto absolute z-[10] -translate-x-1/2 -translate-y-1/2" style={{ left: marker.x, top: marker.y, width: TARGET_SIZE, height: TARGET_SIZE }} aria-label={`Seleccionar ${displayCallsign}`}>
             <span className={`absolute inset-0 rotate-45 border ${active ? "border-[#00ff00]" : "border-[#00d800]"}`}/>
           </button>
 
-          {!active && <button type="button" data-pf24-traffic-label="true" onMouseDown={startLabelDrag} onClick={activateLabel} className="pointer-events-auto absolute z-[9] w-[86px] cursor-move whitespace-nowrap text-left font-mono text-[#00e000]" style={{ left: labelPoint.x, top: labelPoint.y }}>
-            <span className="block text-[9px] leading-[8px]">I</span>
-            <span className="block text-[11px] leading-[11px]">{displayCallsign}</span>
-            <span className="grid grid-cols-[36px_1fr] text-[10px] leading-[10px]"><span>{flightLevel(item.altitude)}{trend(item.verticalRate)}</span><span>{String(Math.round(item.groundSpeed)).padStart(3, "0")}</span></span>
-            <span className="block pl-[36px] text-[10px] leading-[9px]">{destination}</span>
-          </button>}
+          {!active && <div type="button" data-pf24-traffic-label="true" onMouseDown={startLabelDrag} onClick={activateLabel} className="pointer-events-auto absolute z-[9] w-[72px] cursor-move whitespace-nowrap text-left font-mono text-[#00e000]" style={{ left: labelPoint.x, top: labelPoint.y }}>
+            <span className="block text-[8px] leading-[7px]">I</span>
+            <button type="button" onMouseDown={(event) => event.stopPropagation()} onDoubleClick={openCallsignMenu} className="relative block text-left text-[10px] leading-[9px] text-[#00e000]">{displayCallsign}{callsignMenuNode}</button>
+            <span className="grid grid-cols-[29px_1fr] text-[9px] leading-[8px]"><span>{flightLevel(item.altitude)}{trend(item.verticalRate)}</span><span>{String(Math.round(item.groundSpeed)).padStart(3, "0")}</span></span>
+            <span className="block pl-[29px] text-[9px] leading-[7px]">{destination}</span>
+          </div>}
 
-          {active && <div data-pf24-traffic-label="true" onMouseDown={startLabelDrag} className="pointer-events-auto absolute z-[12] w-[156px] cursor-move select-none font-mono text-[10px] leading-[11px] text-[#00e000]" style={{ left: labelPoint.x, top: labelPoint.y }}>
-            <div className="text-[#ffff00] leading-[10px]">A9999</div>
-            <div className="grid grid-cols-[58px_12px_1fr] leading-[11px]"><span>{displayCallsign}</span><span>--</span><span>{item.aircraftType}</span></div>
-            <div className="grid grid-cols-[34px_62px_1fr] leading-[11px]"><span>{flightLevel(item.altitude)}{trend(item.verticalRate)}</span><button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (waypoints.length) setPopup({ id: item.id, type: "waypoint" }); }} className="truncate text-left text-[#00e000]">{currentWaypoint}</button><span>N{Math.round(item.groundSpeed)}</span></div>
-            <div className="grid grid-cols-[34px_34px_1fr] leading-[11px]"><button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setPopup({ id: item.id, type: "altitude" }); }} className="text-left text-[#00e000]">{control.assignedAltitude}</button><span>{cruise}</span><span>{destination}</span></div>
-            <div className="grid grid-cols-[58px_34px_1fr] leading-[11px]">
+          {active && <div
+            data-pf24-traffic-label="true"
+            onMouseDown={startLabelDrag}
+            onMouseLeave={() => { if (!menuOpen) { setSelectedId(null); setPopup(null); } }}
+            className="pointer-events-auto absolute z-[12] w-[132px] cursor-move select-none font-mono text-[9px] leading-[9px] text-[#00e000]"
+            style={{ left: labelPoint.x, top: labelPoint.y }}
+          >
+            <div className="text-[#ffff00] leading-[8px]">A9999</div>
+            <div className="grid grid-cols-[50px_8px_1fr] leading-[9px]"><button type="button" onMouseDown={(event) => event.stopPropagation()} onDoubleClick={openCallsignMenu} className="relative truncate text-left text-[#00e000]">{displayCallsign}{callsignMenuNode}</button><span>--</span><span>{item.aircraftType}</span></div>
+            <div className="grid grid-cols-[29px_50px_1fr] leading-[9px]"><span>{flightLevel(item.altitude)}{trend(item.verticalRate)}</span><button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (waypoints.length) setPopup({ id: item.id, type: "waypoint" }); }} className="truncate text-left text-[#00e000]">{currentWaypoint}</button><span>N{Math.round(item.groundSpeed)}</span></div>
+            <div className="grid grid-cols-[29px_29px_1fr] leading-[9px]"><button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setPopup({ id: item.id, type: "altitude" }); }} className="text-left text-[#00e000]">{control.assignedAltitude}</button><span>{cruise}</span><span>{destination}</span></div>
+            <div className="grid grid-cols-[48px_29px_1fr] leading-[9px]">
               <button type="button" onMouseDown={(event) => { event.stopPropagation(); headingDragRef.current = { id: item.id }; }} onDoubleClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedHeading: null }); }} className="text-left text-[#00e000]">{headingText}</button>
               <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setPopup({ id: item.id, type: "speed" }); }} onDoubleClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedSpeed: null }); setPopup(null); }} className="text-left text-[#00e000]">{speedText}</button>
               <input value={control.freeText} maxLength={20} placeholder="TXT" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => { event.stopPropagation(); updateControl(item.id, { freeText: "" }); }} onChange={(event) => updateControl(item.id, { freeText: event.target.value.toUpperCase().replace(/[^A-Z0-9 .\-_/]/g, "").slice(0, 20) })} className="min-w-0 bg-transparent uppercase text-[#00e000] outline-none placeholder:text-[#00e000]"/>
             </div>
 
-            {popup?.id === item.id && <div data-pf24-traffic-popup="true" className="pf24-traffic-popup absolute left-0 top-[60px] z-[30] max-h-[154px] min-w-[78px] overflow-y-auto border border-[#0b392f] bg-[#064a40] text-[10px] text-[#e6e6e6] shadow-lg">
-              {popup.type === "altitude" && Array.from({ length: 41 }, (_, index) => String(index * 5).padStart(3, "0")).map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedAltitude: value }); setPopup(null); }} className="block w-full px-3 py-1 text-left hover:bg-[#0a5b50]">{value}</button>)}
-              {popup.type === "speed" && Array.from({ length: 21 }, (_, index) => 50 + index * 10).map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedSpeed: value }); setPopup(null); }} className="block w-full px-3 py-1 text-left hover:bg-[#0a5b50]">{value} KT</button>)}
-              {popup.type === "waypoint" && waypoints.map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { waypoint: value }); setPopup(null); }} className="block w-full px-3 py-1 text-left hover:bg-[#0a5b50]">{value}</button>)}
+            {popup?.id === item.id && <div data-pf24-traffic-popup="true" className="pf24-traffic-popup absolute left-0 top-[48px] z-[30] max-h-[154px] min-w-[72px] overflow-y-auto border border-[#0b392f] bg-[#064a40] text-[9px] text-[#e6e6e6] shadow-lg">
+              {popup.type === "altitude" && Array.from({ length: 41 }, (_, index) => String(index * 5).padStart(3, "0")).map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedAltitude: value }); setPopup(null); }} className="block w-full px-2 py-1 text-left hover:bg-[#0a5b50]">{value}</button>)}
+              {popup.type === "speed" && Array.from({ length: 21 }, (_, index) => 50 + index * 10).map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedSpeed: value }); setPopup(null); }} className="block w-full px-2 py-1 text-left hover:bg-[#0a5b50]">{value} KT</button>)}
+              {popup.type === "waypoint" && waypoints.map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { waypoint: value }); setPopup(null); }} className="block w-full px-2 py-1 text-left hover:bg-[#0a5b50]">{value}</button>)}
             </div>}
           </div>}
         </div>;
