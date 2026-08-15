@@ -12,43 +12,17 @@ import {
   type TrafficSettings,
 } from "@/components/scope/ScopeTrafficSettings";
 
-type Traffic = {
-  id: string;
-  rawCallsign: string;
-  callsign: string;
-  username: string;
-  aircraftType: string;
-  altitude: number;
-  verticalRate: number;
-  heading: number;
-  groundSpeed: number;
-  x: number;
-  y: number;
-};
-
+type Traffic = { id: string; rawCallsign: string; callsign: string; username: string; aircraftType: string; altitude: number; verticalRate: number; heading: number; groundSpeed: number; x: number; y: number };
 type Point = { x: number; y: number };
 type Viewport = { zoom: number; panX: number; panY: number };
 type WireField = { field: number; wire: number; bytes?: Uint8Array; number?: number };
 type PopupType = "altitude" | "speed" | "waypoint";
 type PopupState = { id: string; type: PopupType } | null;
 type CallsignMenuState = { id: string; expanded: boolean } | null;
-type ControlState = {
-  assignedAltitude: string;
-  assignedHeading: number | null;
-  assignedSpeed: number | null;
-  freeText: string;
-  waypoint: string | null;
-};
+type ControlState = { assignedAltitude: string; assignedHeading: number | null; assignedSpeed: number | null; freeText: string; waypoint: string | null };
 type TrailPoint = Point & { time: number };
 type Props = { initialPlans: ScopeFlightPlan[] };
-type LabelDrag = {
-  id: string;
-  dx: number;
-  dy: number;
-  startX: number;
-  startY: number;
-  moved: boolean;
-};
+type LabelDrag = { id: string; dx: number; dy: number; startX: number; startY: number; moved: boolean };
 
 const SERVER_ID = "2ykygVZiX5";
 const WS_URL = `wss://v3api.project-flight.com/v3/traffic/server/ws/${SERVER_ID}`;
@@ -56,7 +30,6 @@ const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 const CONNECTION_EVENT = "pf24-scope-connection-change";
 const CONTROLS_KEY = "pf24_scope_traffic_controls_v1";
-
 const TARGET_SIZE = 18;
 const SIMPLE_WIDTH = 72;
 const SIMPLE_HEIGHT = 30;
@@ -67,425 +40,78 @@ const TRAIL_SAMPLE_MS = 900;
 const TRAIL_MIN_DISTANCE = 0.065;
 const TRAIL_FIRST_POINT_DISTANCE = 0.025;
 const STALE_TRAFFIC_MS = 15000;
-
 const MIN_X = -180000;
 const MAX_X = 180000;
 const MIN_Z = -180000;
 const MAX_Z = 180000;
 
-const TELEPHONY_TO_ICAO: Record<string, string> = {
-  SPEEDBIRD: "BAW", BRITISHAIRWAYS: "BAW", RYANAIR: "RYR", EASY: "EZY",
-  EASYJET: "EZY", IBERIA: "IBE", VUELING: "VLG", LUFTHANSA: "DLH",
-  AIRFRANCE: "AFR", AIRCANADA: "ACA", PHILIPPINE: "PAL",
-  PHILIPPINEAIRLINES: "PAL", ELAL: "ELY", EMIRATES: "UAE", QATAR: "QTR",
-  AMERICAN: "AAL", DELTA: "DAL", UNITED: "UAL", SOUTHWEST: "SWA",
-  JETBLUE: "JBU", SPIRIT: "NKS", KLM: "KLM",
-};
+const TELEPHONY_TO_ICAO: Record<string, string> = { SPEEDBIRD:"BAW",BRITISHAIRWAYS:"BAW",RYANAIR:"RYR",EASY:"EZY",EASYJET:"EZY",IBERIA:"IBE",VUELING:"VLG",LUFTHANSA:"DLH",AIRFRANCE:"AFR",AIRCANADA:"ACA",PHILIPPINE:"PAL",PHILIPPINEAIRLINES:"PAL",ELAL:"ELY",EMIRATES:"UAE",QATAR:"QTR",AMERICAN:"AAL",DELTA:"DAL",UNITED:"UAL",SOUTHWEST:"SWA",JETBLUE:"JBU",SPIRIT:"NKS",KLM:"KLM" };
+const ICAO_TO_TELEPHONY: Record<string, string> = { BAW:"SPEEDBIRD",RYR:"RYANAIR",EZY:"EASY",IBE:"IBERIA",VLG:"VUELING",DLH:"LUFTHANSA",AFR:"AIR FRANCE",ACA:"AIR CANADA",PAL:"PHILIPPINE",ELY:"EL AL",UAE:"EMIRATES",QTR:"QATAR",AAL:"AMERICAN",DAL:"DELTA",UAL:"UNITED",SWA:"SOUTHWEST",JBU:"JETBLUE",NKS:"SPIRIT",KLM:"KLM" };
 
-const ICAO_TO_TELEPHONY: Record<string, string> = {
-  BAW: "SPEEDBIRD", RYR: "RYANAIR", EZY: "EASY", IBE: "IBERIA",
-  VLG: "VUELING", DLH: "LUFTHANSA", AFR: "AIR FRANCE", ACA: "AIR CANADA",
-  PAL: "PHILIPPINE", ELY: "EL AL", UAE: "EMIRATES", QTR: "QATAR",
-  AAL: "AMERICAN", DAL: "DELTA", UAL: "UNITED", SWA: "SOUTHWEST",
-  JBU: "JETBLUE", NKS: "SPIRIT", KLM: "KLM",
-};
+function clamp(value:number,min:number,max:number){return Math.min(Math.max(value,min),max)}
+function findRadar(){return document.querySelector<HTMLElement>("main.fixed > section")}
+function findFooter(){return document.querySelector<HTMLElement>("main.fixed footer")}
+function scopeConnected(){const row=document.querySelector<HTMLElement>("main.fixed header > div:first-child");return Array.from(row?.querySelectorAll<HTMLButtonElement>(":scope > button")??[]).some((button)=>button.textContent?.trim().toUpperCase()==="DISCONNECT")}
+function toolbarButtons(){const row=document.querySelector<HTMLElement>("main.fixed header > div:first-child");return row?Array.from(row.querySelectorAll<HTMLButtonElement>(":scope > button")):[]}
+function readViewport():Viewport{try{const parsed=JSON.parse(localStorage.getItem(VIEWPORT_KEY)??"{}") as Partial<Viewport>;return{zoom:typeof parsed.zoom==="number"?parsed.zoom:1,panX:typeof parsed.panX==="number"?parsed.panX:0,panY:typeof parsed.panY==="number"?parsed.panY:0}}catch{return{zoom:1,panX:0,panY:0}}}
+function readControls():Record<string,ControlState>{try{return JSON.parse(localStorage.getItem(CONTROLS_KEY)??"{}") as Record<string,ControlState>}catch{return{}}}
+function defaultControl():ControlState{return{assignedAltitude:"000",assignedHeading:null,assignedSpeed:null,freeText:"",waypoint:null}}
+function radarCoordinates(worldX:number,worldZ:number):Point{return{x:clamp(((worldX-MIN_X)/(MAX_X-MIN_X))*100,0,100),y:clamp(((worldZ-MIN_Z)/(MAX_Z-MIN_Z))*100,0,100)}}
+function screenPoint(size:Point,x:number,y:number,viewport:Viewport):Point{return{x:size.x*(x/100)*viewport.zoom+viewport.panX,y:size.y*(y/100)*viewport.zoom+viewport.panY}}
+function headingUnit(heading:number):Point{const radians=heading*Math.PI/180;return{x:Math.sin(radians),y:-Math.cos(radians)}}
+function flightLevel(altitude:number){return String(Math.max(0,Math.round(altitude/100))).padStart(3,"0")}
+function trend(verticalRate:number){if(verticalRate>150)return"↑";if(verticalRate<-150)return"↓";return""}
+function normalizeCallsign(raw:string){const compact=raw.trim().toUpperCase().replace(/[^A-Z0-9]/g,"");for(const[telephony,icao]of Object.entries(TELEPHONY_TO_ICAO).sort((a,b)=>b[0].length-a[0].length)){if(compact.startsWith(telephony))return`${icao}${compact.slice(telephony.length)}`}return compact}
+function spokenCallsign(shortCallsign:string){const match=shortCallsign.match(/^([A-Z]{3})([A-Z0-9]+)$/);if(!match)return shortCallsign;return`${ICAO_TO_TELEPHONY[match[1]]??match[1]} ${match[2]}`}
+function aircraftCode(raw:string){const upper=raw.trim().toUpperCase();if(/^[A-Z0-9]{3,4}$/.test(upper))return upper;if(/A320/.test(upper))return"A320";if(/A321/.test(upper))return"A321";if(/A319/.test(upper))return"A319";if(/A330/.test(upper))return"A330";if(/A340/.test(upper))return"A340";if(/A350/.test(upper))return"A350";if(/A220/.test(upper))return"A220";if(/737[- ]?800|B738/.test(upper))return"B738";if(/737[- ]?900|B739/.test(upper))return"B739";if(/737/.test(upper))return"B737";if(/747[- ]?400|B744/.test(upper))return"B744";if(/747/.test(upper))return"B747";if(/757/.test(upper))return"B757";if(/767/.test(upper))return"B767";if(/777/.test(upper))return"B777";if(/787/.test(upper))return"B787";if(/DASH.?8|DH8D/.test(upper))return"DH8D";return upper.replace(/[^A-Z0-9]/g,"").slice(0,4)||"----"}
+function planKey(callsign:string){return normalizeCallsign(callsign)}
+function gamePlanKey(plan:ScopeFlightPlan){return planKey(getGameCallsignFromNotes(plan.notes)||plan.callsign)}
+function routeWaypoints(plan:ScopeFlightPlan|undefined){if(!plan?.route)return[];return Array.from(new Set(plan.route.toUpperCase().split(/\s+/).map((item)=>item.replace(/[^A-Z0-9]/g,"")).filter((item)=>item&&item!=="DCT"&&/^[A-Z0-9]{2,7}$/.test(item))))}
+function cruiseLevel(plan:ScopeFlightPlan|undefined){const digits=String(plan?.flight_level??"").replace(/\D/g,"");return digits?digits.slice(-3).padStart(3,"0"):"999"}
+function readVarint(bytes:Uint8Array,start:number){let value=0,multiplier=1,offset=start;for(let count=0;count<10&&offset<bytes.length;count+=1){const byte=bytes[offset++];value+=(byte&0x7f)*multiplier;if((byte&0x80)===0)return{value,offset};multiplier*=128}throw new Error("Invalid protobuf varint")}
+function parseFields(bytes:Uint8Array):WireField[]{const fields:WireField[]=[];let offset=0;while(offset<bytes.length){const tag=readVarint(bytes,offset);offset=tag.offset;const field=Math.floor(tag.value/8),wire=tag.value%8;if(field<=0)break;if(wire===0){const value=readVarint(bytes,offset);offset=value.offset;fields.push({field,wire,number:value.value});continue}if(wire===1){if(offset+8>bytes.length)break;fields.push({field,wire,bytes:bytes.slice(offset,offset+8)});offset+=8;continue}if(wire===2){const length=readVarint(bytes,offset);offset=length.offset;const size=Math.floor(length.value);if(size<0||offset+size>bytes.length)break;fields.push({field,wire,bytes:bytes.slice(offset,offset+size)});offset+=size;continue}if(wire===5){if(offset+4>bytes.length)break;fields.push({field,wire,bytes:bytes.slice(offset,offset+4)});offset+=4;continue}break}return fields}
+function textOf(field?:WireField){if(!field?.bytes)return"";try{return new TextDecoder().decode(field.bytes).replace(/\0/g,"").trim()}catch{return""}}
+function doubleOf(field?:WireField){if(!field?.bytes||field.bytes.byteLength!==8)return Number.NaN;const copy=new Uint8Array(field.bytes);return new DataView(copy.buffer).getFloat64(0,true)}
+function stringField(fields:WireField[],number:number){return textOf(fields.find((field)=>field.field===number&&field.wire===2))}
+function doubleField(fields:WireField[],number:number){return doubleOf(fields.find((field)=>field.field===number&&field.wire===1))}
+function isTrafficRecord(bytes:Uint8Array){try{const fields=parseFields(bytes),server=stringField(fields,1),callsign=stringField(fields,2);return Boolean(callsign&&(!server||server===SERVER_ID||server.length>=6))}catch{return false}}
+function recordsFromMessage(bytes:Uint8Array){if(isTrafficRecord(bytes))return[bytes];try{return parseFields(bytes).filter((field)=>field.wire===2&&field.bytes&&isTrafficRecord(field.bytes)).map((field)=>field.bytes as Uint8Array)}catch{return[]}}
+function decodeBinary(bytes:Uint8Array):Omit<Traffic,"verticalRate">[]{return recordsFromMessage(bytes).flatMap((record)=>{const fields=parseFields(record),server=stringField(fields,1);if(server&&server!==SERVER_ID)return[];const rawCallsign=stringField(fields,2),username=stringField(fields,3),worldX=doubleField(fields,4),worldZ=doubleField(fields,5),heading=doubleField(fields,6),altitude=doubleField(fields,7),speed=doubleField(fields,8),type=stringField(fields,9);if(!rawCallsign||!Number.isFinite(worldX)||!Number.isFinite(worldZ))return[];const point=radarCoordinates(worldX,worldZ),callsign=normalizeCallsign(rawCallsign);return[{id:username||callsign,rawCallsign,callsign,username,aircraftType:aircraftCode(type),altitude:Number.isFinite(altitude)?Math.max(0,altitude):0,heading:Number.isFinite(heading)?((heading%360)+360)%360:0,groundSpeed:Number.isFinite(speed)?Math.max(0,speed):0,x:point.x,y:point.y}]})}
+function numberFrom(value:unknown,fallback=Number.NaN){const parsed=typeof value==="number"?value:typeof value==="string"?Number(value):Number.NaN;return Number.isFinite(parsed)?parsed:fallback}
+function decodeJson(value:unknown):Omit<Traffic,"verticalRate">[]{if(!value||typeof value!=="object")return[];const root=value as Record<string,unknown>,rows:unknown[]=Array.isArray(value)?value:Array.isArray(root.traffic)?root.traffic:Array.isArray(root.aircraft)?root.aircraft:[value];return rows.flatMap((row)=>{if(!row||typeof row!=="object")return[];const item=row as Record<string,unknown>,rawCallsign=String(item.callsign??item.callSign??"").trim(),username=String(item.username??item.user??item.player??"").trim(),worldX=numberFrom(item.x??item.worldX??item.positionX),worldZ=numberFrom(item.z??item.worldZ??item.positionZ??item.y);if(!rawCallsign||!Number.isFinite(worldX)||!Number.isFinite(worldZ))return[];const point=radarCoordinates(worldX,worldZ),callsign=normalizeCallsign(rawCallsign);return[{id:String(item.id??username??callsign),rawCallsign,callsign,username,aircraftType:aircraftCode(String(item.aircraftType??item.aircraft??item.type??"")),altitude:Math.max(0,numberFrom(item.altitude??item.alt,0)),heading:((numberFrom(item.heading??item.hdg,0)%360)+360)%360,groundSpeed:Math.max(0,numberFrom(item.speed??item.groundSpeed??item.gs,0)),x:point.x,y:point.y}]})}
+async function decodeMessage(data:unknown){if(typeof data==="string"){try{return decodeJson(JSON.parse(data))}catch{return[]}}if(data instanceof ArrayBuffer)return decodeBinary(new Uint8Array(data));if(data instanceof Blob)return decodeBinary(new Uint8Array(await data.arrayBuffer()));return[]}
+function connectorEnd(marker:Point,label:Point,width:number,height:number){const center={x:label.x+width/2,y:label.y+height/2},dx=center.x-marker.x,dy=center.y-marker.y;if(dx===0&&dy===0)return center;const sx=dx===0?Number.POSITIVE_INFINITY:(width/2)/Math.abs(dx),sy=dy===0?Number.POSITIVE_INFINITY:(height/2)/Math.abs(dy),scale=Math.min(sx,sy);return{x:center.x-dx*scale,y:center.y-dy*scale}}
 
-function clamp(value: number, min: number, max: number) { return Math.min(Math.max(value, min), max); }
-function findRadar() { return document.querySelector<HTMLElement>("main.fixed > section"); }
-function findFooter() { return document.querySelector<HTMLElement>("main.fixed footer"); }
-function scopeConnected() {
-  const row = document.querySelector<HTMLElement>("main.fixed header > div:first-child");
-  return Array.from(row?.querySelectorAll<HTMLButtonElement>(":scope > button") ?? []).some(
-    (button) => button.textContent?.trim().toUpperCase() === "DISCONNECT",
-  );
-}
-function toolbarButtons() {
-  const row = document.querySelector<HTMLElement>("main.fixed header > div:first-child");
-  return row ? Array.from(row.querySelectorAll<HTMLButtonElement>(":scope > button")) : [];
-}
-function readViewport(): Viewport {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(VIEWPORT_KEY) ?? "{}") as Partial<Viewport>;
-    return {
-      zoom: typeof parsed.zoom === "number" ? parsed.zoom : 1,
-      panX: typeof parsed.panX === "number" ? parsed.panX : 0,
-      panY: typeof parsed.panY === "number" ? parsed.panY : 0,
-    };
-  } catch { return { zoom: 1, panX: 0, panY: 0 }; }
-}
-function readControls(): Record<string, ControlState> {
-  try { return JSON.parse(localStorage.getItem(CONTROLS_KEY) ?? "{}") as Record<string, ControlState>; }
-  catch { return {}; }
-}
-function defaultControl(): ControlState {
-  return { assignedAltitude: "000", assignedHeading: null, assignedSpeed: null, freeText: "", waypoint: null };
-}
-function radarCoordinates(worldX: number, worldZ: number): Point {
-  return {
-    x: clamp(((worldX - MIN_X) / (MAX_X - MIN_X)) * 100, 0, 100),
-    y: clamp(((worldZ - MIN_Z) / (MAX_Z - MIN_Z)) * 100, 0, 100),
-  };
-}
-function screenPoint(size: Point, x: number, y: number, viewport: Viewport): Point {
-  return { x: size.x * (x / 100) * viewport.zoom + viewport.panX, y: size.y * (y / 100) * viewport.zoom + viewport.panY };
-}
-function headingUnit(heading: number): Point {
-  const radians = heading * Math.PI / 180;
-  return { x: Math.sin(radians), y: -Math.cos(radians) };
-}
-function flightLevel(altitude: number) { return String(Math.max(0, Math.round(altitude / 100))).padStart(3, "0"); }
-function trend(verticalRate: number) { if (verticalRate > 150) return "↑"; if (verticalRate < -150) return "↓"; return ""; }
-function normalizeCallsign(raw: string) {
-  const compact = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  for (const [telephony, icao] of Object.entries(TELEPHONY_TO_ICAO).sort((a, b) => b[0].length - a[0].length)) {
-    if (compact.startsWith(telephony)) return `${icao}${compact.slice(telephony.length)}`;
-  }
-  return compact;
-}
-function spokenCallsign(shortCallsign: string) {
-  const match = shortCallsign.match(/^([A-Z]{3})([A-Z0-9]+)$/);
-  if (!match) return shortCallsign;
-  return `${ICAO_TO_TELEPHONY[match[1]] ?? match[1]} ${match[2]}`;
-}
-function aircraftCode(raw: string) {
-  const upper = raw.trim().toUpperCase();
-  if (/^[A-Z0-9]{3,4}$/.test(upper)) return upper;
-  if (/A320/.test(upper)) return "A320";
-  if (/A321/.test(upper)) return "A321";
-  if (/A319/.test(upper)) return "A319";
-  if (/A330/.test(upper)) return "A330";
-  if (/A340/.test(upper)) return "A340";
-  if (/A350/.test(upper)) return "A350";
-  if (/A220/.test(upper)) return "A220";
-  if (/737[- ]?800|B738/.test(upper)) return "B738";
-  if (/737[- ]?900|B739/.test(upper)) return "B739";
-  if (/737/.test(upper)) return "B737";
-  if (/747[- ]?400|B744/.test(upper)) return "B744";
-  if (/747/.test(upper)) return "B747";
-  if (/757/.test(upper)) return "B757";
-  if (/767/.test(upper)) return "B767";
-  if (/777/.test(upper)) return "B777";
-  if (/787/.test(upper)) return "B787";
-  if (/DASH.?8|DH8D/.test(upper)) return "DH8D";
-  return upper.replace(/[^A-Z0-9]/g, "").slice(0, 4) || "----";
-}
-function planKey(callsign: string) { return normalizeCallsign(callsign); }
-function gamePlanKey(plan: ScopeFlightPlan) { return planKey(getGameCallsignFromNotes(plan.notes) || plan.callsign); }
-function routeWaypoints(plan: ScopeFlightPlan | undefined) {
-  if (!plan?.route) return [];
-  return Array.from(new Set(plan.route.toUpperCase().split(/\s+/).map((item) => item.replace(/[^A-Z0-9]/g, "")).filter((item) => item && item !== "DCT" && /^[A-Z0-9]{2,7}$/.test(item))));
-}
-function cruiseLevel(plan: ScopeFlightPlan | undefined) {
-  const digits = String(plan?.flight_level ?? "").replace(/\D/g, "");
-  return digits ? digits.slice(-3).padStart(3, "0") : "999";
-}
-function readVarint(bytes: Uint8Array, start: number) {
-  let value = 0, multiplier = 1, offset = start;
-  for (let count = 0; count < 10 && offset < bytes.length; count += 1) {
-    const byte = bytes[offset++];
-    value += (byte & 0x7f) * multiplier;
-    if ((byte & 0x80) === 0) return { value, offset };
-    multiplier *= 128;
-  }
-  throw new Error("Invalid protobuf varint");
-}
-function parseFields(bytes: Uint8Array): WireField[] {
-  const fields: WireField[] = []; let offset = 0;
-  while (offset < bytes.length) {
-    const tag = readVarint(bytes, offset); offset = tag.offset;
-    const field = Math.floor(tag.value / 8), wire = tag.value % 8;
-    if (field <= 0) break;
-    if (wire === 0) { const value = readVarint(bytes, offset); offset = value.offset; fields.push({ field, wire, number: value.value }); continue; }
-    if (wire === 1) { if (offset + 8 > bytes.length) break; fields.push({ field, wire, bytes: bytes.slice(offset, offset + 8) }); offset += 8; continue; }
-    if (wire === 2) { const length = readVarint(bytes, offset); offset = length.offset; const size = Math.floor(length.value); if (size < 0 || offset + size > bytes.length) break; fields.push({ field, wire, bytes: bytes.slice(offset, offset + size) }); offset += size; continue; }
-    if (wire === 5) { if (offset + 4 > bytes.length) break; fields.push({ field, wire, bytes: bytes.slice(offset, offset + 4) }); offset += 4; continue; }
-    break;
-  }
-  return fields;
-}
-function textOf(field?: WireField) { if (!field?.bytes) return ""; try { return new TextDecoder().decode(field.bytes).replace(/\0/g, "").trim(); } catch { return ""; } }
-function doubleOf(field?: WireField) { if (!field?.bytes || field.bytes.byteLength !== 8) return Number.NaN; const copy = new Uint8Array(field.bytes); return new DataView(copy.buffer).getFloat64(0, true); }
-function stringField(fields: WireField[], number: number) { return textOf(fields.find((field) => field.field === number && field.wire === 2)); }
-function doubleField(fields: WireField[], number: number) { return doubleOf(fields.find((field) => field.field === number && field.wire === 1)); }
-function isTrafficRecord(bytes: Uint8Array) {
-  try { const fields = parseFields(bytes); const server = stringField(fields, 1); const callsign = stringField(fields, 2); return Boolean(callsign && (!server || server === SERVER_ID || server.length >= 6)); }
-  catch { return false; }
-}
-function recordsFromMessage(bytes: Uint8Array) {
-  if (isTrafficRecord(bytes)) return [bytes];
-  try { return parseFields(bytes).filter((field) => field.wire === 2 && field.bytes && isTrafficRecord(field.bytes)).map((field) => field.bytes as Uint8Array); }
-  catch { return []; }
-}
-function decodeBinary(bytes: Uint8Array): Omit<Traffic, "verticalRate">[] {
-  return recordsFromMessage(bytes).flatMap((record) => {
-    const fields = parseFields(record); const server = stringField(fields, 1); if (server && server !== SERVER_ID) return [];
-    const rawCallsign = stringField(fields, 2), username = stringField(fields, 3);
-    const worldX = doubleField(fields, 4), worldZ = doubleField(fields, 5), heading = doubleField(fields, 6), altitude = doubleField(fields, 7), speed = doubleField(fields, 8), type = stringField(fields, 9);
-    if (!rawCallsign || !Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
-    const point = radarCoordinates(worldX, worldZ), callsign = normalizeCallsign(rawCallsign);
-    return [{ id: username || callsign, rawCallsign, callsign, username, aircraftType: aircraftCode(type), altitude: Number.isFinite(altitude) ? Math.max(0, altitude) : 0, heading: Number.isFinite(heading) ? ((heading % 360) + 360) % 360 : 0, groundSpeed: Number.isFinite(speed) ? Math.max(0, speed) : 0, x: point.x, y: point.y }];
-  });
-}
-function numberFrom(value: unknown, fallback = Number.NaN) { const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN; return Number.isFinite(parsed) ? parsed : fallback; }
-function decodeJson(value: unknown): Omit<Traffic, "verticalRate">[] {
-  if (!value || typeof value !== "object") return [];
-  const root = value as Record<string, unknown>;
-  const rows: unknown[] = Array.isArray(value) ? value : Array.isArray(root.traffic) ? root.traffic : Array.isArray(root.aircraft) ? root.aircraft : [value];
-  return rows.flatMap((row) => {
-    if (!row || typeof row !== "object") return [];
-    const item = row as Record<string, unknown>; const rawCallsign = String(item.callsign ?? item.callSign ?? "").trim(); const username = String(item.username ?? item.user ?? item.player ?? "").trim();
-    const worldX = numberFrom(item.x ?? item.worldX ?? item.positionX), worldZ = numberFrom(item.z ?? item.worldZ ?? item.positionZ ?? item.y);
-    if (!rawCallsign || !Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
-    const point = radarCoordinates(worldX, worldZ), callsign = normalizeCallsign(rawCallsign);
-    return [{ id: String(item.id ?? username ?? callsign), rawCallsign, callsign, username, aircraftType: aircraftCode(String(item.aircraftType ?? item.aircraft ?? item.type ?? "")), altitude: Math.max(0, numberFrom(item.altitude ?? item.alt, 0)), heading: ((numberFrom(item.heading ?? item.hdg, 0) % 360) + 360) % 360, groundSpeed: Math.max(0, numberFrom(item.speed ?? item.groundSpeed ?? item.gs, 0)), x: point.x, y: point.y }];
-  });
-}
-async function decodeMessage(data: unknown) { if (typeof data === "string") { try { return decodeJson(JSON.parse(data)); } catch { return []; } } if (data instanceof ArrayBuffer) return decodeBinary(new Uint8Array(data)); if (data instanceof Blob) return decodeBinary(new Uint8Array(await data.arrayBuffer())); return []; }
-function connectorEnd(marker: Point, label: Point, width: number, height: number) {
-  const center = { x: label.x + width / 2, y: label.y + height / 2 }, dx = center.x - marker.x, dy = center.y - marker.y;
-  if (dx === 0 && dy === 0) return center;
-  const sx = dx === 0 ? Number.POSITIVE_INFINITY : (width / 2) / Math.abs(dx), sy = dy === 0 ? Number.POSITIVE_INFINITY : (height / 2) / Math.abs(dy), scale = Math.min(sx, sy);
-  return { x: center.x - dx * scale, y: center.y - dy * scale };
-}
+export default function ProjectFlightTrafficV5({initialPlans}:Props){
+  const[host,setHost]=useState<HTMLElement|null>(null),[footer,setFooter]=useState<HTMLElement|null>(null),[hostSize,setHostSize]=useState<Point>({x:1,y:1}),[traffic,setTraffic]=useState<Traffic[]>([]),[plans,setPlans]=useState(initialPlans),[connected,setConnected]=useState(false),[selectedId,setSelectedId]=useState<string|null>(null),[viewport,setViewport]=useState<Viewport>({zoom:1,panX:0,panY:0}),[showHeading,setShowHeading]=useState(false),[showTrail,setShowTrail]=useState(false),[settings,setSettings]=useState<TrafficSettings>(DEFAULT_TRAFFIC_SETTINGS),[controls,setControls]=useState<Record<string,ControlState>>({}),[labelOffsets,setLabelOffsets]=useState<Record<string,Point>>({}),[popup,setPopup]=useState<PopupState>(null),[callsignMenu,setCallsignMenu]=useState<CallsignMenuState>(null);
+  const socketRef=useRef<WebSocket|null>(null),reconnectRef=useRef<number|null>(null),liveRef=useRef<Map<string,{traffic:Traffic;lastSeen:number}>>(new Map()),previousAltitudeRef=useRef<Map<string,{altitude:number;time:number}>>(new Map()),trailsRef=useRef<Map<string,TrailPoint[]>>(new Map()),lastTrailSampleRef=useRef<Map<string,number>>(new Map()),dragLabelRef=useRef<LabelDrag|null>(null),suppressLabelClickRef=useRef<string|null>(null),headingDragRef=useRef<{id:string}|null>(null);
+  const selected=useMemo(()=>traffic.find((item)=>item.id===selectedId)??null,[traffic,selectedId]),planMap=useMemo(()=>new Map(plans.map((plan)=>[gamePlanKey(plan),plan])),[plans]);
+  const updateControl=(id:string,patch:Partial<ControlState>)=>setControls((current)=>{const next={...current,[id]:{...(current[id]??defaultControl()),...patch}};localStorage.setItem(CONTROLS_KEY,JSON.stringify(next));return next});
 
-export default function ProjectFlightTrafficV5({ initialPlans }: Props) {
-  const [host, setHost] = useState<HTMLElement | null>(null);
-  const [footer, setFooter] = useState<HTMLElement | null>(null);
-  const [hostSize, setHostSize] = useState<Point>({ x: 1, y: 1 });
-  const [traffic, setTraffic] = useState<Traffic[]>([]);
-  const [plans, setPlans] = useState(initialPlans);
-  const [connected, setConnected] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [viewport, setViewport] = useState<Viewport>({ zoom: 1, panX: 0, panY: 0 });
-  const [showHeading, setShowHeading] = useState(false);
-  const [showTrail, setShowTrail] = useState(false);
-  const [settings, setSettings] = useState<TrafficSettings>(DEFAULT_TRAFFIC_SETTINGS);
-  const [controls, setControls] = useState<Record<string, ControlState>>({});
-  const [labelOffsets, setLabelOffsets] = useState<Record<string, Point>>({});
-  const [popup, setPopup] = useState<PopupState>(null);
-  const [callsignMenu, setCallsignMenu] = useState<CallsignMenuState>(null);
+  useEffect(()=>{setViewport(readViewport());setSettings(readTrafficSettings());setControls(readControls());const onViewport=(event:Event)=>{const next=(event as CustomEvent<Viewport>).detail;if(next)setViewport(next)},onSettings=(event:Event)=>{const next=(event as CustomEvent<TrafficSettings>).detail;if(next)setSettings(next)};window.addEventListener(VIEWPORT_EVENT,onViewport);window.addEventListener(TRAFFIC_SETTINGS_EVENT,onSettings);return()=>{window.removeEventListener(VIEWPORT_EVENT,onViewport);window.removeEventListener(TRAFFIC_SETTINGS_EVENT,onSettings)}},[]);
+  useEffect(()=>{const radar=findRadar();setHost(radar);setFooter(findFooter());if(radar)setHostSize({x:Math.max(1,radar.clientWidth),y:Math.max(1,radar.clientHeight)});const retry=window.setTimeout(()=>{const next=findRadar();setHost(next);setFooter(findFooter());if(next)setHostSize({x:Math.max(1,next.clientWidth),y:Math.max(1,next.clientHeight)})},250);return()=>window.clearTimeout(retry)},[]);
+  useEffect(()=>{if(!host)return;const resize=()=>setHostSize({x:Math.max(1,host.clientWidth),y:Math.max(1,host.clientHeight)});resize();window.addEventListener("resize",resize);return()=>window.removeEventListener("resize",resize)},[host]);
+  useEffect(()=>{const load=async()=>{const{data}=await supabase.from("flight_plans").select("*").neq("status","FINISHED");if(data)setPlans(data as ScopeFlightPlan[])};const channel=supabase.channel("scope-live-traffic-flight-plans-v5").on("postgres_changes",{event:"*",schema:"public",table:"flight_plans"},()=>void load()).subscribe();return()=>{supabase.removeChannel(channel)}},[]);
+  useEffect(()=>{setConnected(scopeConnected());const onConnection=(event:Event)=>setConnected(Boolean((event as CustomEvent<{connected?:boolean}>).detail?.connected));window.addEventListener(CONNECTION_EVENT,onConnection);const retry=window.setTimeout(()=>setConnected(scopeConnected()),400);return()=>{window.clearTimeout(retry);window.removeEventListener(CONNECTION_EVENT,onConnection)}},[]);
+  useEffect(()=>{const style=document.createElement("style");style.dataset.pf24LiveProjectFlightTraffic="true";style.textContent=`main.fixed > section > button.absolute.z-10{display:none!important}main.fixed > section > div.absolute.right-\\[11px\\].top-\\[272px\\]{display:none!important}[data-pf24-live-traffic='true']{transform:none!important;transform-origin:initial!important}.notranslate{translate:no}.pf24-traffic-popup{scrollbar-width:none;-ms-overflow-style:none}.pf24-traffic-popup::-webkit-scrollbar{display:none;width:0;height:0}`;document.head.appendChild(style);return()=>style.remove()},[]);
 
-  const socketRef = useRef<WebSocket | null>(null), reconnectRef = useRef<number | null>(null);
-  const liveRef = useRef<Map<string, { traffic: Traffic; lastSeen: number }>>(new Map());
-  const previousAltitudeRef = useRef<Map<string, { altitude: number; time: number }>>(new Map());
-  const trailsRef = useRef<Map<string, TrailPoint[]>>(new Map());
-  const lastTrailSampleRef = useRef<Map<string, number>>(new Map());
-  const dragLabelRef = useRef<LabelDrag | null>(null), suppressLabelClickRef = useRef<string | null>(null), headingDragRef = useRef<{ id: string } | null>(null);
+  useEffect(()=>{let disposed=false;const stop=()=>{if(reconnectRef.current!==null)window.clearTimeout(reconnectRef.current);reconnectRef.current=null;const current=socketRef.current;socketRef.current=null;if(current&&(current.readyState===WebSocket.CONNECTING||current.readyState===WebSocket.OPEN))current.close()},open=()=>{if(disposed||!connected||socketRef.current)return;const socket=new WebSocket(WS_URL);socket.binaryType="arraybuffer";socketRef.current=socket;socket.onmessage=(event)=>{void decodeMessage(event.data).then((decoded)=>{if(disposed||decoded.length===0)return;const now=performance.now();for(const item of decoded){const oldLive=liveRef.current.get(item.id)?.traffic,previousAltitude=previousAltitudeRef.current.get(item.id);let verticalRate=0;if(previousAltitude&&now>previousAltitude.time){const minutes=(now-previousAltitude.time)/60000;verticalRate=minutes>0?(item.altitude-previousAltitude.altitude)/minutes:0;if(!Number.isFinite(verticalRate)||Math.abs(verticalRate)>15000)verticalRate=0}previousAltitudeRef.current.set(item.id,{altitude:item.altitude,time:now});if(oldLive){const lastSample=lastTrailSampleRef.current.get(item.id)??0,history=trailsRef.current.get(item.id)??[],lastPoint=history[history.length-1]??{x:oldLive.x,y:oldLive.y},distance=Math.hypot(oldLive.x-lastPoint.x,oldLive.y-lastPoint.y),aircraftMoved=Math.hypot(item.x-oldLive.x,item.y-oldLive.y);if(history.length===0&&now-lastSample>=TRAIL_SAMPLE_MS&&aircraftMoved>=TRAIL_FIRST_POINT_DISTANCE){trailsRef.current.set(item.id,[{x:oldLive.x,y:oldLive.y,time:now}]);lastTrailSampleRef.current.set(item.id,now)}else if(now-lastSample>=TRAIL_SAMPLE_MS&&aircraftMoved>0.002&&distance>=TRAIL_MIN_DISTANCE){trailsRef.current.set(item.id,[...history,{x:oldLive.x,y:oldLive.y,time:now}].slice(-5));lastTrailSampleRef.current.set(item.id,now)}}liveRef.current.set(item.id,{traffic:{...item,verticalRate},lastSeen:now})}for(const[id,value]of liveRef.current)if(now-value.lastSeen>STALE_TRAFFIC_MS){liveRef.current.delete(id);trailsRef.current.delete(id);previousAltitudeRef.current.delete(id);lastTrailSampleRef.current.delete(id)}const next=Array.from(liveRef.current.values()).map((value)=>value.traffic).sort((a,b)=>a.callsign.localeCompare(b.callsign));setTraffic(next);const ids=new Set(next.map((item)=>item.id));setSelectedId((current)=>current&&ids.has(current)?current:null);setCallsignMenu((current)=>current&&ids.has(current.id)?current:null)})};socket.onclose=()=>{if(socketRef.current===socket)socketRef.current=null;if(disposed||!connected)return;reconnectRef.current=window.setTimeout(()=>{reconnectRef.current=null;open()},2000)}};if(connected)open();else{stop();setTraffic([]);setSelectedId(null);setCallsignMenu(null);liveRef.current.clear();trailsRef.current.clear();previousAltitudeRef.current.clear()}return()=>{disposed=true;stop()}},[connected]);
+  useEffect(()=>{const onToolbar=(event:MouseEvent)=>{const button=event.target instanceof Element?event.target.closest("button"):null;if(!(button instanceof HTMLButtonElement))return;const buttons=toolbarButtons(),index=buttons.indexOf(button),label=button.textContent?.trim().toUpperCase()??"";if(index===5||label.includes("VECTOR")||label.includes("HDG"))setShowHeading((value)=>!value);if(index===6||label.includes("TRAIL")||label.includes("TRACE")||label.includes("HISTORY"))setShowTrail((value)=>!value)};document.addEventListener("click",onToolbar,true);return()=>document.removeEventListener("click",onToolbar,true)},[]);
+  useEffect(()=>{const onMove=(event:MouseEvent)=>{if(!host)return;const rect=host.getBoundingClientRect();if(dragLabelRef.current){const drag=dragLabelRef.current,aircraft=liveRef.current.get(drag.id)?.traffic;if(!aircraft)return;if(Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)>4)drag.moved=true;const marker=screenPoint(hostSize,aircraft.x,aircraft.y,viewport);setLabelOffsets((current)=>({...current,[drag.id]:{x:event.clientX-rect.left-marker.x-drag.dx,y:event.clientY-rect.top-marker.y-drag.dy}}))}if(headingDragRef.current){const id=headingDragRef.current.id,aircraft=liveRef.current.get(id)?.traffic;if(!aircraft)return;const marker=screenPoint(hostSize,aircraft.x,aircraft.y,viewport),dx=event.clientX-rect.left-marker.x,dy=event.clientY-rect.top-marker.y;if(Math.hypot(dx,dy)<3)return;const heading=(Math.atan2(dx,-dy)*180/Math.PI+360)%360;updateControl(id,{assignedHeading:Math.round(heading/5)*5%360})}},onUp=()=>{const drag=dragLabelRef.current;if(drag?.moved){suppressLabelClickRef.current=drag.id;window.setTimeout(()=>{if(suppressLabelClickRef.current===drag.id)suppressLabelClickRef.current=null},0)}dragLabelRef.current=null;headingDragRef.current=null};window.addEventListener("mousemove",onMove);window.addEventListener("mouseup",onUp);return()=>{window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp)}},[host,hostSize,viewport]);
+  useEffect(()=>{const deselect=(event:MouseEvent)=>{const target=event.target instanceof Element?event.target:null;if(target?.closest("[data-pf24-traffic-select='true']")||target?.closest("[data-pf24-traffic-label='true']")||target?.closest("[data-pf24-traffic-popup='true']")||target?.closest("[data-pf24-callsign-menu='true']"))return;setSelectedId(null);setPopup(null);setCallsignMenu(null)};document.addEventListener("click",deselect,true);return()=>document.removeEventListener("click",deselect,true)},[]);
+  if(!host||!connected)return null;
 
-  const selected = useMemo(() => traffic.find((item) => item.id === selectedId) ?? null, [traffic, selectedId]);
-  const planMap = useMemo(() => new Map(plans.map((plan) => [gamePlanKey(plan), plan])), [plans]);
-  const updateControl = (id: string, patch: Partial<ControlState>) => setControls((current) => { const next = { ...current, [id]: { ...(current[id] ?? defaultControl()), ...patch } }; localStorage.setItem(CONTROLS_KEY, JSON.stringify(next)); return next; });
+  const radarLayer=createPortal(<div data-pf24-live-traffic="true" className="pointer-events-none absolute inset-0 z-[8] overflow-hidden">
+    <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${hostSize.x} ${hostSize.y}`} preserveAspectRatio="none" aria-hidden="true">{traffic.map((item)=>{const marker=screenPoint(hostSize,item.x,item.y,viewport),unit=headingUnit(item.heading),offset=labelOffsets[item.id]??{x:16,y:14},label={x:marker.x+offset.x,y:marker.y+offset.y},active=item.id===selectedId,width=active?DETAIL_WIDTH:SIMPLE_WIDTH,height=active?DETAIL_HEIGHT:SIMPLE_HEIGHT,end=connectorEnd(marker,label,width,height),vectorLength=VECTOR_PIXELS_PER_NM*settings.vectorMiles*viewport.zoom,history=(trailsRef.current.get(item.id)??[]).slice(-settings.trailCount);return <g key={item.id}>{showTrail&&history.map((trailPoint,index)=>{const point=screenPoint(hostSize,trailPoint.x,trailPoint.y,viewport),opacity=settings.trailFade?0.38+((index+1)/Math.max(1,history.length))*0.62:1;return <circle key={`${item.id}-trail-${trailPoint.time}`} cx={point.x} cy={point.y} r="3" fill="#00ff00" stroke="#00ff00" strokeWidth="0.6" opacity={opacity}/>})}{showHeading&&<line x1={marker.x} y1={marker.y} x2={marker.x+unit.x*vectorLength} y2={marker.y+unit.y*vectorLength} stroke="#00e000" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}<line x1={marker.x} y1={marker.y} x2={end.x} y2={end.y} stroke="#00e000" strokeWidth="1.2" vectorEffect="non-scaling-stroke"/></g>})}</svg>
 
-  useEffect(() => {
-    setViewport(readViewport()); setSettings(readTrafficSettings()); setControls(readControls());
-    const onViewport = (event: Event) => { const next = (event as CustomEvent<Viewport>).detail; if (next) setViewport(next); };
-    const onSettings = (event: Event) => { const next = (event as CustomEvent<TrafficSettings>).detail; if (next) setSettings(next); };
-    window.addEventListener(VIEWPORT_EVENT, onViewport); window.addEventListener(TRAFFIC_SETTINGS_EVENT, onSettings);
-    return () => { window.removeEventListener(VIEWPORT_EVENT, onViewport); window.removeEventListener(TRAFFIC_SETTINGS_EVENT, onSettings); };
-  }, []);
-
-  useEffect(() => {
-    const radar = findRadar(); setHost(radar); setFooter(findFooter()); if (radar) setHostSize({ x: Math.max(1, radar.clientWidth), y: Math.max(1, radar.clientHeight) });
-    const retry = window.setTimeout(() => { const next = findRadar(); setHost(next); setFooter(findFooter()); if (next) setHostSize({ x: Math.max(1, next.clientWidth), y: Math.max(1, next.clientHeight) }); }, 250);
-    return () => window.clearTimeout(retry);
-  }, []);
-
-  useEffect(() => { if (!host) return; const resize = () => setHostSize({ x: Math.max(1, host.clientWidth), y: Math.max(1, host.clientHeight) }); resize(); window.addEventListener("resize", resize); return () => window.removeEventListener("resize", resize); }, [host]);
-
-  useEffect(() => {
-    const load = async () => { const { data } = await supabase.from("flight_plans").select("*").neq("status", "FINISHED"); if (data) setPlans(data as ScopeFlightPlan[]); };
-    const channel = supabase.channel("scope-live-traffic-flight-plans-v5").on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void load()).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
-  useEffect(() => {
-    setConnected(scopeConnected());
-    const onConnection = (event: Event) => setConnected(Boolean((event as CustomEvent<{ connected?: boolean }>).detail?.connected));
-    window.addEventListener(CONNECTION_EVENT, onConnection); const retry = window.setTimeout(() => setConnected(scopeConnected()), 400);
-    return () => { window.clearTimeout(retry); window.removeEventListener(CONNECTION_EVENT, onConnection); };
-  }, []);
-
-  useEffect(() => {
-    const style = document.createElement("style"); style.dataset.pf24LiveProjectFlightTraffic = "true";
-    style.textContent = `main.fixed > section > button.absolute.z-10{display:none!important}main.fixed > section > div.absolute.right-\\[11px\\].top-\\[272px\\]{display:none!important}[data-pf24-live-traffic='true']{transform:none!important;transform-origin:initial!important}.notranslate{translate:no}.pf24-traffic-popup{scrollbar-width:none;-ms-overflow-style:none}.pf24-traffic-popup::-webkit-scrollbar{display:none;width:0;height:0}`;
-    document.head.appendChild(style); return () => style.remove();
-  }, []);
-
-  useEffect(() => {
-    let disposed = false;
-    const stop = () => { if (reconnectRef.current !== null) window.clearTimeout(reconnectRef.current); reconnectRef.current = null; const current = socketRef.current; socketRef.current = null; if (current && (current.readyState === WebSocket.CONNECTING || current.readyState === WebSocket.OPEN)) current.close(); };
-    const open = () => {
-      if (disposed || !connected || socketRef.current) return;
-      const socket = new WebSocket(WS_URL); socket.binaryType = "arraybuffer"; socketRef.current = socket;
-      socket.onmessage = (event) => { void decodeMessage(event.data).then((decoded) => {
-        if (disposed || decoded.length === 0) return; const now = performance.now();
-        for (const item of decoded) {
-          const oldLive = liveRef.current.get(item.id)?.traffic, previousAltitude = previousAltitudeRef.current.get(item.id); let verticalRate = 0;
-          if (previousAltitude && now > previousAltitude.time) { const minutes = (now - previousAltitude.time) / 60000; verticalRate = minutes > 0 ? (item.altitude - previousAltitude.altitude) / minutes : 0; if (!Number.isFinite(verticalRate) || Math.abs(verticalRate) > 15000) verticalRate = 0; }
-          previousAltitudeRef.current.set(item.id, { altitude: item.altitude, time: now });
-          if (oldLive) {
-            const lastSample = lastTrailSampleRef.current.get(item.id) ?? 0, history = trailsRef.current.get(item.id) ?? [], lastPoint = history[history.length - 1] ?? { x: oldLive.x, y: oldLive.y };
-            const distance = Math.hypot(oldLive.x - lastPoint.x, oldLive.y - lastPoint.y), aircraftMoved = Math.hypot(item.x - oldLive.x, item.y - oldLive.y);
-            if (history.length === 0 && now - lastSample >= TRAIL_SAMPLE_MS && aircraftMoved >= TRAIL_FIRST_POINT_DISTANCE) {
-              trailsRef.current.set(item.id, [{ x: oldLive.x, y: oldLive.y, time: now }]);
-              lastTrailSampleRef.current.set(item.id, now);
-            } else if (now - lastSample >= TRAIL_SAMPLE_MS && aircraftMoved > 0.002 && distance >= TRAIL_MIN_DISTANCE) {
-              trailsRef.current.set(item.id, [...history, { x: oldLive.x, y: oldLive.y, time: now }].slice(-5));
-              lastTrailSampleRef.current.set(item.id, now);
-            }
-          }
-          liveRef.current.set(item.id, { traffic: { ...item, verticalRate }, lastSeen: now });
-        }
-        for (const [id, value] of liveRef.current) if (now - value.lastSeen > STALE_TRAFFIC_MS) { liveRef.current.delete(id); trailsRef.current.delete(id); previousAltitudeRef.current.delete(id); lastTrailSampleRef.current.delete(id); }
-        const next = Array.from(liveRef.current.values()).map((value) => value.traffic).sort((a, b) => a.callsign.localeCompare(b.callsign)); setTraffic(next);
-        const ids = new Set(next.map((item) => item.id));
-        setSelectedId((current) => current && ids.has(current) ? current : null);
-        setCallsignMenu((current) => current && ids.has(current.id) ? current : null);
-      }); };
-      socket.onclose = () => { if (socketRef.current === socket) socketRef.current = null; if (disposed || !connected) return; reconnectRef.current = window.setTimeout(() => { reconnectRef.current = null; open(); }, 2000); };
-    };
-    if (connected) open(); else { stop(); setTraffic([]); setSelectedId(null); setCallsignMenu(null); liveRef.current.clear(); trailsRef.current.clear(); previousAltitudeRef.current.clear(); }
-    return () => { disposed = true; stop(); };
-  }, [connected]);
-
-  useEffect(() => {
-    const onToolbar = (event: MouseEvent) => {
-      const button = event.target instanceof Element ? event.target.closest("button") : null; if (!(button instanceof HTMLButtonElement)) return;
-      const buttons = toolbarButtons(), index = buttons.indexOf(button), label = button.textContent?.trim().toUpperCase() ?? "";
-      if (index === 5 || label.includes("VECTOR") || label.includes("HDG")) setShowHeading((value) => !value);
-      if (index === 6 || label.includes("TRAIL") || label.includes("TRACE") || label.includes("HISTORY")) setShowTrail((value) => !value);
-    };
-    document.addEventListener("click", onToolbar, true); return () => document.removeEventListener("click", onToolbar, true);
-  }, []);
-
-  useEffect(() => {
-    const onMove = (event: MouseEvent) => {
-      if (!host) return; const rect = host.getBoundingClientRect();
-      if (dragLabelRef.current) {
-        const drag = dragLabelRef.current, aircraft = liveRef.current.get(drag.id)?.traffic; if (!aircraft) return;
-        if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) drag.moved = true;
-        const marker = screenPoint(hostSize, aircraft.x, aircraft.y, viewport);
-        setLabelOffsets((current) => ({ ...current, [drag.id]: { x: event.clientX - rect.left - marker.x - drag.dx, y: event.clientY - rect.top - marker.y - drag.dy } }));
-      }
-      if (headingDragRef.current) {
-        const id = headingDragRef.current.id, aircraft = liveRef.current.get(id)?.traffic; if (!aircraft) return;
-        const marker = screenPoint(hostSize, aircraft.x, aircraft.y, viewport), dx = event.clientX - rect.left - marker.x, dy = event.clientY - rect.top - marker.y; if (Math.hypot(dx, dy) < 3) return;
-        const heading = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360; updateControl(id, { assignedHeading: Math.round(heading / 5) * 5 % 360 });
-      }
-    };
-    const onUp = () => { const drag = dragLabelRef.current; if (drag?.moved) { suppressLabelClickRef.current = drag.id; window.setTimeout(() => { if (suppressLabelClickRef.current === drag.id) suppressLabelClickRef.current = null; }, 0); } dragLabelRef.current = null; headingDragRef.current = null; };
-    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [host, hostSize, viewport]);
-
-  useEffect(() => {
-    const deselect = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("[data-pf24-traffic-select='true']") || target?.closest("[data-pf24-traffic-label='true']") || target?.closest("[data-pf24-traffic-popup='true']") || target?.closest("[data-pf24-callsign-menu='true']")) return;
-      setSelectedId(null); setPopup(null); setCallsignMenu(null);
-    };
-    document.addEventListener("click", deselect, true); return () => document.removeEventListener("click", deselect, true);
-  }, []);
-
-  if (!host || !connected) return null;
-
-  const radarLayer = createPortal(
-    <div data-pf24-live-traffic="true" className="pointer-events-none absolute inset-0 z-[8] overflow-hidden">
-      <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${hostSize.x} ${hostSize.y}`} preserveAspectRatio="none" aria-hidden="true">
-        {traffic.map((item) => {
-          const marker = screenPoint(hostSize, item.x, item.y, viewport), unit = headingUnit(item.heading), offset = labelOffsets[item.id] ?? { x: 16, y: 14 }, label = { x: marker.x + offset.x, y: marker.y + offset.y }, active = item.id === selectedId;
-          const width = active ? DETAIL_WIDTH : SIMPLE_WIDTH, height = active ? DETAIL_HEIGHT : SIMPLE_HEIGHT, end = connectorEnd(marker, label, width, height), vectorLength = VECTOR_PIXELS_PER_NM * settings.vectorMiles * viewport.zoom;
-          const history = (trailsRef.current.get(item.id) ?? []).slice(-settings.trailCount);
-          return <g key={item.id}>
-            {showTrail && history.map((trailPoint, index) => {
-              const point = screenPoint(hostSize, trailPoint.x, trailPoint.y, viewport), opacity = settings.trailFade ? 0.38 + ((index + 1) / Math.max(1, history.length)) * 0.62 : 1;
-              return <circle key={`${item.id}-trail-${trailPoint.time}`} cx={point.x} cy={point.y} r="3" fill="#00ff00" stroke="#00ff00" strokeWidth="0.6" opacity={opacity}/>;
-            })}
-            {showHeading && <line x1={marker.x} y1={marker.y} x2={marker.x + unit.x * vectorLength} y2={marker.y + unit.y * vectorLength} stroke="#00e000" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}
-            <line x1={marker.x} y1={marker.y} x2={end.x} y2={end.y} stroke="#00e000" strokeWidth="1.2" vectorEffect="non-scaling-stroke"/>
-          </g>;
-        })}
-      </svg>
-
-      {traffic.map((item) => {
-        const active = item.id === selectedId, marker = screenPoint(hostSize, item.x, item.y, viewport), offset = labelOffsets[item.id] ?? { x: 16, y: 14 }, labelPoint = { x: marker.x + offset.x, y: marker.y + offset.y };
-        const control = controls[item.id] ?? defaultControl(), plan = planMap.get(item.callsign), displayCallsign = plan?.callsign?.toUpperCase() || item.callsign, waypoints = routeWaypoints(plan), currentWaypoint = control.waypoint ?? waypoints[0] ?? "XXXXX", destination = plan?.arrival_icao?.toUpperCase() || "XXXX", cruise = cruiseLevel(plan);
-        const speedText = control.assignedSpeed === null ? "ASP" : String(control.assignedSpeed).padStart(3, "0"), headingText = control.assignedHeading === null ? "AHDG" : `AHDG${String(control.assignedHeading).padStart(3, "0")}`;
-        const menuOpen = callsignMenu?.id === item.id;
-        const startLabelDrag = (event: React.MouseEvent<HTMLElement>) => { if (event.button !== 0) return; if ((event.target as Element).closest("button,input,[data-pf24-callsign-menu='true']")) return; event.stopPropagation(); dragLabelRef.current = { id: item.id, dx: event.clientX - (host.getBoundingClientRect().left + labelPoint.x), dy: event.clientY - (host.getBoundingClientRect().top + labelPoint.y), startX: event.clientX, startY: event.clientY, moved: false }; };
-        const activateLabel = (event: React.MouseEvent<HTMLElement>) => { event.stopPropagation(); if (suppressLabelClickRef.current === item.id) { suppressLabelClickRef.current = null; return; } setSelectedId(item.id); setPopup(null); };
-        const openCallsignMenu = (event: React.MouseEvent<HTMLElement>) => { event.stopPropagation(); setCallsignMenu({ id: item.id, expanded: false }); };
-
-        const callsignMenuNode = menuOpen ? <div
-          data-pf24-callsign-menu="true"
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
-          onMouseLeave={() => setCallsignMenu(null)}
-          className="pointer-events-auto absolute left-0 top-[12px] z-[50] w-[118px] border border-[#f2f2f2] bg-[#555c60] font-mono text-[10px] leading-[18px] text-[#ededed] shadow-[0_2px_8px_rgba(0,0,0,.45)]"
-        >
-          <div className="border-b border-[#f2f2f2] px-2 text-center text-[11px] leading-[20px] text-[#22e000]">{displayCallsign}</div>
-          <button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Callsign</button>
-          <button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Assume</button>
-          <button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">FPL</button>
-          <button
-            type="button"
-            onClick={(event) => { event.stopPropagation(); setCallsignMenu({ id: item.id, expanded: !callsignMenu.expanded }); }}
-            className="flex w-full items-center justify-center gap-2 border-b border-[#f2f2f2] px-2 hover:bg-[#626a6f]"
-          ><span className={`inline-block text-[9px] transition-transform ${callsignMenu.expanded ? "rotate-180" : ""}`}>▽</span><span>More</span></button>
-          {callsignMenu.expanded && <>
-            <button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">MAPP</button>
-            <button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">HOLD</button>
-            <button type="button" className="block w-full px-2 text-center hover:bg-[#626a6f]">FREE</button>
-          </>}
-        </div> : null;
-
-        return <div key={item.id}>
-          <button type="button" data-pf24-traffic-select="true" onClick={(event) => { event.stopPropagation(); setSelectedId(item.id); setPopup(null); }} className="pointer-events-auto absolute z-[10] -translate-x-1/2 -translate-y-1/2" style={{ left: marker.x, top: marker.y, width: TARGET_SIZE, height: TARGET_SIZE }} aria-label={`Seleccionar ${displayCallsign}`}>
-            <span className={`absolute inset-0 rotate-45 border ${active ? "border-[#00ff00]" : "border-[#00d800]"}`}/>
-          </button>
-
-          {!active && <div type="button" data-pf24-traffic-label="true" onMouseDown={startLabelDrag} onClick={activateLabel} className="pointer-events-auto absolute z-[9] w-[72px] cursor-move whitespace-nowrap text-left font-mono text-[#00e000]" style={{ left: labelPoint.x, top: labelPoint.y }}>
-            <span className="block text-[8px] leading-[7px]">I</span>
-            <button type="button" onMouseDown={(event) => event.stopPropagation()} onDoubleClick={openCallsignMenu} className="relative block text-left text-[10px] leading-[9px] text-[#00e000]">{displayCallsign}{callsignMenuNode}</button>
-            <span className="grid grid-cols-[29px_1fr] text-[9px] leading-[8px]"><span>{flightLevel(item.altitude)}{trend(item.verticalRate)}</span><span>{String(Math.round(item.groundSpeed)).padStart(3, "0")}</span></span>
-            <span className="block pl-[29px] text-[9px] leading-[7px]">{destination}</span>
-          </div>}
-
-          {active && <div
-            data-pf24-traffic-label="true"
-            onMouseDown={startLabelDrag}
-            onMouseLeave={() => { if (!menuOpen) { setSelectedId(null); setPopup(null); } }}
-            className="pointer-events-auto absolute z-[12] w-[132px] cursor-move select-none font-mono text-[9px] leading-[9px] text-[#00e000]"
-            style={{ left: labelPoint.x, top: labelPoint.y }}
-          >
-            <div className="text-[#ffff00] leading-[8px]">A9999</div>
-            <div className="grid grid-cols-[50px_8px_1fr] leading-[9px]"><button type="button" onMouseDown={(event) => event.stopPropagation()} onDoubleClick={openCallsignMenu} className="relative truncate text-left text-[#00e000]">{displayCallsign}{callsignMenuNode}</button><span>--</span><span>{item.aircraftType}</span></div>
-            <div className="grid grid-cols-[29px_50px_1fr] leading-[9px]"><span>{flightLevel(item.altitude)}{trend(item.verticalRate)}</span><button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (waypoints.length) setPopup({ id: item.id, type: "waypoint" }); }} className="truncate text-left text-[#00e000]">{currentWaypoint}</button><span>N{Math.round(item.groundSpeed)}</span></div>
-            <div className="grid grid-cols-[29px_29px_1fr] leading-[9px]"><button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setPopup({ id: item.id, type: "altitude" }); }} className="text-left text-[#00e000]">{control.assignedAltitude}</button><span>{cruise}</span><span>{destination}</span></div>
-            <div className="grid grid-cols-[48px_29px_1fr] leading-[9px]">
-              <button type="button" onMouseDown={(event) => { event.stopPropagation(); headingDragRef.current = { id: item.id }; }} onDoubleClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedHeading: null }); }} className="text-left text-[#00e000]">{headingText}</button>
-              <button type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setPopup({ id: item.id, type: "speed" }); }} onDoubleClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedSpeed: null }); setPopup(null); }} className="text-left text-[#00e000]">{speedText}</button>
-              <input value={control.freeText} maxLength={20} placeholder="TXT" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => { event.stopPropagation(); updateControl(item.id, { freeText: "" }); }} onChange={(event) => updateControl(item.id, { freeText: event.target.value.toUpperCase().replace(/[^A-Z0-9 .\-_/]/g, "").slice(0, 20) })} className="min-w-0 bg-transparent uppercase text-[#00e000] outline-none placeholder:text-[#00e000]"/>
-            </div>
-
-            {popup?.id === item.id && <div data-pf24-traffic-popup="true" className="pf24-traffic-popup absolute left-0 top-[48px] z-[30] max-h-[154px] min-w-[72px] overflow-y-auto border border-[#0b392f] bg-[#064a40] text-[9px] text-[#e6e6e6] shadow-lg">
-              {popup.type === "altitude" && Array.from({ length: 41 }, (_, index) => String(index * 5).padStart(3, "0")).map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedAltitude: value }); setPopup(null); }} className="block w-full px-2 py-1 text-left hover:bg-[#0a5b50]">{value}</button>)}
-              {popup.type === "speed" && Array.from({ length: 21 }, (_, index) => 50 + index * 10).map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { assignedSpeed: value }); setPopup(null); }} className="block w-full px-2 py-1 text-left hover:bg-[#0a5b50]">{value} KT</button>)}
-              {popup.type === "waypoint" && waypoints.map((value) => <button key={value} type="button" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); updateControl(item.id, { waypoint: value }); setPopup(null); }} className="block w-full px-2 py-1 text-left hover:bg-[#0a5b50]">{value}</button>)}
-            </div>}
-          </div>}
-        </div>;
-      })}
-    </div>, host,
-  );
-
-  const selectedPlan = selected ? planMap.get(selected.callsign) : undefined;
-  const selectedDisplayCallsign = selectedPlan?.callsign?.toUpperCase() || selected?.callsign || "";
-  const footerInfo = footer && selected ? createPortal(
-    <div translate="no" className="notranslate pointer-events-none absolute bottom-[36px] left-[132px] right-0 z-[60] h-[18px] truncate border-y border-[#aaa] bg-[#d8d8d8] px-[7px] font-mono text-[9px] leading-[17px] text-[#111]">
-      {selected.username || "USUARIOXXXX"} &nbsp;|&nbsp; {selectedDisplayCallsign} [<span translate="no" className="notranslate">{spokenCallsign(selectedDisplayCallsign)}</span>] &nbsp;|&nbsp; {(selectedPlan?.departure_icao || "XXXX").toUpperCase()} - {(selectedPlan?.arrival_icao || "XXXX").toUpperCase()}
-    </div>, footer,
-  ) : null;
-
+    {traffic.map((item)=>{const active=item.id===selectedId,marker=screenPoint(hostSize,item.x,item.y,viewport),offset=labelOffsets[item.id]??{x:16,y:14},labelPoint={x:marker.x+offset.x,y:marker.y+offset.y},control=controls[item.id]??defaultControl(),plan=planMap.get(item.callsign),displayCallsign=plan?.callsign?.toUpperCase()||item.callsign,waypoints=routeWaypoints(plan),currentWaypoint=control.waypoint??waypoints[0]??"XXXXX",destination=plan?.arrival_icao?.toUpperCase()||"XXXX",cruise=cruiseLevel(plan),speedText=control.assignedSpeed===null?"ASP":String(control.assignedSpeed).padStart(3,"0"),headingText=control.assignedHeading===null?"AHDG":`AHDG${String(control.assignedHeading).padStart(3,"0")}`,menuOpen=callsignMenu?.id===item.id,menuExpanded=menuOpen?Boolean(callsignMenu?.expanded):false;
+      const startLabelDrag=(event:React.MouseEvent<HTMLElement>)=>{if(event.button!==0)return;if((event.target as Element).closest("button,input,[data-pf24-callsign-menu='true']"))return;event.stopPropagation();dragLabelRef.current={id:item.id,dx:event.clientX-(host.getBoundingClientRect().left+labelPoint.x),dy:event.clientY-(host.getBoundingClientRect().top+labelPoint.y),startX:event.clientX,startY:event.clientY,moved:false}},activateLabel=(event:React.MouseEvent<HTMLElement>)=>{event.stopPropagation();if(suppressLabelClickRef.current===item.id){suppressLabelClickRef.current=null;return}setSelectedId(item.id);setPopup(null)},openCallsignMenu=(event:React.MouseEvent<HTMLElement>)=>{event.stopPropagation();setCallsignMenu({id:item.id,expanded:false})};
+      const callsignMenuNode=menuOpen?<div data-pf24-callsign-menu="true" onMouseDown={(event)=>event.stopPropagation()} onClick={(event)=>event.stopPropagation()} onMouseLeave={()=>setCallsignMenu(null)} className="pointer-events-auto absolute left-0 top-[12px] z-[50] w-[118px] border border-[#f2f2f2] bg-[#555c60] font-mono text-[10px] leading-[18px] text-[#ededed] shadow-[0_2px_8px_rgba(0,0,0,.45)]"><div className="border-b border-[#f2f2f2] px-2 text-center text-[11px] leading-[20px] text-[#22e000]">{displayCallsign}</div><button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Callsign</button><button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Assume</button><button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">FPL</button><button type="button" onClick={(event)=>{event.stopPropagation();setCallsignMenu({id:item.id,expanded:!menuExpanded})}} className="flex w-full items-center justify-center gap-2 border-b border-[#f2f2f2] px-2 hover:bg-[#626a6f]"><span className={`inline-block text-[9px] transition-transform ${menuExpanded?"rotate-180":""}`}>▽</span><span>More</span></button>{menuExpanded&&<><button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">MAPP</button><button type="button" className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">HOLD</button><button type="button" className="block w-full px-2 text-center hover:bg-[#626a6f]">FREE</button></>}</div>:null;
+      return <div key={item.id}><button type="button" data-pf24-traffic-select="true" onClick={(event)=>{event.stopPropagation();setSelectedId(item.id);setPopup(null)}} className="pointer-events-auto absolute z-[10] -translate-x-1/2 -translate-y-1/2" style={{left:marker.x,top:marker.y,width:TARGET_SIZE,height:TARGET_SIZE}} aria-label={`Seleccionar ${displayCallsign}`}><span className={`absolute inset-0 rotate-45 border ${active?"border-[#00ff00]":"border-[#00d800]"}`}/></button>
+      {!active&&<div data-pf24-traffic-label="true" onMouseDown={startLabelDrag} onClick={activateLabel} className="pointer-events-auto absolute z-[9] w-[72px] cursor-move whitespace-nowrap text-left font-mono text-[#00e000]" style={{left:labelPoint.x,top:labelPoint.y}}><span className="block text-[8px] leading-[7px]">I</span><button type="button" onMouseDown={(event)=>event.stopPropagation()} onDoubleClick={openCallsignMenu} className="relative block text-left text-[10px] leading-[9px] text-[#00e000]">{displayCallsign}{callsignMenuNode}</button><span className="grid grid-cols-[29px_1fr] text-[9px] leading-[8px]"><span>{flightLevel(item.altitude)}{trend(item.verticalRate)}</span><span>{String(Math.round(item.groundSpeed)).padStart(3,"0")}</span></span><span className="block pl-[29px] text-[9px] leading-[7px]">{destination}</span></div>}
+      {active&&<div data-pf24-traffic-label="true" onMouseDown={startLabelDrag} onMouseLeave={()=>{if(!menuOpen){setSelectedId(null);setPopup(null)}}} className="pointer-events-auto absolute z-[12] w-[132px] cursor-move select-none font-mono text-[9px] leading-[9px] text-[#00e000]" style={{left:labelPoint.x,top:labelPoint.y}}><div className="text-[#ffff00] leading-[8px]">A9999</div><div className="grid grid-cols-[50px_8px_1fr] leading-[9px]"><button type="button" onMouseDown={(event)=>event.stopPropagation()} onDoubleClick={openCallsignMenu} className="relative truncate text-left text-[#00e000]">{displayCallsign}{callsignMenuNode}</button><span>--</span><span>{item.aircraftType}</span></div><div className="grid grid-cols-[29px_50px_1fr] leading-[9px]"><span>{flightLevel(item.altitude)}{trend(item.verticalRate)}</span><button type="button" onMouseDown={(event)=>event.stopPropagation()} onClick={(event)=>{event.stopPropagation();if(waypoints.length)setPopup({id:item.id,type:"waypoint"})}} className="truncate text-left text-[#00e000]">{currentWaypoint}</button><span>N{Math.round(item.groundSpeed)}</span></div><div className="grid grid-cols-[29px_29px_1fr] leading-[9px]"><button type="button" onMouseDown={(event)=>event.stopPropagation()} onClick={(event)=>{event.stopPropagation();setPopup({id:item.id,type:"altitude"})}} className="text-left text-[#00e000]">{control.assignedAltitude}</button><span>{cruise}</span><span>{destination}</span></div><div className="grid grid-cols-[48px_29px_1fr] leading-[9px]"><button type="button" onMouseDown={(event)=>{event.stopPropagation();headingDragRef.current={id:item.id}}} onDoubleClick={(event)=>{event.stopPropagation();updateControl(item.id,{assignedHeading:null})}} className="text-left text-[#00e000]">{headingText}</button><button type="button" onMouseDown={(event)=>event.stopPropagation()} onClick={(event)=>{event.stopPropagation();setPopup({id:item.id,type:"speed"})}} onDoubleClick={(event)=>{event.stopPropagation();updateControl(item.id,{assignedSpeed:null});setPopup(null)}} className="text-left text-[#00e000]">{speedText}</button><input value={control.freeText} maxLength={20} placeholder="TXT" onMouseDown={(event)=>event.stopPropagation()} onClick={(event)=>event.stopPropagation()} onDoubleClick={(event)=>{event.stopPropagation();updateControl(item.id,{freeText:""})}} onChange={(event)=>updateControl(item.id,{freeText:event.target.value.toUpperCase().replace(/[^A-Z0-9 .\-_/]/g,"").slice(0,20)})} className="min-w-0 bg-transparent uppercase text-[#00e000] outline-none placeholder:text-[#00e000]"/></div>{popup?.id===item.id&&<div data-pf24-traffic-popup="true" className="pf24-traffic-popup absolute left-0 top-[48px] z-[30] max-h-[154px] min-w-[72px] overflow-y-auto border border-[#0b392f] bg-[#064a40] text-[9px] text-[#e6e6e6] shadow-lg">{popup.type==="altitude"&&Array.from({length:41},(_,index)=>String(index*5).padStart(3,"0")).map((value)=><button key={value} type="button" onMouseDown={(event)=>event.stopPropagation()} onClick={(event)=>{event.stopPropagation();updateControl(item.id,{assignedAltitude:value});setPopup(null)}} className="block w-full px-2 py-1 text-left hover:bg-[#0a5b50]">{value}</button>)}{popup.type==="speed"&&Array.from({length:21},(_,index)=>50+index*10).map((value)=><button key={value} type="button" onMouseDown={(event)=>event.stopPropagation()} onClick={(event)=>{event.stopPropagation();updateControl(item.id,{assignedSpeed:value});setPopup(null)}} className="block w-full px-2 py-1 text-left hover:bg-[#0a5b50]">{value} KT</button>)}{popup.type==="waypoint"&&waypoints.map((value)=><button key={value} type="button" onMouseDown={(event)=>event.stopPropagation()} onClick={(event)=>{event.stopPropagation();updateControl(item.id,{waypoint:value});setPopup(null)}} className="block w-full px-2 py-1 text-left hover:bg-[#0a5b50]">{value}</button>)}</div>}</div>}</div>})}
+  </div>,host);
+  const selectedPlan=selected?planMap.get(selected.callsign):undefined,selectedDisplayCallsign=selectedPlan?.callsign?.toUpperCase()||selected?.callsign||"";
+  const footerInfo=footer&&selected?createPortal(<div translate="no" className="notranslate pointer-events-none absolute bottom-[36px] left-[132px] right-0 z-[60] h-[18px] truncate border-y border-[#aaa] bg-[#d8d8d8] px-[7px] font-mono text-[9px] leading-[17px] text-[#111]">{selected.username||"USUARIOXXXX"} &nbsp;|&nbsp; {selectedDisplayCallsign} [<span translate="no" className="notranslate">{spokenCallsign(selectedDisplayCallsign)}</span>] &nbsp;|&nbsp; {(selectedPlan?.departure_icao||"XXXX").toUpperCase()} - {(selectedPlan?.arrival_icao||"XXXX").toUpperCase()}</div>,footer):null;
   return <>{radarLayer}{footerInfo}</>;
 }
