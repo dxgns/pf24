@@ -3,6 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getDefaultTransponder } from "@/lib/flightRules";
+import {
+  getGameCallsignFromNotes,
+  getVisibleFlightPlanNotes,
+  normalizeGameCallsign,
+  setGameCallsignInNotes,
+  setVisibleFlightPlanNotes,
+} from "@/lib/flightPlanGameCallsign";
 
 const AIRCRAFT_TYPES = [
   "A220", "A320", "A330", "A350", "B717", "B727", "B737",
@@ -31,6 +38,8 @@ type FlightPlan = {
   assumed_by: string | null;
   created_by: string | null;
 };
+
+type EditableField = keyof FlightPlan | "game_callsign" | "visible_notes";
 
 export default function PilotFlightPlans({
   initialPlans,
@@ -73,27 +82,19 @@ export default function PilotFlightPlans({
             }
 
             if (newPlan.status === "FINISHED") {
-              setPlans((current) =>
-                current.filter((plan) => plan.id !== newPlan.id)
-              );
+              setPlans((current) => current.filter((plan) => plan.id !== newPlan.id));
               return;
             }
 
             setPlans((current) => {
               const exists = current.some((plan) => plan.id === newPlan.id);
-
               if (!exists) return [newPlan, ...current];
-
-              return current.map((plan) =>
-                plan.id === newPlan.id ? newPlan : plan
-              );
+              return current.map((plan) => plan.id === newPlan.id ? newPlan : plan);
             });
           }
 
           if (payload.eventType === "DELETE") {
-            setPlans((current) =>
-              current.filter((plan) => plan.id !== oldPlan.id)
-            );
+            setPlans((current) => current.filter((plan) => plan.id !== oldPlan.id));
           }
         }
       )
@@ -118,8 +119,7 @@ export default function PilotFlightPlans({
     try {
       const AudioContextClass =
         window.AudioContext ||
-        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext;
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 
       if (!AudioContextClass) return;
 
@@ -132,20 +132,13 @@ export default function PilotFlightPlans({
       for (let t = 0; t < duration; t += gap) {
         const oscillator = audio.createOscillator();
         const gain = audio.createGain();
-
         oscillator.connect(gain);
         gain.connect(audio.destination);
-
         oscillator.type = "square";
         oscillator.frequency.setValueAtTime(880, startTime + t);
-
         gain.gain.setValueAtTime(0.0001, startTime + t);
         gain.gain.exponentialRampToValueAtTime(0.08, startTime + t + 0.03);
-        gain.gain.exponentialRampToValueAtTime(
-          0.0001,
-          startTime + t + beepLength
-        );
-
+        gain.gain.exponentialRampToValueAtTime(0.0001, startTime + t + beepLength);
         oscillator.start(startTime + t);
         oscillator.stop(startTime + t + beepLength);
       }
@@ -154,27 +147,17 @@ export default function PilotFlightPlans({
     }
   }
 
-  function normalizeField(field: keyof FlightPlan, value: string) {
-    if (field === "callsign") {
-      return value.toUpperCase().replace(/\s/g, "").slice(0, 12);
+  function normalizeField(field: EditableField, value: string) {
+    if (field === "callsign" || field === "game_callsign") {
+      return normalizeGameCallsign(value);
     }
-
-    if (field === "route") {
-      return value.toUpperCase();
-    }
-
-    if (field === "flight_level") {
-      return value.replace(/\D/g, "").slice(0, 3);
-    }
-
-    if (field === "transponder") {
-      return value.replace(/[^0-7]/g, "").slice(0, 4);
-    }
-
+    if (field === "route") return value.toUpperCase();
+    if (field === "flight_level") return value.replace(/\D/g, "").slice(0, 3);
+    if (field === "transponder") return value.replace(/[^0-7]/g, "").slice(0, 4);
     return value;
   }
 
-  function autoSave(id: string, field: keyof FlightPlan, value: string) {
+  function autoSave(id: string, field: EditableField, value: string) {
     const cleanValue = normalizeField(field, value);
 
     if (field === "transponder" && cleanValue === "7500") {
@@ -182,25 +165,43 @@ export default function PilotFlightPlans({
       return;
     }
 
+    if (field === "game_callsign" && cleanValue.length < 2) {
+      setError("El callsign del juego debe tener al menos 2 caracteres.");
+      return;
+    }
+
     setError("");
-
-    setPlans((current) =>
-      current.map((plan) =>
-        plan.id === id ? { ...plan, [field]: cleanValue } : plan
-      )
-    );
-
     setSaving(id);
-
     clearTimeout(timers.current[`${id}-${field}`]);
 
+    setPlans((current) => current.map((plan) => {
+      if (plan.id !== id) return plan;
+      if (field === "game_callsign") {
+        return { ...plan, notes: setGameCallsignInNotes(plan.notes, cleanValue) };
+      }
+      if (field === "visible_notes") {
+        return { ...plan, notes: setVisibleFlightPlanNotes(plan.notes, cleanValue) };
+      }
+      return { ...plan, [field]: cleanValue };
+    }));
+
     timers.current[`${id}-${field}`] = setTimeout(async () => {
+      const currentPlan = plans.find((plan) => plan.id === id);
+      let updatePayload: Record<string, string>;
+
+      if (field === "game_callsign") {
+        const currentNotes = currentPlan?.notes ?? "";
+        updatePayload = { notes: setGameCallsignInNotes(currentNotes, cleanValue) };
+      } else if (field === "visible_notes") {
+        const currentNotes = currentPlan?.notes ?? "";
+        updatePayload = { notes: setVisibleFlightPlanNotes(currentNotes, cleanValue) };
+      } else {
+        updatePayload = { [field]: cleanValue };
+      }
+
       const { error } = await supabase
         .from("flight_plans")
-        .update({
-          [field]: cleanValue,
-          updated_at: new Date().toISOString(),
-        })
+        .update({ ...updatePayload, updated_at: new Date().toISOString() })
         .eq("id", id)
         .eq("created_by", pilotId)
         .neq("status", "FINISHED");
@@ -216,7 +217,6 @@ export default function PilotFlightPlans({
 
   async function finishFlight(id: string) {
     const confirmed = confirm("¿Finalizar este vuelo y volver al dashboard?");
-
     if (!confirmed) return;
 
     const { error } = await supabase
@@ -259,6 +259,7 @@ export default function PilotFlightPlans({
 
       {plans.map((plan) => {
         const isFinished = plan.status === "FINISHED";
+        const gameCallsign = getGameCallsignFromNotes(plan.notes) || plan.callsign;
 
         return (
           <div key={plan.id} className="panel rounded-3xl p-6">
@@ -268,18 +269,12 @@ export default function PilotFlightPlans({
                   value={plan.callsign}
                   disabled={isFinished}
                   maxLength={12}
-                  onChange={(e) =>
-                    autoSave(plan.id, "callsign", e.target.value)
-                  }
+                  onChange={(e) => autoSave(plan.id, "callsign", e.target.value)}
                   className="mono w-full bg-transparent text-2xl font-extrabold text-sky-400 outline-none disabled:opacity-60"
                 />
 
                 <p className="mt-1 text-sm text-slate-400">
-                  <span
-                    className={`rounded-lg px-2 py-1 ${
-                      emergencyClass(plan.transponder)
-                    }`}
-                  >
+                  <span className={`rounded-lg px-2 py-1 ${emergencyClass(plan.transponder)}`}>
                     XPDR {plan.transponder}
                   </span>{" "}
                   · {plan.status} · {plan.sector_status}
@@ -292,19 +287,25 @@ export default function PilotFlightPlans({
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div>
+                <input
+                  value={gameCallsign}
+                  disabled={isFinished}
+                  maxLength={12}
+                  onChange={(e) => autoSave(plan.id, "game_callsign", e.target.value)}
+                  className="input-control w-full rounded-xl p-3 disabled:opacity-60"
+                  placeholder="Callsign en el juego"
+                />
+                <p className="mt-1 text-xs text-slate-500">Usado solo para vincular el avión de Project Flight con este plan.</p>
+              </div>
+
               <select
                 value={plan.aircraft_type}
                 disabled={isFinished}
-                onChange={(e) =>
-                  autoSave(plan.id, "aircraft_type", e.target.value)
-                }
+                onChange={(e) => autoSave(plan.id, "aircraft_type", e.target.value)}
                 className="input-control rounded-xl p-3 disabled:opacity-60"
               >
-                {AIRCRAFT_TYPES.map((aircraft) => (
-                  <option key={aircraft} value={aircraft}>
-                    {aircraft}
-                  </option>
-                ))}
+                {AIRCRAFT_TYPES.map((aircraft) => <option key={aircraft} value={aircraft}>{aircraft}</option>)}
               </select>
 
               <select
@@ -312,13 +313,8 @@ export default function PilotFlightPlans({
                 disabled={isFinished}
                 onChange={(e) => {
                   const newRules = e.target.value;
-
                   autoSave(plan.id, "flight_rules", newRules);
-                  autoSave(
-                    plan.id,
-                    "transponder",
-                    getDefaultTransponder(newRules)
-                  );
+                  autoSave(plan.id, "transponder", getDefaultTransponder(newRules));
                 }}
                 className="input-control rounded-xl p-3 disabled:opacity-60"
               >
@@ -331,39 +327,25 @@ export default function PilotFlightPlans({
               <select
                 value={plan.departure_icao}
                 disabled={isFinished}
-                onChange={(e) =>
-                  autoSave(plan.id, "departure_icao", e.target.value)
-                }
+                onChange={(e) => autoSave(plan.id, "departure_icao", e.target.value)}
                 className="input-control rounded-xl p-3 disabled:opacity-60"
               >
-                {AIRPORTS.map((airport) => (
-                  <option key={airport} value={airport}>
-                    {airport}
-                  </option>
-                ))}
+                {AIRPORTS.map((airport) => <option key={airport} value={airport}>{airport}</option>)}
               </select>
 
               <select
                 value={plan.arrival_icao}
                 disabled={isFinished}
-                onChange={(e) =>
-                  autoSave(plan.id, "arrival_icao", e.target.value)
-                }
+                onChange={(e) => autoSave(plan.id, "arrival_icao", e.target.value)}
                 className="input-control rounded-xl p-3 disabled:opacity-60"
               >
-                {AIRPORTS.map((airport) => (
-                  <option key={airport} value={airport}>
-                    {airport}
-                  </option>
-                ))}
+                {AIRPORTS.map((airport) => <option key={airport} value={airport}>{airport}</option>)}
               </select>
 
               <input
                 value={plan.route}
                 disabled={isFinished}
-                onChange={(e) =>
-                  autoSave(plan.id, "route", e.target.value)
-                }
+                onChange={(e) => autoSave(plan.id, "route", e.target.value)}
                 className="input-control rounded-xl p-3 disabled:opacity-60"
               />
 
@@ -373,9 +355,7 @@ export default function PilotFlightPlans({
                 inputMode="numeric"
                 maxLength={3}
                 placeholder="FL"
-                onChange={(e) =>
-                  autoSave(plan.id, "flight_level", e.target.value)
-                }
+                onChange={(e) => autoSave(plan.id, "flight_level", e.target.value)}
                 className="input-control rounded-xl p-3 disabled:opacity-60"
               />
 
@@ -386,55 +366,32 @@ export default function PilotFlightPlans({
                 maxLength={4}
                 placeholder="XPDR"
                 onChange={(e) => {
-                  const value = e.target.value
-                    .replace(/[^0-7]/g, "")
-                    .slice(0, 4);
-
-                  setPlans((current) =>
-                    current.map((p) =>
-                      p.id === plan.id ? { ...p, transponder: value } : p
-                    )
-                  );
-
+                  const value = e.target.value.replace(/[^0-7]/g, "").slice(0, 4);
+                  setPlans((current) => current.map((p) => p.id === plan.id ? { ...p, transponder: value } : p));
                   if (value === "7500") {
                     setError("El código 7500 no está disponible.");
                     return;
                   }
-
-                  if (value.length === 4) {
-                    autoSave(plan.id, "transponder", value);
-                  }
+                  if (value.length === 4) autoSave(plan.id, "transponder", value);
                 }}
-                className={`input-control rounded-xl p-3 disabled:opacity-60 ${
-                  emergencyClass(plan.transponder)
-                }`}
+                className={`input-control rounded-xl p-3 disabled:opacity-60 ${emergencyClass(plan.transponder)}`}
               />
             </div>
 
             <textarea
-              value={plan.notes ?? ""}
+              value={getVisibleFlightPlanNotes(plan.notes)}
               disabled={isFinished}
-              onChange={(e) =>
-                autoSave(plan.id, "notes", e.target.value)
-              }
+              onChange={(e) => autoSave(plan.id, "visible_notes", e.target.value)}
               placeholder="Notas adicionales"
               className="input-control mt-4 w-full rounded-xl p-3 disabled:opacity-60"
             />
 
             <div className="mt-4 rounded-2xl border border-white/10 bg-[#020617] p-4 text-sm text-slate-300">
+              <p>Callsign en juego: {gameCallsign}</p>
               <p>Sector asignado: {plan.assumed_by ?? "Sin asumir"}</p>
               <p>Estado de plan de vuelo: {plan.status}</p>
               <p>Estado operativo: {plan.sector_status}</p>
-              <p>
-                Transponder:{" "}
-                <span
-                  className={`rounded-lg px-2 py-1 ${
-                    emergencyClass(plan.transponder)
-                  }`}
-                >
-                  {plan.transponder}
-                </span>
-              </p>
+              <p>Transponder: <span className={`rounded-lg px-2 py-1 ${emergencyClass(plan.transponder)}`}>{plan.transponder}</span></p>
             </div>
 
             {!isFinished && (
