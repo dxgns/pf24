@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import { getDefaultTransponder } from "@/lib/flightRules";
+import { normalizeGameCallsign, setGameCallsignInNotes } from "@/lib/flightPlanGameCallsign";
 
 type CreateFlightPlanResult = {
   ok: boolean;
@@ -24,10 +25,8 @@ export async function createFlightPlan(
 
   const pilotId = session.user?.email ?? session.user?.name ?? "unknown";
 
-  const callsign = String(formData.get("callsign") ?? "")
-    .toUpperCase()
-    .replace(/\s/g, "")
-    .trim();
+  const callsign = normalizeGameCallsign(String(formData.get("callsign") ?? ""));
+  const gameCallsign = normalizeGameCallsign(String(formData.get("gameCallsign") ?? callsign)) || callsign;
 
   const aircraftType = String(formData.get("aircraftType") ?? "");
   const flightRules = String(formData.get("flightRules") ?? "");
@@ -49,10 +48,12 @@ export async function createFlightPlan(
     .replace(/\D/g, "")
     .slice(0, 3);
 
-  const notes = String(formData.get("notes") ?? "");
+  const visibleNotes = String(formData.get("notes") ?? "");
+  const notes = setGameCallsignInNotes(visibleNotes, gameCallsign);
 
   if (
     !callsign ||
+    !gameCallsign ||
     !aircraftType ||
     !flightRules ||
     !departure ||
@@ -66,17 +67,17 @@ export async function createFlightPlan(
     };
   }
 
-  if (callsign.length < 2) {
+  if (callsign.length < 2 || gameCallsign.length < 2) {
     return {
       ok: false,
-      error: "El callsign debe tener al menos 2 caracteres.",
+      error: "Los callsigns deben tener al menos 2 caracteres.",
     };
   }
 
-  if (callsign.length > 12) {
+  if (callsign.length > 12 || gameCallsign.length > 12) {
     return {
       ok: false,
-      error: "El callsign no puede superar los 12 caracteres.",
+      error: "Los callsigns no pueden superar los 12 caracteres.",
     };
   }
 
@@ -88,100 +89,38 @@ export async function createFlightPlan(
   }
 
   const forbiddenRouteWords = [
-    "GPS",
-    "DIRECT",
-    "DIRECTO",
-    "DIR",
-    "AUTO",
-    "AUTOMATIC",
-    "AUTOMATICA",
-    "AUTOMÁTICA",
-    "RANDOM",
-    "ANY",
-    "ANYWHERE",
-    "NA",
-    "N/A",
-    "NONE",
-    "NULL",
-    "TEST",
-    "PRUEBA",
-    "ASD",
-    "QWE",
-    "ABC",
-    "XXX",
-    "TBD",
-    "TBA",
-    "NO",
-    "SIN",
-    "SINRUTA",
-    "NO ROUTE",
-    "NO PLAN",
-    "FREE",
-    "FREE ROUTE",
-    "VFR",
-    "IFR",
-    "RUTA",
-    "ROUTE",
+    "GPS", "DIRECT", "DIRECTO", "DIR", "AUTO", "AUTOMATIC", "AUTOMATICA",
+    "AUTOMÁTICA", "RANDOM", "ANY", "ANYWHERE", "NA", "N/A", "NONE", "NULL",
+    "TEST", "PRUEBA", "ASD", "QWE", "ABC", "XXX", "TBD", "TBA", "NO", "SIN",
+    "SINRUTA", "NO ROUTE", "NO PLAN", "FREE", "FREE ROUTE", "VFR", "IFR", "RUTA", "ROUTE",
   ];
 
-  const forbiddenRouteCharacters =
-    /[.,;:!¡?¿'"`´¨^~_\-–—/\\|()[\]{}<>+=*@#$%&]/;
+  const forbiddenRouteCharacters = /[.,;:!¡?¿'"`´¨^~_\-–—/\\|()[\]{}<>+=*@#$%&]/;
 
   if (forbiddenRouteCharacters.test(route)) {
     return {
       ok: false,
-      error:
-        "La ruta solo puede contener letras, números y espacios. No uses puntos, guiones, barras ni símbolos.",
+      error: "La ruta solo puede contener letras, números y espacios. No uses puntos, guiones, barras ni símbolos.",
     };
   }
 
-  const routeWords = route
-    .split(/\s+/)
-    .map((word) => word.trim())
-    .filter(Boolean);
-
-  const onlyDctOrGps =
-    routeWords.length > 0 &&
-    routeWords.every((word) => word === "DCT" || word === "GPS");
+  const routeWords = route.split(/\s+/).map((word) => word.trim()).filter(Boolean);
+  const onlyDctOrGps = routeWords.length > 0 && routeWords.every((word) => word === "DCT" || word === "GPS");
 
   if (onlyDctOrGps) {
-    return {
-      ok: false,
-      error:
-        "La ruta no puede estar compuesta solo por GPS y/o DCT. Ingresa puntos de ruta válidos.",
-    };
+    return { ok: false, error: "La ruta no puede estar compuesta solo por GPS y/o DCT. Ingresa puntos de ruta válidos." };
   }
 
-  const invalidRouteWord = routeWords.some((word) =>
-    forbiddenRouteWords.includes(word)
-  );
-
-  if (invalidRouteWord) {
-    return {
-      ok: false,
-      error:
-        "La ruta contiene palabras no válidas como GPS, DIRECT, TEST o similares.",
-    };
+  if (routeWords.some((word) => forbiddenRouteWords.includes(word))) {
+    return { ok: false, error: "La ruta contiene palabras no válidas como GPS, DIRECT, TEST o similares." };
   }
 
   if (routeWords.length < 2 && route !== "LCL") {
-    return {
-      ok: false,
-      error:
-        "La ruta debe tener al menos dos puntos o segmentos, o utilizar LCL.",
-    };
+    return { ok: false, error: "La ruta debe tener al menos dos puntos o segmentos, o utilizar LCL." };
   }
 
-  const repeatedSameWord =
-    routeWords.length > 1 &&
-    routeWords.every((word) => word === routeWords[0]);
-
-  if (repeatedSameWord) {
-    return {
-      ok: false,
-      error:
-        "La ruta no puede repetir el mismo punto en todos los segmentos.",
-    };
+  if (routeWords.length > 1 && routeWords.every((word) => word === routeWords[0])) {
+    return { ok: false, error: "La ruta no puede repetir el mismo punto en todos los segmentos." };
   }
 
   const { data: activePilotFlights, error: activeError } = await supabase
@@ -193,18 +132,11 @@ export async function createFlightPlan(
 
   if (activeError) {
     console.error(activeError);
-
-    return {
-      ok: false,
-      error: "No se pudo verificar si tienes vuelos activos.",
-    };
+    return { ok: false, error: "No se pudo verificar si tienes vuelos activos." };
   }
 
   if (activePilotFlights && activePilotFlights.length > 0) {
-    return {
-      ok: false,
-      error: "Ya tienes un vuelo activo. Finalízalo antes de crear otro.",
-    };
+    return { ok: false, error: "Ya tienes un vuelo activo. Finalízalo antes de crear otro." };
   }
 
   const { data: existingCallsign, error: callsignError } = await supabase
@@ -216,18 +148,28 @@ export async function createFlightPlan(
 
   if (callsignError) {
     console.error(callsignError);
-
-    return {
-      ok: false,
-      error: "No se pudo verificar el callsign.",
-    };
+    return { ok: false, error: "No se pudo verificar el callsign." };
   }
 
   if (existingCallsign && existingCallsign.length > 0) {
-    return {
-      ok: false,
-      error: "Ese callsign ya está en uso por otro vuelo activo.",
-    };
+    return { ok: false, error: "Ese callsign ya está en uso por otro vuelo activo." };
+  }
+
+  const gameMarker = `[[PF24_GAME_CALLSIGN:${gameCallsign}]]%`;
+  const { data: existingGameCallsign, error: gameCallsignError } = await supabase
+    .from("flight_plans")
+    .select("id")
+    .like("notes", gameMarker)
+    .neq("status", "FINISHED")
+    .limit(1);
+
+  if (gameCallsignError) {
+    console.error(gameCallsignError);
+    return { ok: false, error: "No se pudo verificar el callsign del juego." };
+  }
+
+  if (existingGameCallsign && existingGameCallsign.length > 0) {
+    return { ok: false, error: "Ese callsign del juego ya está vinculado a otro vuelo activo." };
   }
 
   const { error } = await supabase.from("flight_plans").insert({
@@ -247,17 +189,12 @@ export async function createFlightPlan(
 
   if (error) {
     console.error("PF24 createFlightPlan insert failed:", error);
-
-    return {
-      ok: false,
-      error: "No se pudo crear el plan de vuelo. Inténtalo nuevamente.",
-    };
+    return { ok: false, error: "No se pudo crear el plan de vuelo. Inténtalo nuevamente." };
   }
 
   revalidatePath("/piloto");
   revalidatePath("/atc");
+  revalidatePath("/scope");
 
-  return {
-    ok: true,
-  };
+  return { ok: true };
 }
