@@ -62,8 +62,8 @@ const SIMPLE_HEIGHT = 36;
 const DETAIL_WIDTH = 156;
 const DETAIL_HEIGHT = 64;
 const VECTOR_PIXELS_PER_NM = 28;
-const TRAIL_SAMPLE_MS = 700;
-const TRAIL_MIN_DISTANCE = 0.04;
+const TRAIL_SAMPLE_MS = 1100;
+const TRAIL_MIN_DISTANCE = 0.12;
 const STALE_TRAFFIC_MS = 15000;
 
 const MIN_X = -180000;
@@ -324,7 +324,7 @@ export default function ProjectFlightTrafficV5({ initialPlans }: Props) {
             const lastSample = lastTrailSampleRef.current.get(item.id) ?? 0, history = trailsRef.current.get(item.id) ?? [], lastPoint = history[history.length - 1] ?? { x: oldLive.x, y: oldLive.y };
             const distance = Math.hypot(oldLive.x - lastPoint.x, oldLive.y - lastPoint.y), aircraftMoved = Math.hypot(item.x - oldLive.x, item.y - oldLive.y);
             if (now - lastSample >= TRAIL_SAMPLE_MS && aircraftMoved > 0.002 && distance >= TRAIL_MIN_DISTANCE) { trailsRef.current.set(item.id, [...history, { x: oldLive.x, y: oldLive.y, time: now }].slice(-5)); lastTrailSampleRef.current.set(item.id, now); }
-            else if (history.length === 0 && now - lastSample >= TRAIL_SAMPLE_MS && aircraftMoved >= 0.01) { trailsRef.current.set(item.id, [{ x: oldLive.x, y: oldLive.y, time: now }]); lastTrailSampleRef.current.set(item.id, now); }
+            else if (history.length === 0 && now - lastSample >= TRAIL_SAMPLE_MS && aircraftMoved >= TRAIL_MIN_DISTANCE) { trailsRef.current.set(item.id, [{ x: oldLive.x, y: oldLive.y, time: now }]); lastTrailSampleRef.current.set(item.id, now); }
           }
           liveRef.current.set(item.id, { traffic: { ...item, verticalRate }, lastSeen: now });
         }
@@ -385,7 +385,7 @@ export default function ProjectFlightTrafficV5({ initialPlans }: Props) {
           return <g key={item.id}>
             {showTrail && history.map((trailPoint, index) => {
               const point = screenPoint(hostSize, trailPoint.x, trailPoint.y, viewport), opacity = settings.trailFade ? 0.38 + ((index + 1) / Math.max(1, history.length)) * 0.62 : 1;
-              return <circle key={`${item.id}-trail-${trailPoint.time}`} cx={point.x} cy={point.y} r="4" fill="#00ff00" stroke="#00ff00" strokeWidth="0.8" opacity={opacity}/>;
+              return <circle key={`${item.id}-trail-${trailPoint.time}`} cx={point.x} cy={point.y} r="3" fill="#00ff00" stroke="#00ff00" strokeWidth="0.6" opacity={opacity}/>;
             })}
             {showHeading && <line x1={marker.x} y1={marker.y} x2={marker.x + unit.x * vectorLength} y2={marker.y + unit.y * vectorLength} stroke="#00e000" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}
             <line x1={marker.x} y1={marker.y} x2={end.x} y2={end.y} stroke="#00e000" strokeWidth="1.2" vectorEffect="non-scaling-stroke"/>
