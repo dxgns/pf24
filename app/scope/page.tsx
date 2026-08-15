@@ -10,8 +10,7 @@ import ProjectFlightTrafficConfigured from "@/components/scope/ProjectFlightTraf
 import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
-import ScopeRadarMap from "@/components/scope/ScopeRadarMap";
-import ScopeRadarMapVisibility from "@/components/scope/ScopeRadarMapVisibility";
+import ScopeRadarMapStatic from "@/components/scope/ScopeRadarMapStatic";
 import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
 import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
@@ -61,8 +60,7 @@ export default async function ScopePage() {
       <ScopeConnectionPersistence />
       <ScopeLayoutGuards />
       <WeatherPanelV2 />
-      <ScopeRadarMap />
-      <ScopeRadarMapVisibility />
+      <ScopeRadarMapStatic />
       <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
       <ScopeTrafficSettings />
       <ScopePersonalization />
