@@ -28,6 +28,8 @@ import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
 import ScopeChromeAdditions from "@/components/scope/ScopeChromeAdditions";
 import ScopeAtisDialogV2 from "@/components/scope/ScopeAtisDialogV2";
+import ScopeAtisJurisdictionGuard from "@/components/scope/ScopeAtisJurisdictionGuard";
+import ScopeConnectDialogPersistence from "@/components/scope/ScopeConnectDialogPersistence";
 import ScopeAtcPresence from "@/components/scope/ScopeAtcPresence";
 import ScopeOperationalSyncV2 from "@/components/scope/ScopeOperationalSyncV2";
 import ScopeNativeListBodyGuard from "@/components/scope/ScopeNativeListBodyGuard";
@@ -70,6 +72,7 @@ export default async function ScopePage() {
       <ScopeNativeListCss />
       <PF24Scope initialPlans={plans} controllerName={controllerName} />
       <ScopeConnectionPersistence />
+      <ScopeConnectDialogPersistence />
       <ScopeOwnedTrafficLifecycle />
       <ScopeLayoutGuards />
       <WeatherPanelV2 />
@@ -93,6 +96,7 @@ export default async function ScopePage() {
       <ScopeUiRefinements />
       <ScopeChromeAdditions />
       <ScopeAtisDialogV2 controllerName={controllerName} />
+      <ScopeAtisJurisdictionGuard controllerName={controllerName} />
       <ScopeAtisDisconnectCleanup controllerName={controllerName} />
       <ScopeAtcPresence controllerName={controllerName} />
       <ScopeOperationalSyncV2 />
