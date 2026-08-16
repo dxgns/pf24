@@ -16,6 +16,18 @@ const DIGIT_EN: Record<string, string> = {
   "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
 };
 
+const RUNWAY_SIDE_ES: Record<string, string> = {
+  L: "izquierda",
+  R: "derecha",
+  C: "centro",
+};
+
+const RUNWAY_SIDE_EN: Record<string, string> = {
+  L: "left",
+  R: "right",
+  C: "center",
+};
+
 export type AtisSpeechData = {
   airport_icao: string;
   info_letter: string;
@@ -41,9 +53,7 @@ function runway(value: string, language: "es" | "en") {
   const number = normalized.replace(/[^0-9]/g, "");
   const side = normalized.match(/[LRC]$/)?.[0];
   const sideWord = side
-    ? language === "es"
-      ? { L: "izquierda", R: "derecha", C: "centro" }[side]
-      : { L: "left", R: "right", C: "center" }[side]
+    ? (language === "es" ? RUNWAY_SIDE_ES : RUNWAY_SIDE_EN)[side] ?? ""
     : "";
   return `${digits(number, language)}${sideWord ? ` ${sideWord}` : ""}`;
 }
