@@ -38,14 +38,12 @@ type BotConfig = {
 const BOT_AIRPORTS = [
   "MDPC",
   "MDST",
-  "MDAB",
   "LCLK",
   "LCPH",
-  "LCRA",
-  "EGKK",
-  "EGHI",
   "LEMH",
   "GCLP",
+  "EGKK",
+  "EGHI",
   "EFKT",
 ] as const;
 
@@ -110,6 +108,50 @@ function addAtisPauses(text: string) {
     .replace(/;\s+/g, "; … ")
     .replace(/,\s+/g, ", ")
     .trim();
+}
+
+const remarksTranslationCache = new Map<string, string>();
+
+async function translateRemarksToEnglish(value: string | null | undefined) {
+  const remarks = (value ?? "").trim();
+  if (!remarks) return "";
+
+  const cached = remarksTranslationCache.get(remarks);
+  if (cached) return cached;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+
+  try {
+    const params = new URLSearchParams({
+      client: "gtx",
+      sl: "es",
+      tl: "en",
+      dt: "t",
+      q: remarks,
+    });
+    const response = await fetch(`https://translate.googleapis.com/translate_a/single?${params.toString()}`, {
+      signal: controller.signal,
+      headers: { "User-Agent": "PF24-ATIS/1.0" },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const payload = await response.json() as unknown;
+    const blocks = Array.isArray(payload) && Array.isArray(payload[0]) ? payload[0] : [];
+    const translated = blocks
+      .map((block) => Array.isArray(block) && typeof block[0] === "string" ? block[0] : "")
+      .join("")
+      .trim();
+
+    if (!translated) throw new Error("La respuesta de traducción llegó vacía.");
+    remarksTranslationCache.set(remarks, translated);
+    return translated;
+  } catch (error) {
+    console.error("[PF24 ATIS] No se pudieron traducir las observaciones al inglés; se omitirán en la transmisión inglesa.", error);
+    return "";
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function applyRadioProcessing(inputPath: string, outputPath: string) {
@@ -314,8 +356,12 @@ class AtisVoiceBot {
   private async prepareAtis(row: AtisRow) {
     const version = ++this.synthesisVersion;
     const stamp = Date.now();
+    const translatedRemarks = await translateRemarksToEnglish(row.remarks);
+
+    if (version !== this.synthesisVersion || this.latestAtisId !== row.id) return;
+
     const spanish = buildSpanishAtisSpeech(row);
-    const english = buildEnglishAtisSpeech(row);
+    const english = buildEnglishAtisSpeech(row, translatedRemarks);
 
     this.log("log", `Sintetizando INFO ${row.info_letter}...`);
     const [spanishPath, englishPath] = await Promise.all([
