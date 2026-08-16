@@ -32,6 +32,7 @@ export type AtisSpeechData = {
   runway: string;
   extra_info?: string | null;
   remarks?: string | null;
+  full_text?: string | null;
 };
 
 type Language = "es" | "en";
@@ -167,9 +168,17 @@ function metarPhrases(parsed: ParsedMetar, language: Language) {
 }
 
 function transitionValues(row: AtisSpeechData) {
-  const value = `${row.extra_info ?? ""} ${row.runway ?? ""}`;
-  const altitude = value.match(/\[TRANS_ALT=(\d{1,5})\]/i)?.[1];
-  const level = value.match(/\[TRANS_LVL=(\d{1,3})\]/i)?.[1];
+  const value = `${row.extra_info ?? ""} ${row.runway ?? ""} ${row.full_text ?? ""}`;
+
+  const metadataAltitude = value.match(/\[TRANS_ALT=(\d{1,5})\]/i)?.[1];
+  const metadataLevel = value.match(/\[TRANS_LVL=(\d{1,3})\]/i)?.[1];
+  const textAltitude = value.match(/\bTRANS(?:ITION)?\s*ALT(?:ITUDE)?(?:\s*\(FT\))?\s*[:=]?\s*(\d{1,5})\b/i)?.[1];
+  const textLevel = value.match(/\bTRANS(?:ITION)?\s*LVL|\bTRANSITION\s*LEVEL/i)
+    ? value.match(/(?:TRANS(?:ITION)?\s*LVL|TRANSITION\s*LEVEL)\s*[:=]?\s*(?:FL\s*)?(\d{1,3})\b/i)?.[1]
+    : undefined;
+
+  const altitude = metadataAltitude ?? textAltitude;
+  const level = metadataLevel ?? textLevel;
   if (!altitude || !level) return null;
   return { altitude, level: level.padStart(3, "0") };
 }

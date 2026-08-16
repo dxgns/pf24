@@ -47,6 +47,8 @@ const BOT_AIRPORTS = [
   "EFKT",
 ] as const;
 
+const ATIS_SELECT = "id, airport_icao, info_letter, metar, approach_primary, approach_optional, runway, extra_info, remarks, full_text, created_at";
+
 function required(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Falta la variable de entorno ${name}`);
@@ -72,7 +74,6 @@ function loadBotConfigs(): BotConfig[] {
     const number = index + 1;
     const key = slot(number);
 
-    // ATIS 01 keeps compatibility with the variables already used in Railway.
     const token = process.env[`ATIS_${key}_TOKEN`]
       ?? (number === 1 ? process.env.DISCORD_TOKEN : undefined);
     const channelId = process.env[`ATIS_${key}_CHANNEL_ID`]
@@ -390,10 +391,21 @@ class AtisVoiceBot {
     this.log("log", `INFO ${row.info_letter} preparada; cambiará al terminar el ciclo actual.`);
   }
 
+  private async fetchAtisById(id: string) {
+    const { data, error } = await this.db
+      .from("atis_messages")
+      .select(ATIS_SELECT)
+      .eq("id", id)
+      .maybeSingle<AtisRow>();
+
+    if (error) throw error;
+    return data;
+  }
+
   private async loadLatestAtis() {
     const { data, error } = await this.db
       .from("atis_messages")
-      .select("id, airport_icao, info_letter, metar, approach_primary, approach_optional, runway, extra_info, remarks, created_at")
+      .select(ATIS_SELECT)
       .eq("airport_icao", this.config.airport)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -416,8 +428,16 @@ class AtisVoiceBot {
     if (row.airport_icao !== this.config.airport) return;
     this.latestAtisId = row.id;
     this.pendingAudio = null;
-    this.log("log", `Nuevo ATIS INFO ${row.info_letter}.`);
-    await this.prepareAtis(row);
+    this.log("log", `Nuevo ATIS INFO ${row.info_letter}; recargando fila completa.`);
+
+    const completeRow = await this.fetchAtisById(row.id);
+    if (!completeRow || completeRow.airport_icao !== this.config.airport) {
+      this.log("error", `No se pudo recargar el ATIS ${row.id}; usando payload de Realtime.`);
+      await this.prepareAtis(row);
+      return;
+    }
+
+    await this.prepareAtis(completeRow);
   }
 
   private handleDelete(oldRow: Partial<AtisRow>) {
