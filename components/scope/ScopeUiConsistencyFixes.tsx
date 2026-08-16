@@ -59,9 +59,7 @@ function compactFlightPlanDialogs() {
     }
 
     root.querySelectorAll<HTMLElement>("label").forEach((label) => {
-      if (getComputedStyle(label).display === "grid") {
-        label.style.gridTemplateColumns = "122px minmax(0, 1fr)";
-      }
+      if (getComputedStyle(label).display === "grid") label.style.gridTemplateColumns = "122px minmax(0, 1fr)";
     });
 
     const labels = Array.from(root.querySelectorAll<HTMLElement>("div,span"));
@@ -86,18 +84,13 @@ function fixConfigLabels() {
 
 function syncSavedWeatherVisibility() {
   let saved: { atis?: boolean; metar?: boolean } = {};
-  try {
-    saved = JSON.parse(localStorage.getItem(WEATHER_VISIBILITY_KEY) ?? "{}");
-  } catch {}
-
+  try { saved = JSON.parse(localStorage.getItem(WEATHER_VISIBILITY_KEY) ?? "{}"); } catch {}
   const weather = document.querySelector<HTMLElement>("[data-pf24-weather-window='true']");
   if (!weather) return;
   const headerText = weather.firstElementChild?.textContent?.toUpperCase() ?? "";
   const hasAtis = headerText.includes("ATIS");
   const wantsAtis = saved.atis === true;
-  if (hasAtis !== wantsAtis) {
-    window.dispatchEvent(new CustomEvent("pf24-weather-toggle", { detail: "atis" }));
-  }
+  if (hasAtis !== wantsAtis) window.dispatchEvent(new CustomEvent("pf24-weather-toggle", { detail: "atis" }));
 }
 
 export default function ScopeUiConsistencyFixes() {
@@ -109,8 +102,8 @@ export default function ScopeUiConsistencyFixes() {
     const style = document.createElement("style");
     style.dataset.pf24ConsistencyFixes = "true";
     style.textContent = `
-      [data-pf24-weather-window='true'] { background:#555c61 !important; }
-      [data-pf24-weather-window='true'] > div:not(:first-child) { background:#555c61 !important; }
+      [data-pf24-weather-window='true'] { background:transparent !important; }
+      [data-pf24-weather-window='true'] > div:not(:first-child) { background:transparent !important; }
       [data-pf24-weather-window='true'] > div:not(:first-child) button { background:transparent !important; }
 
       [data-pf24-live-hold-list='true'] { width:100% !important; max-width:100% !important; }
@@ -119,15 +112,10 @@ export default function ScopeUiConsistencyFixes() {
         grid-template-columns:minmax(0,1fr) 36px 36px !important;
       }
       [data-pf24-live-hold-list='true'] > div:first-child > :first-child,
-      [data-pf24-live-hold-list='true'] > div:nth-child(2) > div > :first-child {
-        display:none !important;
-      }
+      [data-pf24-live-hold-list='true'] > div:nth-child(2) > div > :first-child { display:none !important; }
       [data-pf24-live-hold-list='true'] > div:first-child > :nth-child(2),
       [data-pf24-live-hold-list='true'] > div:nth-child(2) > div > :nth-child(2) {
-        min-width:0 !important;
-        overflow:hidden !important;
-        text-overflow:ellipsis !important;
-        white-space:nowrap !important;
+        min-width:0 !important; overflow:hidden !important; text-overflow:ellipsis !important; white-space:nowrap !important;
       }
     `;
     document.head.appendChild(style);
@@ -142,9 +130,7 @@ export default function ScopeUiConsistencyFixes() {
         const action = button.textContent?.trim().toUpperCase() ?? "";
         if (action === "SEND") {
           atisCommittedRef.current = true;
-          window.setTimeout(() => {
-            atisSnapshotRef.current = localStorage.getItem(ATIS_CONFIG_KEY);
-          }, 0);
+          window.setTimeout(() => { atisSnapshotRef.current = localStorage.getItem(ATIS_CONFIG_KEY); }, 0);
         }
         if (action === "CANCEL") {
           if (atisSnapshotRef.current === null) localStorage.removeItem(ATIS_CONFIG_KEY);
