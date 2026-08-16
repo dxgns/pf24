@@ -163,7 +163,10 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
     for (const label of labels) {
       const displayed = callsignFromTrafficLabel(label);
       const plan = planByCallsign.get(normalized(displayed));
-      const controlledByMe = Boolean(plan && position && plan.assumed_by === position);
+      // Unplanned traffic is owned exclusively by ScopeUnplannedTrafficOperationsV2.
+      // Do not paint it here, otherwise both controllers fight and the target flickers grey/green.
+      if (!plan) continue;
+      const controlledByMe = Boolean(position && plan.assumed_by === position);
       setTreeColor(label, controlledByMe ? GREEN : GREY);
     }
 
@@ -174,7 +177,8 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
         const row = wrapper.firstElementChild instanceof HTMLElement ? wrapper.firstElementChild : wrapper;
         const callsign = row.firstElementChild?.textContent?.trim().toUpperCase() ?? "";
         const plan = planByCallsign.get(normalized(callsign));
-        const color = plan && position && plan.assumed_by === position ? GREEN : GREY;
+        if (!plan) continue;
+        const color = position && plan.assumed_by === position ? GREEN : GREY;
         setTreeColor(row, color);
       }
     }
@@ -185,11 +189,13 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       if (!label) continue;
       const displayed = callsignFromTrafficLabel(label);
       const plan = planByCallsign.get(normalized(displayed));
+      // Let the unplanned controller own its menu state too.
+      if (!plan) continue;
       const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>("button"));
       const assume = buttons.find((button) => ["ASSUME", "TRANSFER"].includes(button.textContent?.trim().toUpperCase() ?? ""));
       const hold = buttons.find((button) => ["HOLD", "XHOLD"].includes(button.textContent?.trim().toUpperCase() ?? ""));
-      if (assume) assume.textContent = plan && position && plan.assumed_by === position ? "Transfer" : "Assume";
-      if (hold && plan) hold.textContent = heldIds.includes(plan.id) ? "XHOLD" : "HOLD";
+      if (assume) assume.textContent = position && plan.assumed_by === position ? "Transfer" : "Assume";
+      if (hold) hold.textContent = heldIds.includes(plan.id) ? "XHOLD" : "HOLD";
     }
   }, [heldIds, planByCallsign, position]);
 
@@ -308,15 +314,14 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       const action = button.textContent?.trim().toUpperCase() ?? "";
       if (!["ASSUME", "TRANSFER", "FPL", "HOLD", "XHOLD", "FREE", "CONTACT ME"].includes(action)) return;
 
-      event.preventDefault();
-      event.stopImmediatePropagation();
-
       const callsign = callsignFromTrafficLabel(label);
       const plan = planForDisplayedCallsign(plans, callsign);
-      if (!plan) {
-        alert(`No hay un plan PF24 asociado a ${callsign || "este tráfico"}.`);
-        return;
-      }
+      // Unplanned traffic is handled by ScopeUnplannedTrafficOperationsV2.
+      // Do not prevent/stop the event and do not show the old no-plan error here.
+      if (!plan) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
 
       if (action === "FPL") setFplPlanId(plan.id);
       else if (action === "HOLD" || action === "XHOLD") toggleHold(plan);
