@@ -6,17 +6,26 @@ import { supabase } from "@/lib/supabase";
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const ATIS_CONFIG_STORAGE_KEY = "pf24_scope_atis_configs_v1";
 
+const ATIS_AIRPORTS = new Set([
+  "MDPC",
+  "MDST",
+  "LCLK",
+  "LCPH",
+  "EGKK",
+  "EGHI",
+  "LEMH",
+  "GCLP",
+  "EFKT",
+]);
+
 const FIR_AIRPORTS: Record<string, string[]> = {
-  MDCS: ["MDPC", "MDST", "MDCR", "MDAB"],
+  MDCS: ["MDPC", "MDST"],
   GCCC: ["GCLP"],
   LECB: ["LEMH"],
-  LCCC: ["LCLK", "LCPH", "LCRA"],
+  LCCC: ["LCLK", "LCPH"],
   EGTT: ["EGKK", "EGHI"],
   EFIN: ["EFKT"],
-  MTCA: ["MTCA"],
 };
-
-const KNOWN_AIRPORTS = new Set(Object.values(FIR_AIRPORTS).flat());
 
 type StoredConnection = { callsign?: string };
 type StoredAtisConfig = { active?: boolean; dep?: string; arr?: string; approach?: string; remarks?: string };
@@ -38,19 +47,19 @@ function jurisdiction(position: string) {
   const facility = upper.split("_").at(-1) ?? "";
 
   if (["DEL", "GND", "TWR"].includes(facility)) {
-    return KNOWN_AIRPORTS.has(airport) ? new Set([airport]) : new Set<string>();
+    return ATIS_AIRPORTS.has(airport) ? new Set([airport]) : new Set<string>();
   }
 
   if (facility === "APP") {
     const fir = Object.entries(FIR_AIRPORTS).find(([, airports]) => airports.includes(airport))?.[0];
-    return new Set(fir ? FIR_AIRPORTS[fir] : []);
+    return new Set((fir ? FIR_AIRPORTS[fir] : []).filter((icao) => ATIS_AIRPORTS.has(icao)));
   }
 
   if (facility === "CTR") {
     const fir = Object.keys(FIR_AIRPORTS).find((candidate) => upper.startsWith(candidate));
-    if (fir) return new Set(FIR_AIRPORTS[fir]);
+    if (fir) return new Set(FIR_AIRPORTS[fir].filter((icao) => ATIS_AIRPORTS.has(icao)));
     const airportFir = Object.entries(FIR_AIRPORTS).find(([, airports]) => airports.includes(airport))?.[0];
-    return new Set(airportFir ? FIR_AIRPORTS[airportFir] : []);
+    return new Set((airportFir ? FIR_AIRPORTS[airportFir] : []).filter((icao) => ATIS_AIRPORTS.has(icao)));
   }
 
   return new Set<string>();
@@ -70,7 +79,8 @@ function disableUnauthorizedConfigs(allowed: Set<string>) {
   let changed = false;
   const next: StoredAtisConfigs = { ...configs };
   for (const [icao, config] of Object.entries(configs)) {
-    if (allowed.has(icao.toUpperCase()) || !config?.active) continue;
+    const upper = icao.toUpperCase();
+    if ((ATIS_AIRPORTS.has(upper) && allowed.has(upper)) || !config?.active) continue;
     next[icao] = { ...config, active: false };
     changed = true;
   }
@@ -102,14 +112,29 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
       const select = airportSelect(dialog);
       if (select) {
         Array.from(select.options).forEach((option) => {
-          option.disabled = !allowed.has(option.value.toUpperCase());
-          option.hidden = !allowed.has(option.value.toUpperCase());
+          const icao = option.value.toUpperCase();
+          const enabled = ATIS_AIRPORTS.has(icao) && allowed.has(icao);
+          option.disabled = !enabled;
+          option.hidden = !enabled;
         });
-        if (!allowed.has(select.value.toUpperCase())) {
-          const firstAllowed = Array.from(select.options).find((option) => allowed.has(option.value.toUpperCase()));
+        if (!ATIS_AIRPORTS.has(select.value.toUpperCase()) || !allowed.has(select.value.toUpperCase())) {
+          const firstAllowed = Array.from(select.options).find((option) => {
+            const icao = option.value.toUpperCase();
+            return ATIS_AIRPORTS.has(icao) && allowed.has(icao);
+          });
           if (firstAllowed) setReactSelectValue(select, firstAllowed.value);
         }
       }
+    }
+
+    // Global invariant: ATIS may only exist for the explicitly approved airports.
+    const { data: allAtis } = await supabase.from("atis_messages").select("id,airport_icao");
+    const globallyInvalidIds = (allAtis ?? [])
+      .filter((row) => !ATIS_AIRPORTS.has(String(row.airport_icao ?? "").toUpperCase()))
+      .map((row) => row.id)
+      .filter(Boolean);
+    if (globallyInvalidIds.length) {
+      await supabase.from("atis_messages").delete().in("id", globallyInvalidIds);
     }
 
     if (!nextPosition) return;
@@ -148,7 +173,9 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
       if (!dialog) return;
       const select = airportSelect(dialog);
       const selected = select?.value?.toUpperCase() ?? "";
-      if (!selected || jurisdiction(position || readPosition()).has(selected)) return;
+      if (!selected) return;
+      const allowed = jurisdiction(position || readPosition());
+      if (ATIS_AIRPORTS.has(selected) && allowed.has(selected)) return;
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
