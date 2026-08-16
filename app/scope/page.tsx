@@ -13,6 +13,8 @@ import ScopeTrafficOperations from "@/components/scope/ScopeTrafficOperations";
 import ScopeUnplannedTrafficOperationsV3 from "@/components/scope/ScopeUnplannedTrafficOperationsV3";
 import ScopeTrafficOwnershipVisuals from "@/components/scope/ScopeTrafficOwnershipVisuals";
 import ScopeSharedHoldSync from "@/components/scope/ScopeSharedHoldSync";
+import ScopeHoldTelemetry from "@/components/scope/ScopeHoldTelemetry";
+import ScopeSectorListRules from "@/components/scope/ScopeSectorListRules";
 import ScopeTrafficFooterPlacement from "@/components/scope/ScopeTrafficFooterPlacement";
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
@@ -75,6 +77,7 @@ export default async function ScopePage() {
       <ScopeUnplannedTrafficOperationsV3 initialPlans={plans} />
       <ScopeSharedHoldSync />
       <ScopeTrafficOperations initialPlans={plans} />
+      <ScopeHoldTelemetry />
       <ScopeTrafficOwnershipVisuals initialPlans={plans} />
       <ScopeTrafficFooterPlacement />
       <ScopePersonalization />
@@ -87,6 +90,7 @@ export default async function ScopePage() {
       <ScopeAtisDisconnectCleanup controllerName={controllerName} />
       <ScopeAtcPresence controllerName={controllerName} />
       <ScopeOperationalSyncV2 />
+      <ScopeSectorListRules initialPlans={plans} />
       <ScopeNativeListBodyGuard />
     </>
   );
