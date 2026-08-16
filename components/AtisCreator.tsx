@@ -4,40 +4,22 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { buildAtisText } from "@/lib/buildAtis";
 
-const AIRPORTS = [
-  "MDPC",
-  "MDST",
-  "MDAB",
-  "LCLK",
-  "LCPH",
-  "LCRA",
-  "EGKK",
-  "EGHI",
-  "LEMH",
-  "GCLP",
-  "EFKT",
-];
+const AIRPORTS = ["MDPC", "MDST", "MDAB", "LCLK", "LCPH", "LCRA", "EGKK", "EGHI", "LEMH", "GCLP", "EFKT"];
 
 function nextInfoLetter(last?: string) {
   if (!last) return "A";
-
   const code = last.charCodeAt(0);
-
   if (code >= 90) return "A";
-
   return String.fromCharCode(code + 1);
 }
 
-export default function AtisCreator({
-  controllerPosition,
-}: {
-  controllerPosition: string;
-}) {
+export default function AtisCreator({ controllerPosition }: { controllerPosition: string }) {
   const [airport, setAirport] = useState("MDPC");
   const [infoLetter, setInfoLetter] = useState("A");
   const [approachPrimary, setApproachPrimary] = useState("ILS");
   const [approachOptional, setApproachOptional] = useState("");
-  const [runway, setRunway] = useState("");
+  const [departureRunway, setDepartureRunway] = useState("");
+  const [arrivalRunway, setArrivalRunway] = useState("");
   const [extraInfo, setExtraInfo] = useState("");
   const [remarks, setRemarks] = useState("");
   const [loading, setLoading] = useState(false);
@@ -51,26 +33,27 @@ export default function AtisCreator({
         .order("created_at", { ascending: false })
         .limit(1)
         .single();
-
       setInfoLetter(nextInfoLetter(data?.info_letter));
     }
-
     loadNextInfo();
   }, [airport]);
 
   async function publishAtis() {
-    const runwayFormatted = runway.trim().toUpperCase();
+    const departure = departureRunway.trim().toUpperCase();
+    const arrival = arrivalRunway.trim().toUpperCase();
     const extraInfoFormatted = extraInfo.trim().toUpperCase();
     const remarksFormatted = remarks.trim().toUpperCase();
 
-    if (!runwayFormatted) {
-      alert("Debes ingresar una pista.");
+    if (!departure || !arrival) {
+      alert("Debes ingresar la pista de salida y la pista de llegada.");
       return;
     }
 
+    // Se conserva una sola columna en Supabase para no requerir migración.
+    const runwayFormatted = `DEP ${departure} | ARR ${arrival}`;
+
     try {
       setLoading(true);
-
       const response = await fetch(`/api/metar?icao=${airport}`);
       const metarData = await response.json();
       const metar = metarData.metar ?? "METAR NO DISPONIBLE";
@@ -81,7 +64,8 @@ export default function AtisCreator({
         metar,
         approachPrimary,
         approachOptional,
-        runway: runwayFormatted,
+        departureRunway: departure,
+        arrivalRunway: arrival,
         extraInfo: extraInfoFormatted,
         remarks: remarksFormatted,
       });
@@ -106,9 +90,9 @@ export default function AtisCreator({
       }
 
       alert(`ATIS ${airport} INFO ${infoLetter} publicado.`);
-
       setInfoLetter(nextInfoLetter(infoLetter));
-      setRunway("");
+      setDepartureRunway("");
+      setArrivalRunway("");
       setExtraInfo("");
       setRemarks("");
     } finally {
@@ -121,37 +105,19 @@ export default function AtisCreator({
       <h2 className="text-2xl font-extrabold">ATIS</h2>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <select
-          value={airport}
-          onChange={(e) => setAirport(e.target.value)}
-          className="rounded-xl bg-slate-800 p-3"
-        >
-          {AIRPORTS.map((airport) => (
-            <option key={airport}>{airport}</option>
-          ))}
+        <select value={airport} onChange={(e) => setAirport(e.target.value)} className="rounded-xl bg-slate-800 p-3">
+          {AIRPORTS.map((item) => <option key={item}>{item}</option>)}
         </select>
 
-        <input
-          value={`INFO ${infoLetter}`}
-          disabled
-          className="rounded-xl bg-slate-800 p-3 opacity-70"
-        />
+        <input value={`INFO ${infoLetter}`} disabled className="rounded-xl bg-slate-800 p-3 opacity-70" />
 
-        <select
-          value={approachPrimary}
-          onChange={(e) => setApproachPrimary(e.target.value)}
-          className="rounded-xl bg-slate-800 p-3"
-        >
+        <select value={approachPrimary} onChange={(e) => setApproachPrimary(e.target.value)} className="rounded-xl bg-slate-800 p-3">
           <option value="ILS">ILS</option>
           <option value="RNP">RNP</option>
           <option value="VISUAL">VISUAL</option>
         </select>
 
-        <select
-          value={approachOptional}
-          onChange={(e) => setApproachOptional(e.target.value)}
-          className="rounded-xl bg-slate-800 p-3"
-        >
+        <select value={approachOptional} onChange={(e) => setApproachOptional(e.target.value)} className="rounded-xl bg-slate-800 p-3">
           <option value="">Sin opcional</option>
           <option value="ILS">ILS</option>
           <option value="RNP">RNP</option>
@@ -159,9 +125,16 @@ export default function AtisCreator({
         </select>
 
         <input
-          value={runway}
-          onChange={(e) => setRunway(e.target.value.toUpperCase())}
-          placeholder="Pista, ej: 08"
+          value={departureRunway}
+          onChange={(e) => setDepartureRunway(e.target.value.toUpperCase())}
+          placeholder="Pista de salida, ej: 08"
+          className="rounded-xl bg-slate-800 p-3 uppercase"
+        />
+
+        <input
+          value={arrivalRunway}
+          onChange={(e) => setArrivalRunway(e.target.value.toUpperCase())}
+          placeholder="Pista de llegada, ej: 09"
           className="rounded-xl bg-slate-800 p-3 uppercase"
         />
 
@@ -169,7 +142,7 @@ export default function AtisCreator({
           value={extraInfo}
           onChange={(e) => setExtraInfo(e.target.value.toUpperCase())}
           placeholder="Información adicional"
-          className="rounded-xl bg-slate-800 p-3 uppercase"
+          className="rounded-xl bg-slate-800 p-3 uppercase md:col-span-2"
         />
       </div>
 

@@ -4,7 +4,8 @@ export function buildAtisText({
   metar,
   approachPrimary,
   approachOptional,
-  runway,
+  departureRunway,
+  arrivalRunway,
   extraInfo,
   remarks,
 }: {
@@ -13,16 +14,14 @@ export function buildAtisText({
   metar: string;
   approachPrimary: string;
   approachOptional?: string;
-  runway: string;
+  departureRunway: string;
+  arrivalRunway: string;
   extraInfo?: string;
   remarks?: string;
 }) {
-  const optionalApproach = approachOptional
-    ? ` O ${approachOptional}`
-    : "";
-
+  const optionalApproach = approachOptional ? ` O ${approachOptional}` : "";
   const extra = extraInfo ? ` ${extraInfo}` : "";
   const rmk = remarks ? ` RMK: ${remarks}` : "";
 
-  return `[${airport}] ATIS INFO ${info}... (${metar})... AERONAVES ESPEREN APPR ${approachPrimary}${optionalApproach} PISTA ${runway} XPDR MODO ALT EN TODAS LAS CALLES DE RODAJE Y PISTAS EN USO... NOTIFIQUE INFO ${info} EN CONTACTO INICIAL${extra}${rmk}`;
+  return `[${airport}] ATIS INFO ${info}... (${metar})... AERONAVES ESPEREN APPR ${approachPrimary}${optionalApproach} SALIDAS PISTA ${departureRunway} LLEGADAS PISTA ${arrivalRunway} XPDR MODO ALT EN TODAS LAS CALLES DE RODAJE Y PISTAS EN USO... NOTIFIQUE INFO ${info} EN CONTACTO INICIAL${extra}${rmk}`;
 }
