@@ -40,53 +40,107 @@ export default function ScopeTrafficLabelUX() {
     const style = document.createElement("style");
     style.dataset.pf24TrafficLabelUx = "true";
     style.textContent = `
-      /* Keep the real hitboxes large, but pack the visible text like a radar tag. */
       ${LABEL_SELECTOR} {
-        letter-spacing: -0.15px !important;
+        letter-spacing: -0.3px !important;
       }
 
-      /* Simple tag: callsign / FL+trend / speed / destination stay visually close. */
+      /* Simple tag: compact visual block while preserving the larger drag hitbox. */
       ${LABEL_SELECTOR} > div.relative {
-        width: 54px !important;
+        width: 50px !important;
       }
       ${LABEL_SELECTOR} > div.relative > button:first-child {
-        width: 54px !important;
+        width: 50px !important;
       }
       ${LABEL_SELECTOR} > span.grid {
-        width: 50px !important;
-        grid-template-columns: 25px 25px !important;
+        width: 48px !important;
+        grid-template-columns: 24px 24px !important;
         column-gap: 0 !important;
       }
       ${LABEL_SELECTOR} > span.block:last-child {
-        width: 50px !important;
-        padding-left: 25px !important;
+        width: 48px !important;
+        padding-left: 24px !important;
       }
 
-      /* Detailed tag. Outer width remains unchanged so connector geometry and hitbox stay correct. */
+      /* Detailed tag: EuroScope-like dense 4-line block. */
       ${LABEL_SELECTOR} > div.grid:nth-of-type(2) {
-        width: 84px !important;
-        grid-template-columns: 43px 8px 29px !important;
-        column-gap: 2px !important;
+        width: 79px !important;
+        grid-template-columns: 43px 7px 27px !important;
+        column-gap: 1px !important;
       }
       ${LABEL_SELECTOR} > div.grid:nth-of-type(3) {
-        width: 88px !important;
-        grid-template-columns: 25px 36px 23px !important;
-        column-gap: 2px !important;
+        width: 82px !important;
+        grid-template-columns: 24px 34px 22px !important;
+        column-gap: 1px !important;
       }
       ${LABEL_SELECTOR} > div.grid:nth-of-type(4) {
-        width: 86px !important;
-        grid-template-columns: 25px 25px 32px !important;
-        column-gap: 2px !important;
+        width: 80px !important;
+        grid-template-columns: 24px 23px 31px !important;
+        column-gap: 1px !important;
       }
       ${LABEL_SELECTOR} > div.grid:nth-of-type(5) {
-        width: 88px !important;
-        grid-template-columns: 34px 24px 26px !important;
-        column-gap: 2px !important;
+        width: 82px !important;
+        grid-template-columns: 32px 23px 25px !important;
+        column-gap: 1px !important;
       }
       ${LABEL_SELECTOR} > div.grid,
       ${LABEL_SELECTOR} > div.grid button,
       ${LABEL_SELECTOR} > div.grid input {
         line-height: 8px !important;
+        min-height: 8px !important;
+      }
+
+      /* Rebuild callsign menu to match the larger reference menu. */
+      [data-pf24-callsign-menu='true'] {
+        width: 164px !important;
+        border: 2px solid #f1f1f1 !important;
+        background: #565d61 !important;
+        font-size: 13px !important;
+        line-height: 27px !important;
+        letter-spacing: 0 !important;
+        box-sizing: border-box !important;
+      }
+      [data-pf24-callsign-menu='true'] > div:first-child {
+        min-height: 30px !important;
+        padding: 0 10px !important;
+        font-size: 14px !important;
+        line-height: 30px !important;
+        border-bottom: 2px solid #f1f1f1 !important;
+      }
+      [data-pf24-callsign-menu='true'] > button {
+        min-height: 28px !important;
+        padding: 0 10px !important;
+        font-size: 13px !important;
+        line-height: 27px !important;
+        border-bottom-width: 2px !important;
+      }
+      [data-pf24-callsign-menu='true'] > button:last-child {
+        border-bottom-width: 0 !important;
+      }
+
+      /* Hold List: prevent the AFL column/borders from escaping the window. */
+      [data-pf24-live-hold-list='true'] {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: hidden !important;
+        box-sizing: border-box !important;
+      }
+      [data-pf24-live-hold-list='true'] > div {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        grid-template-columns: 28px minmax(0,1fr) 34px 34px !important;
+        box-sizing: border-box !important;
+      }
+      [data-pf24-live-hold-list='true'] > div > span,
+      [data-pf24-live-hold-list='true'] > div > div > span {
+        min-width: 0 !important;
+        overflow: hidden !important;
+        text-overflow: clip !important;
+        white-space: nowrap !important;
+      }
+      [data-pf24-live-hold-list='true'] > div.min-h-\\[78px\\] > div {
+        width: 100% !important;
+        grid-template-columns: 28px minmax(0,1fr) 34px 34px !important;
       }
     `;
     document.head.appendChild(style);
@@ -101,9 +155,6 @@ export default function ScopeTrafficLabelUX() {
       if (event.button !== 0) return;
       const hit = getCallsignTarget(event.target);
       if (!hit) return;
-
-      // V6 deliberately stops mousedown propagation on buttons. Re-dispatch from the
-      // label itself so the same callsign area can also be used as a drag handle.
       redispatchToLabel(hit.label, "mousedown", event);
     };
 
@@ -116,15 +167,12 @@ export default function ScopeTrafficLabelUX() {
       clickTimerRef.current = window.setTimeout(() => {
         clickTimerRef.current = null;
         if (!hit.label.isConnected) return;
-        // A normal click opens the detailed tag. V6's drag suppression still prevents
-        // an accidental open after moving the label.
         redispatchToLabel(hit.label, "click", event);
       }, SINGLE_CLICK_DELAY_MS);
     };
 
     const onDoubleClickCapture = (event: MouseEvent) => {
       if (!getCallsignTarget(event.target)) return;
-      // Preserve V6's double-click callsign action menu instead of also opening the tag.
       cancelPendingClick();
     };
 
