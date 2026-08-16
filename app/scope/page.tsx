@@ -35,6 +35,7 @@ import ScopeAtisJurisdictionGuard from "@/components/scope/ScopeAtisJurisdiction
 import ScopeConnectDialogPersistence from "@/components/scope/ScopeConnectDialogPersistence";
 import ScopeAtcPresence from "@/components/scope/ScopeAtcPresence";
 import ScopeOperationalSyncV2 from "@/components/scope/ScopeOperationalSyncV2";
+import ScopeSectorChat from "@/components/scope/ScopeSectorChat";
 import ScopeNativeListBodyGuard from "@/components/scope/ScopeNativeListBodyGuard";
 import ScopeConnectionPersistence from "@/components/scope/ScopeConnectionPersistence";
 import ScopeAtisDisconnectCleanup from "@/components/scope/ScopeAtisDisconnectCleanup";
@@ -99,6 +100,7 @@ export default async function ScopePage() {
       <ScopeAtisDisconnectCleanup controllerName={controllerName} />
       <ScopeAtcPresence controllerName={controllerName} />
       <ScopeOperationalSyncV2 />
+      <ScopeSectorChat />
       <ScopeSectorListRules initialPlans={plans} />
       <ScopeNativeListBodyGuard />
     </>
