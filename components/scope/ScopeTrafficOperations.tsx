@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ATC_FREQUENCIES } from "@/lib/atcFrequencies";
-import { getVisibleFlightPlanNotes, normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
+import { getGameCallsignFromNotes, getVisibleFlightPlanNotes, normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 type Props = {
@@ -19,6 +19,7 @@ const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const HOLD_STORAGE_KEY = "pf24_scope_hold_traffic_v1";
 const GREEN = "#00e000";
 const GREY = "#9b9b9b";
+const HANDOVER_ACTIONS = new Set(["TRANSFER", "REQ ON FREQ", "ACCEPT", "DECLINE"]);
 
 function normalized(value: string) {
   return normalizeGameCallsign(value);
@@ -61,9 +62,18 @@ function callsignFromTrafficLabel(label: HTMLElement) {
   return callsignButton?.textContent?.trim().toUpperCase() ?? "";
 }
 
+function planKeys(plan: ScopeFlightPlan) {
+  const keys = new Set<string>();
+  const displayed = normalized(plan.callsign);
+  const game = normalized(getGameCallsignFromNotes(plan.notes));
+  if (displayed) keys.add(displayed);
+  if (game) keys.add(game);
+  return keys;
+}
+
 function planForDisplayedCallsign(plans: ScopeFlightPlan[], callsign: string) {
   const key = normalized(callsign);
-  return plans.find((plan) => normalized(plan.callsign) === key) ?? null;
+  return plans.find((plan) => planKeys(plan).has(key)) ?? null;
 }
 
 function setTreeColor(root: HTMLElement, color: string) {
@@ -77,6 +87,10 @@ function announceOwnershipChange() {
   window.dispatchEvent(new CustomEvent("pf24-traffic-ownership-change"));
 }
 
+function ownerAction(button: HTMLButtonElement) {
+  return (button.dataset.pf24OwnerActionLabel || button.textContent || "").trim().toUpperCase();
+}
+
 export default function ScopeTrafficOperations({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
@@ -87,7 +101,9 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
 
   const planByCallsign = useMemo(() => {
     const map = new Map<string, ScopeFlightPlan>();
-    for (const plan of plans) map.set(normalized(plan.callsign), plan);
+    for (const plan of plans) {
+      for (const key of planKeys(plan)) map.set(key, plan);
+    }
     return map;
   }, [plans]);
 
@@ -148,7 +164,7 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-traffic-operations-flight-plans")
+      .channel("scope-traffic-operations-flight-plans-v2")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => {
@@ -180,6 +196,8 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       }
     }
 
+    // Ownership/transfer button labels are intentionally NOT changed here.
+    // ScopeTrafficOwnershipVisuals is the single authority for Assume/Transfer/Req on Freq/Accept.
     const menus = Array.from(document.querySelectorAll<HTMLElement>("[data-pf24-callsign-menu='true']"));
     for (const menu of menus) {
       const label = menu.closest<HTMLElement>("[data-pf24-traffic-label='true']");
@@ -187,11 +205,8 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       const displayed = callsignFromTrafficLabel(label);
       const plan = planByCallsign.get(normalized(displayed));
       if (!plan) continue;
-      const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>("button"));
-      const assume = buttons.find((button) => ["ASSUME", "TRANSFER"].includes(button.textContent?.trim().toUpperCase() ?? ""));
-      const hold = buttons.find((button) => ["HOLD", "XHOLD"].includes(button.textContent?.trim().toUpperCase() ?? ""));
-      const owner = plan.assumed_by?.trim().toUpperCase() || "";
-      if (assume) assume.textContent = position && owner === position ? "Transfer" : "Assume";
+      const hold = Array.from(menu.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => ["HOLD", "XHOLD"].includes(button.textContent?.trim().toUpperCase() ?? ""));
       if (hold) hold.textContent = heldIds.includes(plan.id) ? "XHOLD" : "HOLD";
     }
   }, [heldIds, planByCallsign, position]);
@@ -232,10 +247,10 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
     const owner = plan.assumed_by?.trim().toUpperCase() || "";
     if (owner === position) return;
     if (owner && owner !== position) {
-      alert(`Este tráfico ya está asumido por ${owner}.`);
       return;
     }
 
+    window.dispatchEvent(new CustomEvent("pf24-traffic-ownership-hint", { detail: { key: plan.callsign, owner: position } }));
     setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: position } : item));
     announceOwnershipChange();
 
@@ -247,7 +262,7 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       .select("id,assumed_by")
       .maybeSingle();
 
-    if (error || !data || data.assumed_by !== position) {
+    if (error || !data || String(data.assumed_by ?? "").trim().toUpperCase() !== position) {
       console.error("PF24 Scope assume failed:", error);
       await loadPlans();
       alert("No se pudo asumir el tráfico. Puede que otro sector lo haya asumido primero.");
@@ -263,6 +278,7 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       return;
     }
 
+    window.dispatchEvent(new CustomEvent("pf24-traffic-ownership-hint", { detail: { key: plan.callsign, owner: null } }));
     setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: null } : item));
     announceOwnershipChange();
 
@@ -323,20 +339,21 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       const label = menu?.closest<HTMLElement>("[data-pf24-traffic-label='true']");
       if (!button || !menu || !label) return;
 
-      const action = button.textContent?.trim().toUpperCase() ?? "";
-      if (!["ASSUME", "TRANSFER", "FPL", "HOLD", "XHOLD", "FREE", "CONTACT ME"].includes(action)) return;
+      const action = ownerAction(button);
+      if (HANDOVER_ACTIONS.has(action) || button.dataset.pf24HandoverDecline === "true") return;
+      if (!["ASSUME", "FPL", "HOLD", "XHOLD", "FREE", "CONTACT ME"].includes(action)) return;
 
       const callsign = callsignFromTrafficLabel(label);
       const plan = planForDisplayedCallsign(plans, callsign);
       if (!plan) return;
 
       event.preventDefault();
+      event.stopPropagation();
       event.stopImmediatePropagation();
 
       if (action === "FPL") setFplPlanId(plan.id);
       else if (action === "HOLD" || action === "XHOLD") toggleHold(plan);
       else if (action === "ASSUME") void assume(plan);
-      else if (action === "TRANSFER") return;
       else if (action === "FREE") void free(plan);
       else if (action === "CONTACT ME") void contactMe(plan);
 
@@ -345,7 +362,7 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
 
     document.addEventListener("click", onMenuClick, true);
     return () => document.removeEventListener("click", onMenuClick, true);
-  }, [plans, position, syncOperationalUi, heldIds]);
+  }, [plans, syncOperationalUi]);
 
   const holdPortal = holdWindow ? createPortal(
     <div data-pf24-live-hold-list="true" className="w-full max-w-full overflow-hidden border-x-2 border-b-2 border-[#ededed] bg-[#555c61] font-mono text-[10px] leading-[15px] text-[#e8e8e8] box-border">
