@@ -10,7 +10,17 @@ const DIGIT_ES: Record<string, string> = { "0":"cero","1":"uno","2":"dos","3":"t
 const DIGIT_EN: Record<string, string> = { "0":"zero","1":"one","2":"two","3":"three","4":"four","5":"five","6":"six","7":"seven","8":"eight","9":"nine" };
 
 const AIRPORTS: Record<string, { es: string; en: string; transitionAltitude?: number; transitionLevel?: string }> = {
-  MDPC: { es: "Punta Cana Internacional", en: "Punta Cana International", transitionAltitude: 3000, transitionLevel: "040" },
+  MDPC: { es: "Aeropuerto Internacional de Punta Cana", en: "Punta Cana International Airport", transitionAltitude: 3000, transitionLevel: "040" },
+  MDST: { es: "Aeropuerto Internacional del Cibao", en: "Cibao International Airport" },
+  MDAB: { es: "Aeropuerto de Arroyo Barril", en: "Arroyo Barril Airport" },
+  LCLK: { es: "Aeropuerto Internacional de Lárnaca", en: "Larnaka International Airport" },
+  LCPH: { es: "Aeropuerto Internacional de Pafos", en: "Pafos International Airport" },
+  LCRA: { es: "RAF Akrotiri", en: "RAF Akrotiri" },
+  EGKK: { es: "Aeropuerto de Londres Gatwick", en: "London Gatwick Airport" },
+  EGHI: { es: "Aeropuerto de Southampton", en: "Southampton Airport" },
+  LEMH: { es: "Aeropuerto de Menorca", en: "Menorca Airport" },
+  GCLP: { es: "Aeropuerto de Gran Canaria", en: "Gran Canaria Airport" },
+  EFKT: { es: "Aeropuerto de Kittilä", en: "Kittilä Airport" },
 };
 
 export type AtisSpeechData = {
