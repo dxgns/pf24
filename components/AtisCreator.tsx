@@ -58,11 +58,10 @@ export default function AtisCreator({ controllerPosition }: { controllerPosition
       return;
     }
 
-    // Se conserva una sola columna en Supabase para no requerir migración.
-    const runwayFormatted = `DEP ${departure} | ARR ${arrival}`;
-    // Los valores de transición quedan embebidos en extra_info para que el bot
-    // reproduzca exactamente lo ingresado por el ATC sin usar datos externos.
+    // Los valores se guardan redundantes en extra_info y runway. El bot recibe
+    // runway de forma fiable en Realtime y así no pierde Trans Alt / Trans Lvl.
     const transitionMetadata = `[TRANS_ALT=${transAlt}][TRANS_LVL=${transLvl}]`;
+    const runwayFormatted = `DEP ${departure} | ARR ${arrival} ${transitionMetadata}`;
     const storedExtraInfo = extraInfoFormatted
       ? `${transitionMetadata} ${extraInfoFormatted}`
       : transitionMetadata;
