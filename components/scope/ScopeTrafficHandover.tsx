@@ -86,6 +86,23 @@ function removePending(current: Record<string, Pending>, id: string) {
   delete next[id];
   return next;
 }
+function expectedOwnerBefore(item: Pending) {
+  return item.kind === "offer" ? item.from : item.to;
+}
+function intendedOwnerAfter(item: Pending) {
+  return item.kind === "offer" ? item.to : item.from;
+}
+function resolutionFor(item: Pending, accepted: boolean): ResolveMessage {
+  return {
+    kind: "resolve",
+    refId: item.id,
+    key: item.key,
+    from: item.kind === "offer" ? item.from : item.to,
+    to: item.kind === "offer" ? item.to : item.from,
+    planId: item.planId,
+    accepted,
+  };
+}
 
 export default function ScopeTrafficHandover({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
@@ -116,6 +133,10 @@ export default function ScopeTrafficHandover({ initialPlans }: Props) {
     const plan = planByKey.get(key);
     if (plan) return plan.assumed_by?.trim().toUpperCase() || "";
     return unplannedOwners[key]?.trim().toUpperCase() || "";
+  }, [planByKey, unplannedOwners]);
+
+  const ownerIsKnown = useCallback((key: string) => {
+    return planByKey.has(key) || Object.prototype.hasOwnProperty.call(unplannedOwners, key);
   }, [planByKey, unplannedOwners]);
 
   const loadPlans = useCallback(async () => {
@@ -188,10 +209,18 @@ export default function ScopeTrafficHandover({ initialPlans }: Props) {
 
     const onConnection = (event: Event) => {
       const detail = (event as CustomEvent<{ connected?: boolean; callsign?: string }>).detail;
+      const previous = positionRef.current;
       const next = detail?.connected ? (detail.callsign?.trim().toUpperCase() || readPosition()) : "";
+
+      if (previous && previous !== next) {
+        const stale = Object.values(outgoingRef.current);
+        updateOutgoing(() => ({}));
+        for (const item of stale) void sendMessage(resolutionFor(item, false));
+      }
+
       positionRef.current = next;
       setPosition(next);
-      if (!next) {
+      if (!next || previous !== next) {
         setPopup(null);
         updateIncoming(() => ({}));
         setSelectedTargets({});
@@ -208,17 +237,17 @@ export default function ScopeTrafficHandover({ initialPlans }: Props) {
       window.removeEventListener(OWNERS_EVENT, onOwners);
       window.removeEventListener("resize", onResize);
     };
-  }, [loadActiveSectors, updateIncoming]);
+  }, [loadActiveSectors, sendMessage, updateIncoming, updateOutgoing]);
 
   useEffect(() => {
     publishVisualState(incoming, position);
   }, [incoming, position, publishVisualState]);
 
   useEffect(() => {
-    const flightChannel = supabase.channel("scope-handover-plans-v3")
+    const flightChannel = supabase.channel("scope-handover-plans-v4")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
-    const atcChannel = supabase.channel("scope-handover-atc-sessions-v3")
+    const atcChannel = supabase.channel("scope-handover-atc-sessions-v4")
       .on("postgres_changes", { event: "*", schema: "public", table: "atc_sessions" }, () => void loadActiveSectors())
       .subscribe();
     return () => { void supabase.removeChannel(flightChannel); void supabase.removeChannel(atcChannel); };
@@ -234,9 +263,15 @@ export default function ScopeTrafficHandover({ initialPlans }: Props) {
       if (message.kind === "resolve") {
         updateOutgoing((current) => removePending(current, message.refId));
         updateIncoming((current) => removePending(current, message.refId));
+        setSelectedTargets((current) => {
+          if (!(message.key in current)) return current;
+          const next = { ...current };
+          delete next[message.key];
+          return next;
+        });
         if (message.accepted) {
           ownershipHint(message.key, message.to);
-          if (message.planId === null) {
+          if (message.planId == null) {
             window.dispatchEvent(new CustomEvent(UNPLANNED_APPLY_EVENT, {
               detail: { refId: message.refId, key: message.key, from: message.from, to: message.to },
             }));
@@ -278,47 +313,61 @@ export default function ScopeTrafficHandover({ initialPlans }: Props) {
   }, [sendMessage, updateIncoming, updateOutgoing]);
 
   useEffect(() => {
-    const cancelInvalid = () => {
+    const reconcile = () => {
       const active = new Set(activeSectors);
-      const invalidOutgoing = Object.values(outgoingRef.current).filter((item) => {
+
+      const outgoingCompleted: Pending[] = [];
+      const outgoingInvalid: Pending[] = [];
+      for (const item of Object.values(outgoingRef.current)) {
+        const known = ownerIsKnown(item.key);
         const owner = ownerForKey(item.key);
-        const expectedOwner = item.kind === "offer" ? item.from : item.to;
-        if (owner !== expectedOwner) return true;
-        if (item.kind === "offer" && !active.has(item.to)) return true;
-        return false;
-      });
-      if (invalidOutgoing.length) {
-        updateOutgoing((current) => {
-          const next = { ...current };
-          for (const item of invalidOutgoing) delete next[item.id];
-          return next;
-        });
-        for (const item of invalidOutgoing) {
-          void sendMessage({ kind: "resolve", refId: item.id, key: item.key, from: item.from, to: item.to, planId: item.planId, accepted: false });
+        if (known && owner === intendedOwnerAfter(item)) {
+          outgoingCompleted.push(item);
+          continue;
+        }
+        if ((known && owner !== expectedOwnerBefore(item)) || (item.kind === "offer" && !active.has(item.to))) {
+          outgoingInvalid.push(item);
         }
       }
 
-      const invalidIncoming = Object.values(incomingRef.current).filter((item) => {
-        const owner = ownerForKey(item.key);
-        const expectedOwner = item.kind === "offer" ? item.from : item.to;
-        return owner !== expectedOwner;
-      });
-      if (invalidIncoming.length) {
-        updateIncoming((current) => {
+      if (outgoingCompleted.length || outgoingInvalid.length) {
+        updateOutgoing((current) => {
           const next = { ...current };
-          for (const item of invalidIncoming) delete next[item.id];
+          for (const item of [...outgoingCompleted, ...outgoingInvalid]) delete next[item.id];
           return next;
         });
       }
+      for (const item of outgoingCompleted) void sendMessage(resolutionFor(item, true));
+      for (const item of outgoingInvalid) void sendMessage(resolutionFor(item, false));
+
+      const incomingCompleted: Pending[] = [];
+      const incomingInvalid: Pending[] = [];
+      for (const item of Object.values(incomingRef.current)) {
+        const known = ownerIsKnown(item.key);
+        const owner = ownerForKey(item.key);
+        if (known && owner === intendedOwnerAfter(item)) {
+          incomingCompleted.push(item);
+          continue;
+        }
+        if (known && owner !== expectedOwnerBefore(item)) incomingInvalid.push(item);
+      }
+
+      if (incomingCompleted.length || incomingInvalid.length) {
+        updateIncoming((current) => {
+          const next = { ...current };
+          for (const item of [...incomingCompleted, ...incomingInvalid]) delete next[item.id];
+          return next;
+        });
+      }
+      for (const item of incomingCompleted) void sendMessage(resolutionFor(item, true));
     };
-    cancelInvalid();
-  }, [activeSectors, ownerForKey, plans, unplannedOwners, sendMessage, updateIncoming, updateOutgoing]);
+    reconcile();
+  }, [activeSectors, ownerForKey, ownerIsKnown, plans, sendMessage, unplannedOwners, updateIncoming, updateOutgoing]);
 
   const resolveTransfer = useCallback(async (pending: Pending, accepted: boolean) => {
     if (resolvingRef.current.has(pending.id)) return;
     resolvingRef.current.add(pending.id);
 
-    // Remove the pending visual immediately so Accept/Decline feels deterministic.
     const previousIncoming = incomingRef.current[pending.id];
     updateIncoming((current) => removePending(current, pending.id));
 
@@ -338,9 +387,9 @@ export default function ScopeTrafficHandover({ initialPlans }: Props) {
           if (error || !data || String(data.assumed_by || "").trim().toUpperCase() !== pending.to) {
             console.error("PF24 Scope handover ownership update failed:", error);
             finalAccepted = false;
+            ownershipHint(pending.key, pending.from);
             if (previousIncoming) updateIncoming((current) => ({ ...current, [pending.id]: previousIncoming }));
             await loadPlans();
-            window.dispatchEvent(new Event(OWNERSHIP_EVENT));
           } else {
             await loadPlans();
           }
@@ -363,7 +412,13 @@ export default function ScopeTrafficHandover({ initialPlans }: Props) {
       await sendMessage(message);
 
       updateOutgoing((current) => removePending(current, pending.id));
-      if (!finalAccepted) updateIncoming((current) => removePending(current, pending.id));
+      updateIncoming((current) => removePending(current, pending.id));
+      setSelectedTargets((current) => {
+        if (!(pending.key in current)) return current;
+        const next = { ...current };
+        delete next[pending.key];
+        return next;
+      });
       window.dispatchEvent(new Event(OWNERSHIP_EVENT));
 
       if (accepted && !finalAccepted) {
@@ -438,7 +493,6 @@ export default function ScopeTrafficHandover({ initialPlans }: Props) {
       if (offer) {
         void resolveTransfer({ ...offer, to: here }, true);
       } else if (request) {
-        // Request semantics: owner accepts handing the traffic to the requester.
         void resolveTransfer({ ...request, from: here, to: request.from }, true);
       }
       return true;
@@ -449,7 +503,7 @@ export default function ScopeTrafficHandover({ initialPlans }: Props) {
 
   useEffect(() => {
     const style = document.createElement("style");
-    style.dataset.pf24HandoverFixes = "v3";
+    style.dataset.pf24HandoverFixes = "v4";
     style.textContent = `
       [data-pf24-transfer-separator='true']{
         display:block!important;
