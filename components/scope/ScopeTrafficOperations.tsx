@@ -69,9 +69,12 @@ function planForDisplayedCallsign(plans: ScopeFlightPlan[], callsign: string) {
 function setTreeColor(root: HTMLElement, color: string) {
   root.style.color = color;
   root.querySelectorAll<HTMLElement>("span,button,input").forEach((element) => {
-    if (element.closest("[data-pf24-callsign-menu='true']")) return;
     element.style.color = color;
   });
+}
+
+function announceOwnershipChange() {
+  window.dispatchEvent(new CustomEvent("pf24-traffic-ownership-change"));
 }
 
 export default function ScopeTrafficOperations({ initialPlans }: Props) {
@@ -106,6 +109,7 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       return;
     }
     setPlans((data ?? []) as ScopeFlightPlan[]);
+    announceOwnershipChange();
   }, []);
 
   const syncHosts = useCallback(() => {
@@ -158,18 +162,9 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
     });
   }, [plans]);
 
-  const syncVisualState = useCallback(() => {
-    const labels = Array.from(document.querySelectorAll<HTMLElement>("[data-pf24-traffic-label='true']"));
-    for (const label of labels) {
-      const displayed = callsignFromTrafficLabel(label);
-      const plan = planByCallsign.get(normalized(displayed));
-      // Unplanned traffic is owned exclusively by ScopeUnplannedTrafficOperationsV2.
-      // Do not paint it here, otherwise both controllers fight and the target flickers grey/green.
-      if (!plan) continue;
-      const controlledByMe = Boolean(position && plan.assumed_by === position);
-      setTreeColor(label, controlledByMe ? GREEN : GREY);
-    }
-
+  const syncOperationalUi = useCallback(() => {
+    // Traffic-label colors are intentionally NOT written here. ScopeTrafficOwnershipVisuals
+    // is the sole source of truth for radar colors, preventing ATC synchronization flicker.
     const sector = document.querySelector<HTMLElement>("[data-pf24-live-sector-list='true']");
     if (sector) {
       const rows = Array.from(sector.children).slice(1).filter((element): element is HTMLElement => element instanceof HTMLElement);
@@ -178,7 +173,8 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
         const callsign = row.firstElementChild?.textContent?.trim().toUpperCase() ?? "";
         const plan = planByCallsign.get(normalized(callsign));
         if (!plan) continue;
-        const color = position && plan.assumed_by === position ? GREEN : GREY;
+        const owner = plan.assumed_by?.trim().toUpperCase() || "";
+        const color = position && owner === position ? GREEN : GREY;
         setTreeColor(row, color);
       }
     }
@@ -189,21 +185,21 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       if (!label) continue;
       const displayed = callsignFromTrafficLabel(label);
       const plan = planByCallsign.get(normalized(displayed));
-      // Let the unplanned controller own its menu state too.
       if (!plan) continue;
       const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>("button"));
       const assume = buttons.find((button) => ["ASSUME", "TRANSFER"].includes(button.textContent?.trim().toUpperCase() ?? ""));
       const hold = buttons.find((button) => ["HOLD", "XHOLD"].includes(button.textContent?.trim().toUpperCase() ?? ""));
-      if (assume) assume.textContent = position && plan.assumed_by === position ? "Transfer" : "Assume";
+      const owner = plan.assumed_by?.trim().toUpperCase() || "";
+      if (assume) assume.textContent = position && owner === position ? "Transfer" : "Assume";
       if (hold) hold.textContent = heldIds.includes(plan.id) ? "XHOLD" : "HOLD";
     }
   }, [heldIds, planByCallsign, position]);
 
   useEffect(() => {
-    syncVisualState();
-    const timer = window.setInterval(syncVisualState, 500);
+    syncOperationalUi();
+    const timer = window.setInterval(syncOperationalUi, 500);
     return () => window.clearInterval(timer);
-  }, [syncVisualState]);
+  }, [syncOperationalUi]);
 
   useEffect(() => {
     if (!holdWindow) return;
@@ -230,13 +226,16 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       alert("Debes estar conectado a un sector activo antes de asumir tráfico.");
       return;
     }
-    if (plan.assumed_by === position) return;
-    if (plan.assumed_by && plan.assumed_by !== position) {
-      alert(`Este tráfico ya está asumido por ${plan.assumed_by}.`);
+    const owner = plan.assumed_by?.trim().toUpperCase() || "";
+    if (owner === position) return;
+    if (owner && owner !== position) {
+      alert(`Este tráfico ya está asumido por ${owner}.`);
       return;
     }
 
     setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: position } : item));
+    announceOwnershipChange();
+
     const { data, error } = await supabase
       .from("flight_plans")
       .update({ assumed_by: position, updated_at: new Date().toISOString() })
@@ -249,31 +248,41 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       console.error("PF24 Scope assume failed:", error);
       await loadPlans();
       alert("No se pudo asumir el tráfico. Puede que otro sector lo haya asumido primero.");
+      return;
     }
+    announceOwnershipChange();
   };
 
   const free = async (plan: ScopeFlightPlan) => {
-    if (!position || plan.assumed_by !== position) {
+    const owner = plan.assumed_by?.trim().toUpperCase() || "";
+    if (!position || owner !== position) {
       alert("Solo puedes liberar tráfico asumido por tu mismo sector.");
       return;
     }
 
     setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: null } : item));
-    const { error } = await supabase
+    announceOwnershipChange();
+
+    const { data, error } = await supabase
       .from("flight_plans")
       .update({ assumed_by: null, updated_at: new Date().toISOString() })
       .eq("id", plan.id)
-      .eq("assumed_by", position);
+      .eq("assumed_by", position)
+      .select("id,assumed_by")
+      .maybeSingle();
 
-    if (error) {
+    if (error || !data || data.assumed_by !== null) {
       console.error("PF24 Scope free traffic failed:", error);
       await loadPlans();
       alert("No se pudo liberar el tráfico.");
+      return;
     }
+    announceOwnershipChange();
   };
 
   const contactMe = async (plan: ScopeFlightPlan) => {
-    if (!position || plan.assumed_by !== position) {
+    const owner = plan.assumed_by?.trim().toUpperCase() || "";
+    if (!position || owner !== position) {
       alert("Debes asumir este tráfico antes de enviar Contact Me.");
       return;
     }
@@ -316,8 +325,6 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
 
       const callsign = callsignFromTrafficLabel(label);
       const plan = planForDisplayedCallsign(plans, callsign);
-      // Unplanned traffic is handled by ScopeUnplannedTrafficOperationsV2.
-      // Do not prevent/stop the event and do not show the old no-plan error here.
       if (!plan) return;
 
       event.preventDefault();
@@ -330,28 +337,28 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       else if (action === "FREE") void free(plan);
       else if (action === "CONTACT ME") void contactMe(plan);
 
-      window.setTimeout(syncVisualState, 0);
+      window.setTimeout(syncOperationalUi, 0);
     };
 
     document.addEventListener("click", onMenuClick, true);
     return () => document.removeEventListener("click", onMenuClick, true);
-  }, [plans, position, syncVisualState]);
+  }, [plans, position, syncOperationalUi]);
 
   const holdPortal = holdWindow ? createPortal(
-    <div data-pf24-live-hold-list="true" className="border-x-2 border-b-2 border-[#ededed] bg-[#555c61] font-mono text-[10px] leading-[15px] text-[#e8e8e8]">
-      <div className="grid grid-cols-[28px_1fr_45px_45px] border-b border-[#ededed]">
-        <span className="border-r border-[#ededed]" />
-        <span className="text-center text-[12px]">CALLSIGN</span>
-        <span className="text-center text-[12px]">FL</span>
-        <span className="text-center text-[12px]">AFL</span>
+    <div data-pf24-live-hold-list="true" className="w-full max-w-full overflow-hidden border-x-2 border-b-2 border-[#ededed] bg-[#555c61] font-mono text-[10px] leading-[15px] text-[#e8e8e8] box-border">
+      <div className="grid w-full min-w-0 grid-cols-[28px_minmax(0,1fr)_34px_34px] border-b border-[#ededed] box-border">
+        <span className="min-w-0 border-r border-[#ededed]" />
+        <span className="min-w-0 truncate text-center text-[12px]">CALLSIGN</span>
+        <span className="min-w-0 text-center text-[12px]">FL</span>
+        <span className="min-w-0 text-center text-[12px]">AFL</span>
       </div>
-      <div className="min-h-[78px]">
+      <div className="min-h-[78px] w-full min-w-0 overflow-hidden">
         {heldPlans.map((plan) => (
-          <div key={plan.id} className="grid grid-cols-[28px_1fr_45px_45px]">
-            <span className="border-r border-[#ededed]" />
-            <span className="truncate px-[3px]">{plan.callsign}</span>
-            <span className="text-center">{plan.flight_level || "---"}</span>
-            <span className="text-center">{plan.flight_level || "---"}</span>
+          <div key={plan.id} className="grid w-full min-w-0 grid-cols-[28px_minmax(0,1fr)_34px_34px] box-border">
+            <span className="min-w-0 border-r border-[#ededed]" />
+            <span className="min-w-0 truncate px-[3px]">{plan.callsign}</span>
+            <span className="min-w-0 truncate text-center">{plan.flight_level || "---"}</span>
+            <span className="min-w-0 truncate text-center">{plan.flight_level || "---"}</span>
           </div>
         ))}
       </div>
