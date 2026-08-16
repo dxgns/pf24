@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EdgeTTS, Constants } from "@andresaya/edge-tts";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import {
   AudioPlayerStatus,
   NoSubscriberBehavior,
@@ -22,115 +22,87 @@ type AtisRow = AtisSpeechData & { id: string; created_at?: string };
 type AudioSet = { atisId: string; spanishPath: string; englishPath: string; infoLetter: string };
 type Phase = "idle" | "spanish" | "english";
 
+type BotConfig = {
+  number: number;
+  label: string;
+  token: string;
+  guildId: string;
+  channelId: string;
+  airport: string;
+  spanishVoice: string;
+  englishVoice: string;
+  languageGapMs: number;
+  loopDelayMs: number;
+};
+
+const BOT_AIRPORTS = [
+  "MDPC",
+  "MDST",
+  "MDAB",
+  "LCLK",
+  "LCPH",
+  "LCRA",
+  "EGKK",
+  "EGHI",
+  "LEMH",
+  "GCLP",
+  "EFKT",
+] as const;
+
 function required(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Falta la variable de entorno ${name}`);
   return value;
 }
 
-const config = {
-  token: process.env.ATIS_01_TOKEN ?? required("DISCORD_TOKEN"),
+function slot(number: number) {
+  return String(number).padStart(2, "0");
+}
+
+const sharedConfig = {
   guildId: process.env.DISCORD_GUILD_ID ?? "1427074541917700209",
-  channelId: process.env.DISCORD_VOICE_CHANNEL_ID ?? "1538401211450130503",
-  airport: (process.env.ATIS_AIRPORT ?? "MDPC").toUpperCase(),
   supabaseUrl: required("SUPABASE_URL"),
   supabaseAnonKey: required("SUPABASE_ANON_KEY"),
-  spanishVoice: process.env.ATIS_ROBOT_VOICE_ES ?? "es-DO-EmilioNeural",
-  englishVoice: process.env.ATIS_ROBOT_VOICE_EN ?? "en-US-ChristopherNeural",
+  spanishVoice: process.env.ATIS_ROBOT_VOICE_ES ?? process.env.ATIS_VOICE_ES ?? "es-DO-EmilioNeural",
+  englishVoice: process.env.ATIS_ROBOT_VOICE_EN ?? process.env.ATIS_VOICE_EN ?? "en-US-ChristopherNeural",
   languageGapMs: Number(process.env.ATIS_LANGUAGE_GAP_MS ?? "2600"),
   loopDelayMs: Number(process.env.ATIS_LOOP_DELAY_MS ?? "4500"),
 };
 
-const discord = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
-const supabase = createClient(config.supabaseUrl, config.supabaseAnonKey, {
+function loadBotConfigs(): BotConfig[] {
+  return BOT_AIRPORTS.flatMap((defaultAirport, index) => {
+    const number = index + 1;
+    const key = slot(number);
+
+    // ATIS 01 keeps compatibility with the variables already used in Railway.
+    const token = process.env[`ATIS_${key}_TOKEN`]
+      ?? (number === 1 ? process.env.DISCORD_TOKEN : undefined);
+    const channelId = process.env[`ATIS_${key}_CHANNEL_ID`]
+      ?? (number === 1 ? process.env.DISCORD_VOICE_CHANNEL_ID : undefined);
+
+    if (!token || !channelId) {
+      console.log(`[ATIS ${key}] Deshabilitado: falta ${!token ? "TOKEN" : "CHANNEL_ID"}.`);
+      return [];
+    }
+
+    return [{
+      number,
+      label: `ATIS ${key}`,
+      token,
+      guildId: process.env[`ATIS_${key}_GUILD_ID`] ?? sharedConfig.guildId,
+      channelId,
+      airport: (process.env[`ATIS_${key}_AIRPORT`] ?? defaultAirport).toUpperCase(),
+      spanishVoice: process.env[`ATIS_${key}_VOICE_ES`] ?? sharedConfig.spanishVoice,
+      englishVoice: process.env[`ATIS_${key}_VOICE_EN`] ?? sharedConfig.englishVoice,
+      languageGapMs: Number(process.env[`ATIS_${key}_LANGUAGE_GAP_MS`] ?? sharedConfig.languageGapMs),
+      loopDelayMs: Number(process.env[`ATIS_${key}_LOOP_DELAY_MS`] ?? sharedConfig.loopDelayMs),
+    }];
+  });
+}
+
+const supabase = createClient(sharedConfig.supabaseUrl, sharedConfig.supabaseAnonKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Pause } });
-const audioDir = join(tmpdir(), "pf24-atis-01");
-
-let voiceConnection: VoiceConnection | null = null;
-let currentAudio: AudioSet | null = null;
-let pendingAudio: AudioSet | null = null;
-let latestAtisId: string | null = null;
-let phase: Phase = "idle";
-let timer: NodeJS.Timeout | null = null;
-let synthesisVersion = 0;
-
-function clearTimer() {
-  if (timer) clearTimeout(timer);
-  timer = null;
-}
-
-async function ensureVoiceConnection() {
-  if (voiceConnection && voiceConnection.state.status !== VoiceConnectionStatus.Destroyed) return voiceConnection;
-
-  const guild = await discord.guilds.fetch(config.guildId);
-  const channel = await guild.channels.fetch(config.channelId);
-  if (!channel?.isVoiceBased()) throw new Error(`El canal ${config.channelId} no es un canal de voz.`);
-
-  const connection = joinVoiceChannel({
-    channelId: channel.id,
-    guildId: guild.id,
-    adapterCreator: guild.voiceAdapterCreator,
-    selfDeaf: true,
-    selfMute: false,
-  });
-  connection.subscribe(player);
-  voiceConnection = connection;
-
-  connection.on(VoiceConnectionStatus.Disconnected, async () => {
-    try {
-      await Promise.race([
-        entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
-        entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
-      ]);
-    } catch {
-      if (voiceConnection === connection) voiceConnection = null;
-      try { connection.destroy(); } catch {}
-      console.error("[ATIS 01] Conexión de voz perdida.");
-    }
-  });
-
-  await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
-  console.log(`[ATIS 01] Conectado al VC para emitir ${config.airport}.`);
-  return connection;
-}
-
-function disconnectVoice() {
-  clearTimer();
-  player.stop(true);
-  phase = "idle";
-  if (voiceConnection) {
-    try { voiceConnection.destroy(); } catch {}
-  }
-  voiceConnection = null;
-  console.log(`[ATIS 01] Sin ATIS activo para ${config.airport}; fuera del VC.`);
-}
-
-function playSpanish(delay = 0) {
-  clearTimer();
-  timer = setTimeout(async () => {
-    if (!latestAtisId || !currentAudio) return;
-    try {
-      await ensureVoiceConnection();
-      phase = "spanish";
-      player.play(createAudioResource(currentAudio.spanishPath));
-      console.log(`[ATIS 01] ${config.airport} INFO ${currentAudio.infoLetter}: español.`);
-    } catch (error) {
-      console.error("[ATIS 01] No se pudo iniciar español:", error);
-    }
-  }, delay);
-}
-
-function playEnglish(delay = config.languageGapMs) {
-  clearTimer();
-  timer = setTimeout(() => {
-    if (!latestAtisId || !currentAudio) return;
-    phase = "english";
-    player.play(createAudioResource(currentAudio.englishPath));
-    console.log(`[ATIS 01] ${config.airport} INFO ${currentAudio.infoLetter}: English.`);
-  }, delay);
-}
 
 function addAtisPauses(text: string) {
   return text
@@ -140,10 +112,9 @@ function addAtisPauses(text: string) {
     .trim();
 }
 
-async function applyRadioProcessing(inputPath: string, filename: string) {
+async function applyRadioProcessing(inputPath: string, outputPath: string) {
   if (!ffmpegPath) throw new Error("ffmpeg-static no entregó una ruta ejecutable.");
 
-  const outputPath = join(audioDir, `${filename}-radio.mp3`);
   const filter = [
     "highpass=f=450",
     "lowpass=f=2800",
@@ -178,155 +149,304 @@ async function applyRadioProcessing(inputPath: string, filename: string) {
   return outputPath;
 }
 
-async function synthesize(text: string, voice: string, filename: string) {
-  const tts = new EdgeTTS();
-  await tts.synthesize(addAtisPauses(text), voice, {
-    rate: "-14%",
-    pitch: "-12Hz",
-    volume: "0%",
-    outputFormat: Constants.OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3,
+class AtisVoiceBot {
+  private readonly discord = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
   });
+  private readonly player = createAudioPlayer({
+    behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
+  });
+  private readonly audioDir: string;
 
-  const rawPath = await tts.toFile(join(audioDir, `${filename}-raw.mp3`));
-  return applyRadioProcessing(rawPath, filename);
-}
+  private voiceConnection: VoiceConnection | null = null;
+  private realtimeChannel: RealtimeChannel | null = null;
+  private currentAudio: AudioSet | null = null;
+  private pendingAudio: AudioSet | null = null;
+  private latestAtisId: string | null = null;
+  private phase: Phase = "idle";
+  private timer: NodeJS.Timeout | null = null;
+  private synthesisVersion = 0;
 
-async function prepareAtis(row: AtisRow) {
-  const version = ++synthesisVersion;
-  const stamp = Date.now();
-  const spanish = buildSpanishAtisSpeech(row);
-  const english = buildEnglishAtisSpeech(row);
+  constructor(
+    private readonly config: BotConfig,
+    private readonly db: SupabaseClient,
+  ) {
+    this.audioDir = join(tmpdir(), `pf24-atis-${slot(config.number)}`);
 
-  console.log(`[ATIS 01] Sintetizando y procesando INFO ${row.info_letter} estilo radio degradada...`);
-  const [spanishPath, englishPath] = await Promise.all([
-    synthesize(spanish, config.spanishVoice, `${config.airport}-${row.info_letter}-${stamp}-es`),
-    synthesize(english, config.englishVoice, `${config.airport}-${row.info_letter}-${stamp}-en`),
-  ]);
+    this.player.on(AudioPlayerStatus.Idle, () => this.handlePlayerIdle());
+    this.player.on("error", (error) => {
+      this.log("error", "Error de audio", error);
+      if (this.latestAtisId && this.currentAudio) this.playSpanish(1500);
+    });
 
-  if (version !== synthesisVersion || latestAtisId !== row.id) return;
-
-  const prepared: AudioSet = {
-    atisId: row.id,
-    spanishPath,
-    englishPath,
-    infoLetter: row.info_letter,
-  };
-
-  if (!currentAudio || phase === "idle") {
-    currentAudio = prepared;
-    pendingAudio = null;
-    await ensureVoiceConnection();
-    playSpanish(350);
-    return;
+    this.discord.once("ready", () => {
+      this.initialize().catch((error) => {
+        this.log("error", "Error de inicio", error);
+      });
+    });
   }
 
-  pendingAudio = prepared;
-  console.log(`[ATIS 01] INFO ${row.info_letter} preparada; cambiará al finalizar el ciclo actual.`);
-}
-
-async function loadLatestAtis() {
-  const { data, error } = await supabase
-    .from("atis_messages")
-    .select("id, airport_icao, info_letter, metar, approach_primary, approach_optional, runway, extra_info, remarks, created_at")
-    .eq("airport_icao", config.airport)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<AtisRow>();
-
-  if (error) throw error;
-  if (!data) {
-    latestAtisId = null;
-    currentAudio = null;
-    pendingAudio = null;
-    disconnectVoice();
-    return;
+  private log(level: "log" | "error", message: string, detail?: unknown) {
+    const prefix = `[${this.config.label} · ${this.config.airport}]`;
+    if (level === "error") console.error(prefix, message, detail ?? "");
+    else console.log(prefix, message, detail ?? "");
   }
 
-  latestAtisId = data.id;
-  await prepareAtis(data);
-}
-
-async function handleInsert(row: AtisRow) {
-  if (row.airport_icao !== config.airport) return;
-  latestAtisId = row.id;
-  pendingAudio = null;
-  console.log(`[ATIS 01] Nuevo ATIS: ${row.airport_icao} INFO ${row.info_letter}.`);
-  await prepareAtis(row);
-}
-
-function handleDelete(oldRow: Partial<AtisRow>) {
-  if (!oldRow.id || oldRow.id !== latestAtisId) return;
-  console.log(`[ATIS 01] ATIS activo ${oldRow.id} eliminado.`);
-  synthesisVersion++;
-  latestAtisId = null;
-  currentAudio = null;
-  pendingAudio = null;
-  disconnectVoice();
-}
-
-function subscribeToAtis() {
-  return supabase
-    .channel(`atis-voice-${config.airport}`)
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "atis_messages" }, (payload) => {
-      handleInsert(payload.new as AtisRow).catch((error) => console.error("[ATIS 01] Error procesando INSERT:", error));
-    })
-    .on("postgres_changes", { event: "DELETE", schema: "public", table: "atis_messages" }, (payload) => {
-      handleDelete(payload.old as Partial<AtisRow>);
-    })
-    .subscribe((status) => console.log(`[ATIS 01] Supabase Realtime: ${status}`));
-}
-
-player.on(AudioPlayerStatus.Idle, () => {
-  if (!latestAtisId || !currentAudio) return;
-
-  if (phase === "spanish") {
-    playEnglish();
-    return;
+  async start() {
+    await this.discord.login(this.config.token);
   }
 
-  if (phase === "english") {
-    phase = "idle";
+  async stop() {
+    this.synthesisVersion++;
+    this.latestAtisId = null;
+    this.currentAudio = null;
+    this.pendingAudio = null;
+    this.disconnectVoice();
+    if (this.realtimeChannel) {
+      await this.db.removeChannel(this.realtimeChannel);
+      this.realtimeChannel = null;
+    }
+    this.discord.destroy();
+  }
 
-    if (pendingAudio && pendingAudio.atisId === latestAtisId) {
-      console.log(`[ATIS 01] Cambio a INFO ${pendingAudio.infoLetter}.`);
-      currentAudio = pendingAudio;
-      pendingAudio = null;
-      playSpanish(700);
+  private async initialize() {
+    await mkdir(this.audioDir, { recursive: true });
+    this.log("log", `Discord listo como ${this.discord.user?.tag ?? this.config.label}.`);
+    this.subscribeToAtis();
+    await this.loadLatestAtis();
+  }
+
+  private clearTimer() {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  private async ensureVoiceConnection() {
+    if (this.voiceConnection && this.voiceConnection.state.status !== VoiceConnectionStatus.Destroyed) {
+      return this.voiceConnection;
+    }
+
+    const guild = await this.discord.guilds.fetch(this.config.guildId);
+    const channel = await guild.channels.fetch(this.config.channelId);
+    if (!channel?.isVoiceBased()) {
+      throw new Error(`El canal ${this.config.channelId} no es un canal de voz.`);
+    }
+
+    const connection = joinVoiceChannel({
+      channelId: channel.id,
+      guildId: guild.id,
+      adapterCreator: guild.voiceAdapterCreator,
+      selfDeaf: true,
+      selfMute: false,
+    });
+
+    connection.subscribe(this.player);
+    this.voiceConnection = connection;
+
+    connection.on(VoiceConnectionStatus.Disconnected, async () => {
+      try {
+        await Promise.race([
+          entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+          entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+        ]);
+      } catch {
+        if (this.voiceConnection === connection) this.voiceConnection = null;
+        try { connection.destroy(); } catch {}
+        this.log("error", "Conexión de voz perdida.");
+      }
+    });
+
+    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+    this.log("log", `Conectado al VC ${this.config.channelId}.`);
+    return connection;
+  }
+
+  private disconnectVoice() {
+    this.clearTimer();
+    this.player.stop(true);
+    this.phase = "idle";
+    if (this.voiceConnection) {
+      try { this.voiceConnection.destroy(); } catch {}
+    }
+    this.voiceConnection = null;
+    this.log("log", "Sin ATIS activo; fuera del VC.");
+  }
+
+  private playSpanish(delay = 0) {
+    this.clearTimer();
+    this.timer = setTimeout(async () => {
+      if (!this.latestAtisId || !this.currentAudio) return;
+      try {
+        await this.ensureVoiceConnection();
+        this.phase = "spanish";
+        this.player.play(createAudioResource(this.currentAudio.spanishPath));
+        this.log("log", `INFO ${this.currentAudio.infoLetter}: español.`);
+      } catch (error) {
+        this.log("error", "No se pudo iniciar español", error);
+      }
+    }, delay);
+  }
+
+  private playEnglish(delay = this.config.languageGapMs) {
+    this.clearTimer();
+    this.timer = setTimeout(() => {
+      if (!this.latestAtisId || !this.currentAudio) return;
+      this.phase = "english";
+      this.player.play(createAudioResource(this.currentAudio.englishPath));
+      this.log("log", `INFO ${this.currentAudio.infoLetter}: English.`);
+    }, delay);
+  }
+
+  private async synthesize(text: string, voice: string, filename: string) {
+    const tts = new EdgeTTS();
+    await tts.synthesize(addAtisPauses(text), voice, {
+      rate: "-14%",
+      pitch: "-12Hz",
+      volume: "0%",
+      outputFormat: Constants.OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3,
+    });
+
+    const rawPath = await tts.toFile(join(this.audioDir, `${filename}-raw.mp3`));
+    return applyRadioProcessing(rawPath, join(this.audioDir, `${filename}-radio.mp3`));
+  }
+
+  private async prepareAtis(row: AtisRow) {
+    const version = ++this.synthesisVersion;
+    const stamp = Date.now();
+    const spanish = buildSpanishAtisSpeech(row);
+    const english = buildEnglishAtisSpeech(row);
+
+    this.log("log", `Sintetizando INFO ${row.info_letter}...`);
+    const [spanishPath, englishPath] = await Promise.all([
+      this.synthesize(spanish, this.config.spanishVoice, `${this.config.airport}-${row.info_letter}-${stamp}-es`),
+      this.synthesize(english, this.config.englishVoice, `${this.config.airport}-${row.info_letter}-${stamp}-en`),
+    ]);
+
+    if (version !== this.synthesisVersion || this.latestAtisId !== row.id) return;
+
+    const prepared: AudioSet = {
+      atisId: row.id,
+      spanishPath,
+      englishPath,
+      infoLetter: row.info_letter,
+    };
+
+    if (!this.currentAudio || this.phase === "idle") {
+      this.currentAudio = prepared;
+      this.pendingAudio = null;
+      await this.ensureVoiceConnection();
+      this.playSpanish(350);
       return;
     }
 
-    if (currentAudio.atisId !== latestAtisId) {
-      console.log("[ATIS 01] Esperando audio del nuevo ATIS...");
+    this.pendingAudio = prepared;
+    this.log("log", `INFO ${row.info_letter} preparada; cambiará al terminar el ciclo actual.`);
+  }
+
+  private async loadLatestAtis() {
+    const { data, error } = await this.db
+      .from("atis_messages")
+      .select("id, airport_icao, info_letter, metar, approach_primary, approach_optional, runway, extra_info, remarks, created_at")
+      .eq("airport_icao", this.config.airport)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<AtisRow>();
+
+    if (error) throw error;
+    if (!data) {
+      this.latestAtisId = null;
+      this.currentAudio = null;
+      this.pendingAudio = null;
+      this.disconnectVoice();
       return;
     }
 
-    playSpanish(config.loopDelayMs);
+    this.latestAtisId = data.id;
+    await this.prepareAtis(data);
   }
-});
 
-player.on("error", (error) => {
-  console.error("[ATIS 01] Error de audio:", error);
-  if (latestAtisId && currentAudio) playSpanish(1500);
-});
-
-discord.once("ready", async () => {
-  try {
-    await mkdir(audioDir, { recursive: true });
-    console.log(`[ATIS 01] Discord listo. Esperando ATIS de ${config.airport}.`);
-    subscribeToAtis();
-    await loadLatestAtis();
-  } catch (error) {
-    console.error("[ATIS 01] Error de inicio:", error);
-    process.exitCode = 1;
-    discord.destroy();
+  private async handleInsert(row: AtisRow) {
+    if (row.airport_icao !== this.config.airport) return;
+    this.latestAtisId = row.id;
+    this.pendingAudio = null;
+    this.log("log", `Nuevo ATIS INFO ${row.info_letter}.`);
+    await this.prepareAtis(row);
   }
-});
 
-function shutdown() {
-  disconnectVoice();
-  discord.destroy();
+  private handleDelete(oldRow: Partial<AtisRow>) {
+    if (!oldRow.id || oldRow.id !== this.latestAtisId) return;
+    this.log("log", `ATIS activo ${oldRow.id} eliminado.`);
+    this.synthesisVersion++;
+    this.latestAtisId = null;
+    this.currentAudio = null;
+    this.pendingAudio = null;
+    this.disconnectVoice();
+  }
+
+  private subscribeToAtis() {
+    this.realtimeChannel = this.db
+      .channel(`atis-voice-${this.config.airport}-${this.config.number}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "atis_messages", filter: `airport_icao=eq.${this.config.airport}` },
+        (payload) => {
+          this.handleInsert(payload.new as AtisRow).catch((error) => this.log("error", "Error procesando INSERT", error));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "atis_messages" },
+        (payload) => this.handleDelete(payload.old as Partial<AtisRow>),
+      )
+      .subscribe((status) => this.log("log", `Supabase Realtime: ${status}`));
+  }
+
+  private handlePlayerIdle() {
+    if (!this.latestAtisId || !this.currentAudio) return;
+
+    if (this.phase === "spanish") {
+      this.playEnglish();
+      return;
+    }
+
+    if (this.phase === "english") {
+      this.phase = "idle";
+
+      if (this.pendingAudio && this.pendingAudio.atisId === this.latestAtisId) {
+        this.log("log", `Cambio a INFO ${this.pendingAudio.infoLetter}.`);
+        this.currentAudio = this.pendingAudio;
+        this.pendingAudio = null;
+        this.playSpanish(700);
+        return;
+      }
+
+      if (this.currentAudio.atisId !== this.latestAtisId) {
+        this.log("log", "Esperando audio del nuevo ATIS...");
+        return;
+      }
+
+      this.playSpanish(this.config.loopDelayMs);
+    }
+  }
 }
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
 
-discord.login(config.token);
+const botConfigs = loadBotConfigs();
+if (botConfigs.length === 0) {
+  throw new Error("No hay ningún ATIS habilitado. Configura al menos ATIS_01_TOKEN y ATIS_01_CHANNEL_ID.");
+}
+
+const bots = botConfigs.map((config) => new AtisVoiceBot(config, supabase));
+
+console.log(`[PF24 ATIS] Iniciando ${bots.length} bot(s): ${botConfigs.map((b) => `${b.label}/${b.airport}`).join(", ")}`);
+await Promise.all(bots.map((bot) => bot.start()));
+
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log("[PF24 ATIS] Cerrando bots...");
+  await Promise.allSettled(bots.map((bot) => bot.stop()));
+}
+
+process.on("SIGTERM", () => { void shutdown(); });
+process.on("SIGINT", () => { void shutdown(); });
