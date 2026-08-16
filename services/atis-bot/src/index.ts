@@ -45,8 +45,8 @@ const config = {
   airport: (process.env.ATIS_AIRPORT ?? "MDPC").toUpperCase(),
   supabaseUrl: required("SUPABASE_URL"),
   supabaseAnonKey: required("SUPABASE_ANON_KEY"),
-  spanishVoice: process.env.ATIS_VOICE_ES ?? "es-US-AlonsoNeural",
-  englishVoice: process.env.ATIS_VOICE_EN ?? "en-US-GuyNeural",
+  spanishVoice: process.env.ATIS_ROBOT_VOICE_ES ?? "es-ES-AlvaroNeural",
+  englishVoice: process.env.ATIS_ROBOT_VOICE_EN ?? "en-US-ChristopherNeural",
   languageGapMs: Number(process.env.ATIS_LANGUAGE_GAP_MS ?? "2000"),
   loopDelayMs: Number(process.env.ATIS_LOOP_DELAY_MS ?? "4000"),
 };
@@ -75,6 +75,43 @@ let synthesisVersion = 0;
 function clearTimer() {
   if (timer) clearTimeout(timer);
   timer = null;
+}
+
+function normalizeRunwayValue(value: string) {
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) return normalized;
+
+  const parts = normalized
+    .split(/[\s,;/|+-]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length > 1 && parts.every((part) => part === parts[0])) {
+    return parts[0];
+  }
+
+  const compactRepeated = normalized.match(/^(\d{2}[LRC]?)(?:\1)+$/);
+  if (compactRepeated) return compactRepeated[1];
+
+  return normalized;
+}
+
+function polishSpeech(text: string, language: "es" | "en") {
+  let polished = text;
+
+  if (language === "es") {
+    polished = polished
+      .replace(/información adicional,\s*/gi, "")
+      .replace(/transponder modo altitude/gi, "X P D R modo altitude")
+      .replace(/R N P\s+o\s+visual/gi, "R N P, o visual");
+  } else {
+    polished = polished
+      .replace(/additional information,\s*/gi, "")
+      .replace(/transponder altitude mode/gi, "X P D R altitude mode")
+      .replace(/R N P\s+or\s+visual/gi, "R N P, or visual");
+  }
+
+  return polished.replace(/\s+/g, " ").trim();
 }
 
 async function ensureVoiceConnection() {
@@ -161,8 +198,8 @@ function playEnglish(delay = config.languageGapMs) {
 async function synthesize(text: string, voice: string, filename: string) {
   const tts = new EdgeTTS();
   await tts.synthesize(text, voice, {
-    rate: "-8%",
-    pitch: "-3Hz",
+    rate: "-2%",
+    pitch: "-10Hz",
     volume: "0%",
     outputFormat: Constants.OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3,
   });
@@ -172,8 +209,12 @@ async function synthesize(text: string, voice: string, filename: string) {
 async function prepareAtis(row: AtisRow) {
   const version = ++synthesisVersion;
   const stamp = Date.now();
-  const spanish = buildSpanishAtisSpeech(row);
-  const english = buildEnglishAtisSpeech(row);
+  const speechRow: AtisRow = {
+    ...row,
+    runway: normalizeRunwayValue(row.runway),
+  };
+  const spanish = polishSpeech(buildSpanishAtisSpeech(speechRow), "es");
+  const english = polishSpeech(buildEnglishAtisSpeech(speechRow), "en");
 
   const [spanishPath, englishPath] = await Promise.all([
     synthesize(spanish, config.spanishVoice, `${config.airport}-${row.info_letter}-${stamp}-es`),
