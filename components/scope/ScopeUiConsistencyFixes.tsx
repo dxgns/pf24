@@ -19,21 +19,58 @@ function findConfigDialog() {
   return dialog && dialog.contains(personalization) ? dialog : null;
 }
 
+function dedupeQnh(text: string) {
+  const tokens = text.split(/(\s+)/);
+  let lastQnh = "";
+  return tokens.filter((token) => {
+    const normalized = token.trim().toUpperCase();
+    if (!/^Q\d{4}$/.test(normalized)) return true;
+    if (normalized === lastQnh) return false;
+    lastQnh = normalized;
+    return true;
+  }).join("");
+}
+
 function normalizeAtisPreview(dialog: HTMLElement) {
   const candidates = Array.from(dialog.querySelectorAll<HTMLElement>("div"));
   const preview = candidates.find((node) => /\bATIS\s+INFO\s+[A-Z]\b/i.test(node.textContent ?? "") && node.className.includes("overflow-y-auto"));
   if (!preview) return;
   const current = preview.textContent ?? "";
-  const cleaned = current.replace(/\b(Q\d{4})(?:\s+\1)+\b/gi, "$1");
+  const cleaned = dedupeQnh(current);
   if (cleaned !== current) preview.textContent = cleaned;
 }
 
-function markFlightPlanDialogs() {
+function compactFlightPlanDialogs() {
   const roots = Array.from(document.querySelectorAll<HTMLElement>("main.fixed > section > div.absolute"));
   for (const root of roots) {
     const first = root.firstElementChild?.textContent?.trim().toUpperCase() ?? "";
     if (first !== "FLIGHT PLAN") continue;
+
     root.dataset.pf24FlightPlanDialog = "true";
+    root.style.width = "640px";
+    root.style.maxWidth = "calc(100% - 32px)";
+    root.style.padding = "10px";
+    root.style.fontSize = "12px";
+
+    const title = root.firstElementChild as HTMLElement | null;
+    if (title) {
+      title.style.fontSize = "14px";
+      title.style.marginBottom = "6px";
+    }
+
+    root.querySelectorAll<HTMLElement>("label").forEach((label) => {
+      if (getComputedStyle(label).display === "grid") {
+        label.style.gridTemplateColumns = "122px minmax(0, 1fr)";
+      }
+    });
+
+    const labels = Array.from(root.querySelectorAll<HTMLElement>("div,span"));
+    for (const label of labels) {
+      const text = label.textContent?.trim().toUpperCase();
+      if (text !== "ROUTE" && text !== "REMARKS") continue;
+      const area = label.nextElementSibling;
+      if (area instanceof HTMLElement) area.style.height = "92px";
+    }
   }
 }
 
@@ -49,7 +86,10 @@ function fixConfigLabels() {
 
 function syncSavedWeatherVisibility() {
   let saved: { atis?: boolean; metar?: boolean } = {};
-  try { saved = JSON.parse(localStorage.getItem(WEATHER_VISIBILITY_KEY) ?? "{}"); } catch {}
+  try {
+    saved = JSON.parse(localStorage.getItem(WEATHER_VISIBILITY_KEY) ?? "{}");
+  } catch {}
+
   const weather = document.querySelector<HTMLElement>("[data-pf24-weather-window='true']");
   if (!weather) return;
   const headerText = weather.firstElementChild?.textContent?.toUpperCase() ?? "";
@@ -84,19 +124,11 @@ export default function ScopeUiConsistencyFixes() {
       }
       [data-pf24-live-hold-list='true'] > div:first-child > :nth-child(2),
       [data-pf24-live-hold-list='true'] > div:nth-child(2) > div > :nth-child(2) {
-        min-width:0 !important; overflow:hidden !important; text-overflow:ellipsis !important; white-space:nowrap !important;
+        min-width:0 !important;
+        overflow:hidden !important;
+        text-overflow:ellipsis !important;
+        white-space:nowrap !important;
       }
-
-      [data-pf24-flight-plan-dialog='true'] {
-        width:640px !important;
-        max-width:calc(100% - 32px) !important;
-        padding:10px !important;
-        font-size:12px !important;
-      }
-      [data-pf24-flight-plan-dialog='true'] > div:first-child { font-size:14px !important; margin-bottom:6px !important; }
-      [data-pf24-flight-plan-dialog='true'] [class*='grid-cols-[170px'] { grid-template-columns:122px minmax(0,1fr) !important; }
-      [data-pf24-flight-plan-dialog='true'] [class*='h-[150px]'] { height:92px !important; }
-      [data-pf24-flight-plan-dialog='true'] [class*='text-[18px]'] { font-size:12px !important; }
     `;
     document.head.appendChild(style);
 
@@ -156,7 +188,7 @@ export default function ScopeUiConsistencyFixes() {
         atisCommittedRef.current = false;
       }
 
-      markFlightPlanDialogs();
+      compactFlightPlanDialogs();
       fixConfigLabels();
       if (!visibilityRestored) {
         syncSavedWeatherVisibility();
@@ -165,7 +197,7 @@ export default function ScopeUiConsistencyFixes() {
     };
 
     sync();
-    const timer = window.setInterval(sync, 120);
+    const timer = window.setInterval(sync, 180);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("click", onClickCapture, true);
