@@ -125,7 +125,7 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       const key = norm(detail?.key ?? "");
       if (!key) return;
       const owner = detail?.owner?.trim().toUpperCase() || null;
-      const previousOwner = plannedMeta.get(key)?.owner ?? unplannedOwners[key]?.trim().toUpperCase() || null;
+      const previousOwner = plannedMeta.get(key)?.owner ?? (unplannedOwners[key]?.trim().toUpperCase() || null);
       setOptimisticOwners((current) => ({ ...current, [key]: { owner, previousOwner, expiresAt: Date.now() + 4000 } }));
       scheduleRefresh(120);
     };
@@ -157,7 +157,7 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       let changed = false;
       for (const [key, optimistic] of Object.entries(current)) {
         const meta = plannedMeta.get(key);
-        const actual = meta ? meta.owner : unplannedOwners[key]?.trim().toUpperCase() || null;
+        const actual = meta ? meta.owner : (unplannedOwners[key]?.trim().toUpperCase() || null);
         if (optimistic.expiresAt <= now || actual === optimistic.owner || actual !== optimistic.previousOwner) {
           delete next[key];
           changed = true;
@@ -179,7 +179,7 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       if (!key) return;
       const meta = plannedMeta.get(key);
       const optimistic = optimisticOwners[key];
-      const owner = optimistic && optimistic.expiresAt > now ? optimistic.owner : meta ? meta.owner : unplannedOwners[key]?.trim().toUpperCase() || null;
+      const owner = optimistic && optimistic.expiresAt > now ? optimistic.owner : meta ? meta.owner : (unplannedOwners[key]?.trim().toUpperCase() || null);
       const mine = Boolean(position && owner === position);
       const handover = handoverStates[key];
       let color = mine ? GREEN : owner ? GREY : FREE;
@@ -220,7 +220,7 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       if (action !== "ASSUME" && action !== "FREE") return;
       const key = norm(trafficCallsign(label));
       if (!key) return;
-      const previousOwner = plannedMeta.get(key)?.owner ?? unplannedOwners[key]?.trim().toUpperCase() || null;
+      const previousOwner = plannedMeta.get(key)?.owner ?? (unplannedOwners[key]?.trim().toUpperCase() || null);
       if (action === "ASSUME" && position) {
         setOptimisticOwners((current) => ({ ...current, [key]: { owner: position, previousOwner, expiresAt: Date.now() + 4000 } }));
         scheduleRefresh(200);
