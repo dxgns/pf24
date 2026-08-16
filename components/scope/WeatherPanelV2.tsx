@@ -27,7 +27,6 @@ const TA_BY_AIRPORT: Record<string, 3000 | 4000> = {
   EFKT: 3000, EGHI: 3000, EGKK: 3000, GCLP: 3000, LCLK: 4000, LCPH: 4000, LCRA: 4000,
   LEMH: 3000, MDAB: 3000, MDCR: 3000, MDPC: 3000, MDST: 3000, MTCA: 3000,
 };
-
 const TRANSITION_LEVEL_TABLE = [
   { min: 942.2, max: 959.4, ta3000: 60, ta4000: 70 },
   { min: 959.5, max: 977.1, ta3000: 55, ta4000: 65 },
@@ -37,37 +36,20 @@ const TRANSITION_LEVEL_TABLE = [
   { min: 1031.7, max: 1050.3, ta3000: 35, ta4000: 45 },
 ] as const;
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), Math.max(min, max));
-}
-
+function clamp(value: number, min: number, max: number) { return Math.min(Math.max(value, min), Math.max(min, max)); }
 function readVisibility(): WeatherVisibility {
   if (typeof window === "undefined") return DEFAULT_VISIBILITY;
   try {
     const parsed = JSON.parse(localStorage.getItem(VISIBILITY_STORAGE_KEY) ?? "{}") as Partial<WeatherVisibility>;
-    return {
-      metar: parsed.metar !== false,
-      atis: parsed.atis === true,
-    };
-  } catch {
-    return DEFAULT_VISIBILITY;
-  }
+    return { metar: parsed.metar !== false, atis: parsed.atis === true };
+  } catch { return DEFAULT_VISIBILITY; }
 }
-
 function getActiveAirports(): string[] {
   try {
     const state = JSON.parse(localStorage.getItem(RUNWAY_STORAGE_KEY) ?? "{}") as Record<string, RunwaySelection>;
-    return Array.from(new Set(
-      Object.entries(state)
-        .filter(([, value]) => Boolean(value?.active))
-        .map(([key]) => key.split("-")[0]?.toUpperCase())
-        .filter((value): value is string => Boolean(value && /^[A-Z0-9]{4}$/.test(value))),
-    )).sort();
-  } catch {
-    return [];
-  }
+    return Array.from(new Set(Object.entries(state).filter(([, value]) => Boolean(value?.active)).map(([key]) => key.split("-")[0]?.toUpperCase()).filter((value): value is string => Boolean(value && /^[A-Z0-9]{4}$/.test(value))))).sort();
+  } catch { return []; }
 }
-
 function deactivateLocalAtis(airport: string) {
   try {
     const configs = JSON.parse(localStorage.getItem(ATIS_CONFIG_STORAGE_KEY) ?? "{}") as Record<string, Record<string, unknown>>;
@@ -78,7 +60,6 @@ function deactivateLocalAtis(airport: string) {
   } catch {}
   window.dispatchEvent(new CustomEvent("pf24-atis-config-sync"));
 }
-
 function extractQnhHpa(raw: string | null): number | null {
   if (!raw) return null;
   const qnh = raw.match(/\bQ(\d{4})\b/i)?.[1];
@@ -86,7 +67,6 @@ function extractQnhHpa(raw: string | null): number | null {
   const altimeter = raw.match(/\bA(\d{4})\b/i)?.[1];
   return altimeter ? (Number(altimeter) / 100) * 33.8638866667 : null;
 }
-
 function transitionLevel(station: string, raw: string | null): string {
   const ta = TA_BY_AIRPORT[station];
   const qnh = extractQnhHpa(raw);
@@ -95,7 +75,6 @@ function transitionLevel(station: string, raw: string | null): string {
   if (!band) return "---";
   return String(ta === 4000 ? band.ta4000 : band.ta3000).padStart(3, "0");
 }
-
 function compactMetar(station: string, raw: string | null) {
   if (!raw) return `${station} -----KT Q----`;
   const wind = raw.match(/\b(?:\d{3}|VRB)\d{2,3}(?:G\d{2,3})?KT\b/i)?.[0]?.toUpperCase() ?? "-----KT";
@@ -106,20 +85,9 @@ function compactMetar(station: string, raw: string | null) {
   }
   return `${station} ${wind} ${qnh ?? "Q----"}`;
 }
-
-function formatFullMetar(raw: string) {
-  const trimmed = raw.trim();
-  return /^METAR\b/i.test(trimmed) ? trimmed : `METAR ${trimmed}`;
-}
-
-function findRadar() {
-  return document.querySelector<HTMLElement>("main.fixed > section");
-}
-
-function findFooterForm() {
-  return document.querySelector<HTMLFormElement>("main.fixed footer form");
-}
-
+function formatFullMetar(raw: string) { const trimmed = raw.trim(); return /^METAR\b/i.test(trimmed) ? trimmed : `METAR ${trimmed}`; }
+function findRadar() { return document.querySelector<HTMLElement>("main.fixed > section"); }
+function findFooterForm() { return document.querySelector<HTMLFormElement>("main.fixed footer form"); }
 function hideNativeWeather() {
   const windows = Array.from(document.querySelectorAll<HTMLElement>("main.fixed > section > div.absolute.z-30"));
   windows.forEach((win) => {
@@ -127,7 +95,6 @@ function hideNativeWeather() {
     if (title.includes("Metars") || title.includes("ATIS")) win.style.display = "none";
   });
 }
-
 function hideDefaultFooterMetar(form: HTMLFormElement | null) {
   if (!form) return;
   for (const child of Array.from(form.children)) {
@@ -136,7 +103,6 @@ function hideDefaultFooterMetar(form: HTMLFormElement | null) {
     if (child.textContent?.trim().startsWith("METAR")) child.style.display = "none";
   }
 }
-
 function setTransitionLevelDisplay(value: string) {
   const button = Array.from(document.querySelectorAll<HTMLButtonElement>("main.fixed header button")).find((item) => {
     const text = item.textContent?.replace(/\s+/g, " ").toUpperCase() ?? "";
@@ -146,28 +112,15 @@ function setTransitionLevelDisplay(value: string) {
   const target = spans && spans.length > 1 ? spans[spans.length - 1] : null;
   if (target) target.textContent = value;
 }
-
 function readWindowPosition(): Point {
   try {
     const parsed = JSON.parse(localStorage.getItem(WINDOW_STORAGE_KEY) ?? "{}") as Partial<Point>;
-    return {
-      x: typeof parsed.x === "number" ? parsed.x : 1265,
-      y: typeof parsed.y === "number" ? parsed.y : 48,
-    };
-  } catch {
-    return { x: 1265, y: 48 };
-  }
+    return { x: typeof parsed.x === "number" ? parsed.x : 1265, y: typeof parsed.y === "number" ? parsed.y : 48 };
+  } catch { return { x: 1265, y: 48 }; }
 }
-
-function ListIcon() {
-  return <svg width="10" height="8" viewBox="0 0 12 10"><rect x="2" y="1" width="8" height="8" fill="none" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="3" x2="9" y2="3" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="5" x2="9" y2="5" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="7" x2="9" y2="7" stroke="#d8e4e1" strokeWidth=".7"/></svg>;
-}
-function CollapseIcon({ collapsed }: { collapsed: boolean }) {
-  return <svg width="10" height="8" viewBox="0 0 12 10"><path d={collapsed ? "M2 3 L6 7 L10 3" : "M2 7 L6 3 L10 7"} fill="none" stroke="#d8e4e1" strokeWidth=".8"/></svg>;
-}
-function CloseIcon() {
-  return <svg width="10" height="8" viewBox="0 0 12 10"><line x1="2" y1="1" x2="10" y2="9" stroke="#d8e4e1" strokeWidth=".8"/><line x1="10" y1="1" x2="2" y2="9" stroke="#d8e4e1" strokeWidth=".8"/></svg>;
-}
+function ListIcon() { return <svg width="10" height="8" viewBox="0 0 12 10"><rect x="2" y="1" width="8" height="8" fill="none" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="3" x2="9" y2="3" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="5" x2="9" y2="5" stroke="#d8e4e1" strokeWidth=".7"/><line x1="3" y1="7" x2="9" y2="7" stroke="#d8e4e1" strokeWidth=".7"/></svg>; }
+function CollapseIcon({ collapsed }: { collapsed: boolean }) { return <svg width="10" height="8" viewBox="0 0 12 10"><path d={collapsed ? "M2 3 L6 7 L10 3" : "M2 7 L6 3 L10 7"} fill="none" stroke="#d8e4e1" strokeWidth=".8"/></svg>; }
+function CloseIcon() { return <svg width="10" height="8" viewBox="0 0 12 10"><line x1="2" y1="1" x2="10" y2="9" stroke="#d8e4e1" strokeWidth=".8"/><line x1="10" y1="1" x2="2" y2="9" stroke="#d8e4e1" strokeWidth=".8"/></svg>; }
 
 export default function WeatherPanelV2() {
   const [radar, setRadar] = useState<HTMLElement | null>(null);
@@ -191,68 +144,37 @@ export default function WeatherPanelV2() {
   const syncEnvironment = useCallback(() => {
     const nextRadar = findRadar();
     const nextFooter = findFooterForm();
-    setRadar(nextRadar);
-    setFooterForm(nextFooter);
-    setAirports(getActiveAirports());
-    hideNativeWeather();
-    hideDefaultFooterMetar(nextFooter);
+    setRadar(nextRadar); setFooterForm(nextFooter); setAirports(getActiveAirports()); hideNativeWeather(); hideDefaultFooterMetar(nextFooter);
   }, []);
-
   const loadAtis = useCallback(async () => {
-    const { data } = await supabase
-      .from("atis_messages")
-      .select("airport_icao,info_letter,created_at")
-      .order("created_at", { ascending: false });
+    const { data } = await supabase.from("atis_messages").select("airport_icao,info_letter,created_at").order("created_at", { ascending: false });
     const next: Record<string, string> = {};
-    for (const row of (data ?? []) as AtisRow[]) {
-      if (!next[row.airport_icao]) next[row.airport_icao] = row.info_letter;
-    }
+    for (const row of (data ?? []) as AtisRow[]) if (!next[row.airport_icao]) next[row.airport_icao] = row.info_letter;
     setAtisLetters(next);
   }, []);
 
+  useEffect(() => { localStorage.setItem(VISIBILITY_STORAGE_KEY, JSON.stringify(visible)); }, [visible]);
   useEffect(() => {
-    localStorage.setItem(VISIBILITY_STORAGE_KEY, JSON.stringify(visible));
-  }, [visible]);
-
-  useEffect(() => {
-    setPosition(readWindowPosition());
-    syncEnvironment();
-    void loadAtis();
+    setPosition(readWindowPosition()); syncEnvironment(); void loadAtis();
     const onClick = () => window.setTimeout(syncEnvironment, 0);
     document.addEventListener("click", onClick, true);
     window.addEventListener("storage", syncEnvironment);
-    const channel = supabase.channel("scope-weather-atis-v2").on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "atis_messages" },
-      () => void loadAtis(),
-    ).subscribe();
-    return () => {
-      document.removeEventListener("click", onClick, true);
-      window.removeEventListener("storage", syncEnvironment);
-      supabase.removeChannel(channel);
-    };
+    const channel = supabase.channel("scope-weather-atis-v2").on("postgres_changes", { event: "*", schema: "public", table: "atis_messages" }, () => void loadAtis()).subscribe();
+    return () => { document.removeEventListener("click", onClick, true); window.removeEventListener("storage", syncEnvironment); supabase.removeChannel(channel); };
   }, [loadAtis, syncEnvironment]);
-
   useEffect(() => {
     const onToggle = (event: Event) => {
       const panel = (event as CustomEvent<WeatherPanelName>).detail;
       if (panel !== "atis" && panel !== "metar") return;
-      setVisible((current) => ({ ...current, [panel]: !current[panel] }));
-      setCollapsed(false);
+      setVisible((current) => ({ ...current, [panel]: !current[panel] })); setCollapsed(false);
     };
     window.addEventListener("pf24-weather-toggle", onToggle);
     return () => window.removeEventListener("pf24-weather-toggle", onToggle);
   }, []);
-
   useEffect(() => {
     const stations = airportKey ? airportKey.split(",") : [];
     let cancelled = false;
-    if (stations.length === 0) {
-      setMetars({});
-      setSelectedStation(null);
-      setAtisPopup(null);
-      return;
-    }
+    if (stations.length === 0) { setMetars({}); setSelectedStation(null); setAtisPopup(null); return; }
     const refresh = async () => {
       setMetars((current) => Object.fromEntries(stations.map((station) => [station, current[station] ?? { raw: null, loading: true, error: false, sourceStation: station }])));
       const results = await Promise.all(stations.map(async (station): Promise<[string, MetarValue]> => {
@@ -260,31 +182,18 @@ export default function WeatherPanelV2() {
           const response = await fetch(`/api/scope/metar?station=${encodeURIComponent(station)}`, { cache: "no-store" });
           if (!response.ok) return [station, { raw: null, loading: false, error: true, sourceStation: station }];
           const data = await response.json() as { raw?: string | null; sourceStation?: string };
-          return [station, {
-            raw: data.raw ?? null,
-            loading: false,
-            error: false,
-            sourceStation: data.sourceStation?.toUpperCase() || station,
-          }];
-        } catch {
-          return [station, { raw: null, loading: false, error: true, sourceStation: station }];
-        }
+          return [station, { raw: data.raw ?? null, loading: false, error: false, sourceStation: data.sourceStation?.toUpperCase() || station }];
+        } catch { return [station, { raw: null, loading: false, error: true, sourceStation: station }]; }
       }));
       if (!cancelled) setMetars(Object.fromEntries(results));
     };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), REFRESH_MS);
+    void refresh(); const timer = window.setInterval(() => void refresh(), REFRESH_MS);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [airportKey]);
-
   useEffect(() => {
-    if (!selectedStation || !visible.metar) {
-      setTransitionLevelDisplay("---");
-      return;
-    }
+    if (!selectedStation || !visible.metar) { setTransitionLevelDisplay("---"); return; }
     setTransitionLevelDisplay(transitionLevel(selectedStation, selectedRaw));
   }, [selectedRaw, selectedStation, visible.metar]);
-
   useEffect(() => {
     const onOutsideClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
@@ -296,7 +205,6 @@ export default function WeatherPanelV2() {
     document.addEventListener("click", onOutsideClick, true);
     return () => document.removeEventListener("click", onOutsideClick, true);
   }, []);
-
   useEffect(() => {
     const onMove = (event: MouseEvent) => {
       if (!dragRef.current || !radar) return;
@@ -304,136 +212,55 @@ export default function WeatherPanelV2() {
       const maxX = Math.max(2, rect.width - totalWidth - 2);
       const totalHeight = collapsed ? HEADER_HEIGHT : HEADER_HEIGHT + Math.max(1, airports.length) * ROW_HEIGHT;
       const maxY = Math.max(2, rect.height - totalHeight - 2);
-      setPosition({
-        x: clamp(event.clientX - rect.left - dragRef.current.dx, 2, maxX),
-        y: clamp(event.clientY - rect.top - dragRef.current.dy, 2, maxY),
-      });
+      setPosition({ x: clamp(event.clientX - rect.left - dragRef.current.dx, 2, maxX), y: clamp(event.clientY - rect.top - dragRef.current.dy, 2, maxY) });
     };
     const onUp = () => {
       if (!dragRef.current) return;
       dragRef.current = null;
-      setPosition((current) => {
-        localStorage.setItem(WINDOW_STORAGE_KEY, JSON.stringify(current));
-        return current;
-      });
+      setPosition((current) => { localStorage.setItem(WINDOW_STORAGE_KEY, JSON.stringify(current)); return current; });
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, [airports.length, collapsed, radar, totalWidth]);
 
   const deleteAtis = async (station: string) => {
     try {
       setDeletingAtis(station);
       const { error } = await supabase.from("atis_messages").delete().eq("airport_icao", station);
-      if (error) {
-        console.error("PF24 Scope ATIS removal failed:", error);
-        return;
-      }
-      deactivateLocalAtis(station);
-      setAtisPopup(null);
-      await loadAtis();
-    } finally {
-      setDeletingAtis(null);
-    }
+      if (error) { console.error("PF24 Scope ATIS removal failed:", error); return; }
+      deactivateLocalAtis(station); setAtisPopup(null); await loadAtis();
+    } finally { setDeletingAtis(null); }
   };
 
   if (!radar || (!visible.metar && !visible.atis)) return null;
 
   const weatherWindow = createPortal(
-    <div
-      data-pf24-weather-window="true"
-      className="pointer-events-auto absolute z-[31] overflow-visible bg-[#151515] font-mono"
-      style={{ left: position.x, top: position.y, width: totalWidth, minWidth: totalWidth, maxWidth: totalWidth }}
-    >
+    <div data-pf24-weather-window="true" className="pointer-events-auto absolute z-[31] overflow-visible bg-transparent font-mono" style={{ left: position.x, top: position.y, width: totalWidth, minWidth: totalWidth, maxWidth: totalWidth }}>
       <div className="flex h-[17px] overflow-hidden bg-[#064a40] text-[#e9e9e9]">
-        {visible.atis && (
-          <div
-            className="flex shrink-0 items-center justify-center border border-[#173d38] text-[8px] tracking-[.5px]"
-            style={{ width: ATIS_WIDTH }}
-            onMouseDown={(event) => {
-              const rect = radar.getBoundingClientRect();
-              dragRef.current = { dx: event.clientX - rect.left - position.x, dy: event.clientY - rect.top - position.y };
-            }}
-          >ATIS</div>
-        )}
-        {visible.metar && (
-          <div className="flex shrink-0" style={{ width: METAR_PANEL_WIDTH }}>
-            <div
-              className="flex items-center justify-center border-y border-l border-[#173d38] text-[8px] tracking-[.5px]"
-              style={{ width: metarTitleWidth }}
-              onMouseDown={(event) => {
-                const rect = radar.getBoundingClientRect();
-                dragRef.current = { dx: event.clientX - rect.left - position.x, dy: event.clientY - rect.top - position.y };
-              }}
-            >Metars</div>
-            <button type="button" className="flex w-[13px] items-center justify-center border border-[#173d38]"><ListIcon/></button>
-            <button type="button" onClick={() => setCollapsed((value) => !value)} className="flex w-[13px] items-center justify-center border-y border-r border-[#173d38]"><CollapseIcon collapsed={collapsed}/></button>
-            <button type="button" onClick={() => setVisible({ metar: false, atis: false })} className="flex w-[13px] items-center justify-center border-y border-r border-[#173d38]"><CloseIcon/></button>
-          </div>
-        )}
+        {visible.atis && <div className="flex shrink-0 items-center justify-center border border-[#173d38] text-[8px] tracking-[.5px]" style={{ width: ATIS_WIDTH }} onMouseDown={(event) => { const rect = radar.getBoundingClientRect(); dragRef.current = { dx: event.clientX - rect.left - position.x, dy: event.clientY - rect.top - position.y }; }}>ATIS</div>}
+        {visible.metar && <div className="flex shrink-0" style={{ width: METAR_PANEL_WIDTH }}>
+          <div className="flex items-center justify-center border-y border-l border-[#173d38] text-[8px] tracking-[.5px]" style={{ width: metarTitleWidth }} onMouseDown={(event) => { const rect = radar.getBoundingClientRect(); dragRef.current = { dx: event.clientX - rect.left - position.x, dy: event.clientY - rect.top - position.y }; }}>Metars</div>
+          <button type="button" className="flex w-[13px] items-center justify-center border border-[#173d38]"><ListIcon/></button>
+          <button type="button" onClick={() => setCollapsed((value) => !value)} className="flex w-[13px] items-center justify-center border-y border-r border-[#173d38]"><CollapseIcon collapsed={collapsed}/></button>
+          <button type="button" onClick={() => setVisible({ metar: false, atis: false })} className="flex w-[13px] items-center justify-center border-y border-r border-[#173d38]"><CloseIcon/></button>
+        </div>}
       </div>
-
       {!collapsed && airports.map((station) => {
         const entry = metars[station];
         const atisLetter = atisLetters[station] ?? "-";
         const metarStation = entry?.sourceStation || station;
-        return (
-          <div key={station} className="relative flex h-[16px] w-full items-center bg-[#151515] text-left text-[8px] leading-none text-[#00efff]">
-            {visible.atis && (
-              <button
-                type="button"
-                data-pf24-atis-letter="true"
-                disabled={atisLetter === "-"}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setAtisPopup((current) => current === station ? null : station);
-                }}
-                className="flex h-full shrink-0 items-center pl-[4px] text-left text-[#00efff] disabled:text-[#00efff]"
-                style={{ width: ATIS_WIDTH }}
-              >{atisLetter}</button>
-            )}
-            {visible.metar && (
-              <button
-                type="button"
-                title={metarStation !== station ? `${station} usa METAR de ${metarStation}` : undefined}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setAtisPopup(null);
-                  setSelectedStation((current) => current === station ? null : station);
-                }}
-                className="h-full min-w-0 flex-1 whitespace-nowrap px-[4px] text-left text-[#00efff]"
-              >{entry?.loading ? `${station} LOADING...` : entry?.error ? `${station} METAR UNAVAILABLE` : compactMetar(metarStation, entry?.raw ?? null)}</button>
-            )}
-
-            {visible.atis && atisPopup === station && atisLetter !== "-" && (
-              <div data-pf24-atis-delete-popup="true" className="absolute left-[2px] top-[16px] z-[95] min-w-[82px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
-                <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-center text-[9px]">ATIS {station}</div>
-                <button
-                  type="button"
-                  disabled={deletingAtis === station}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void deleteAtis(station);
-                  }}
-                  className="block w-full px-[6px] py-[4px] text-left text-[9px] hover:bg-[#0a5b50] disabled:text-[#899]"
-                >{deletingAtis === station ? "DELETING..." : "DELETE ATIS"}</button>
-              </div>
-            )}
-          </div>
-        );
+        return <div key={station} className="relative flex h-[16px] w-full items-center bg-transparent text-left text-[8px] leading-none text-[#00efff]">
+          {visible.atis && <button type="button" data-pf24-atis-letter="true" disabled={atisLetter === "-"} onClick={(event) => { event.stopPropagation(); setAtisPopup((current) => current === station ? null : station); }} className="flex h-full shrink-0 items-center pl-[4px] text-left text-[#00efff] disabled:text-[#00efff]" style={{ width: ATIS_WIDTH }}>{atisLetter}</button>}
+          {visible.metar && <button type="button" title={metarStation !== station ? `${station} usa METAR de ${metarStation}` : undefined} onClick={(event) => { event.stopPropagation(); setAtisPopup(null); setSelectedStation((current) => current === station ? null : station); }} className="h-full min-w-0 flex-1 whitespace-nowrap bg-transparent px-[4px] text-left text-[#00efff]">{entry?.loading ? `${station} LOADING...` : entry?.error ? `${station} METAR UNAVAILABLE` : compactMetar(metarStation, entry?.raw ?? null)}</button>}
+          {visible.atis && atisPopup === station && atisLetter !== "-" && <div data-pf24-atis-delete-popup="true" className="absolute left-[2px] top-[16px] z-[95] min-w-[82px] border border-[#0b2f2a] bg-[#064a40] text-[#e9e9e9] shadow-[0_1px_4px_rgba(0,0,0,.55)]">
+            <div className="border-b border-[#0b2f2a] px-[5px] py-[2px] text-center text-[9px]">ATIS {station}</div>
+            <button type="button" disabled={deletingAtis === station} onClick={(event) => { event.stopPropagation(); void deleteAtis(station); }} className="block w-full px-[6px] py-[4px] text-left text-[9px] hover:bg-[#0a5b50] disabled:text-[#899]">{deletingAtis === station ? "DELETING..." : "DELETE ATIS"}</button>
+          </div>}
+        </div>;
       })}
-    </div>,
-    radar,
+    </div>, radar,
   );
 
-  const fullMetar = footerForm && selectedStation && selectedRaw && visible.metar ? createPortal(
-    <div data-pf24-full-metar="true" className="ml-1 max-w-[900px] truncate text-[8px] text-[#222]">{formatFullMetar(selectedRaw)}</div>,
-    footerForm,
-  ) : null;
-
+  const fullMetar = footerForm && selectedStation && selectedRaw && visible.metar ? createPortal(<div data-pf24-full-metar="true" className="ml-1 max-w-[900px] truncate text-[8px] text-[#222]">{formatFullMetar(selectedRaw)}</div>, footerForm) : null;
   return <>{weatherWindow}{fullMetar}</>;
 }
