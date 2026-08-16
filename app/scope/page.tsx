@@ -15,6 +15,7 @@ import ScopeTrafficOperations from "@/components/scope/ScopeTrafficOperations";
 import ScopeUnplannedTrafficOperationsV4 from "@/components/scope/ScopeUnplannedTrafficOperationsV4";
 import ScopeUnplannedHold from "@/components/scope/ScopeUnplannedHold";
 import ScopeOwnedTrafficLifecycle from "@/components/scope/ScopeOwnedTrafficLifecycle";
+import ScopeTrafficAutoRelease from "@/components/scope/ScopeTrafficAutoRelease";
 import ScopeTrafficOwnershipVisuals from "@/components/scope/ScopeTrafficOwnershipVisuals";
 import ScopeSharedHoldSync from "@/components/scope/ScopeSharedHoldSync";
 import ScopeHoldTelemetry from "@/components/scope/ScopeHoldTelemetry";
@@ -69,6 +70,7 @@ export default async function ScopePage() {
       <ScopeConnectionPersistence />
       <ScopeConnectDialogPersistence />
       <ScopeOwnedTrafficLifecycle />
+      <ScopeTrafficAutoRelease />
       <ScopeLayoutGuards />
       <WeatherPanelV2 />
       <ScopeRadarMap />
