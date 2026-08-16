@@ -190,7 +190,11 @@ function transitionPhrase(row: AtisSpeechData, language: Language) {
 function remarksPhrase(value: string | null | undefined, language: Language) {
   const remarks = (value ?? "").trim();
   if (!remarks) return "";
-  return language === "es" ? `Observaciones. ${remarks}` : `Remarks. ${remarks}`;
+  const isolatedLetter = /^[A-Z]$/i.test(remarks) ? remarks.toUpperCase() : null;
+  const spokenRemarks = isolatedLetter
+    ? ((language === "es" ? NATO_ES : NATO_EN)[isolatedLetter] ?? remarks)
+    : remarks;
+  return language === "es" ? `Observaciones. ${spokenRemarks}` : `Remarks. ${spokenRemarks}`;
 }
 
 export function buildSpanishAtisSpeech(row: AtisSpeechData) {
@@ -215,6 +219,10 @@ export function buildEnglishAtisSpeech(row: AtisSpeechData, translatedRemarks?: 
   const parsed=parseMetar(row.metar), primary=approachSpeech(row.approach_primary), optional=approachSpeech(row.approach_optional);
   const runways=splitRunways(row.runway);
   const dep=runwaySpeech(runways.departure,"en"), arr=runwaySpeech(runways.arrival,"en");
+  const originalRemarks = (row.remarks ?? "").trim();
+  const englishRemarks = /^[A-Z]$/i.test(originalRemarks)
+    ? originalRemarks
+    : (translatedRemarks !== undefined ? translatedRemarks : row.remarks);
   return [
     `${airportName(row.airport_icao,"en")} ATIS information ${infoWord(row.info_letter,"en")}`,
     ...metarPhrases(parsed,"en"),
@@ -225,6 +233,6 @@ export function buildEnglishAtisSpeech(row: AtisSpeechData, translatedRemarks?: 
     transitionPhrase(row,"en"),
     "X P D R. Altitude mode. On all taxiways and runways in use",
     `Advise information ${infoWord(row.info_letter,"en")} on initial contact`,
-    remarksPhrase(translatedRemarks !== undefined ? translatedRemarks : row.remarks,"en"),
+    remarksPhrase(englishRemarks,"en"),
   ].filter(Boolean).join(". ")+".";
 }
