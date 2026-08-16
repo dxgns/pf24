@@ -10,6 +10,7 @@ import ProjectFlightTrafficConfigured from "@/components/scope/ProjectFlightTraf
 import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopeTrafficLabelUX from "@/components/scope/ScopeTrafficLabelUX";
 import ScopeTrafficMappState from "@/components/scope/ScopeTrafficMappState";
+import ScopeTrafficHandover from "@/components/scope/ScopeTrafficHandover";
 import ScopeTrafficOperations from "@/components/scope/ScopeTrafficOperations";
 import ScopeUnplannedTrafficOperationsV4 from "@/components/scope/ScopeUnplannedTrafficOperationsV4";
 import ScopeUnplannedHold from "@/components/scope/ScopeUnplannedHold";
@@ -46,13 +47,8 @@ export const metadata: Metadata = {
 export default async function ScopePage() {
   const session = await auth();
 
-  if (!session) {
-    redirect("/login");
-  }
-
-  if (!session.user?.permissions?.canAccessATC) {
-    redirect("/access-denied");
-  }
+  if (!session) redirect("/login");
+  if (!session.user?.permissions?.canAccessATC) redirect("/access-denied");
 
   const { data, error } = await supabase
     .from("flight_plans")
@@ -60,9 +56,7 @@ export default async function ScopePage() {
     .neq("status", "FINISHED")
     .order("created_at", { ascending: false });
 
-  if (error) {
-    console.error("PF24 Scope flight plan load error:", error);
-  }
+  if (error) console.error("PF24 Scope flight plan load error:", error);
 
   const controllerName = session.user?.name ?? "ATC";
   const plans = (data ?? []) as ScopeFlightPlan[];
@@ -83,6 +77,7 @@ export default async function ScopePage() {
       <ScopeTrafficSettings />
       <ScopeTrafficLabelUX />
       <ScopeTrafficMappState />
+      <ScopeTrafficHandover initialPlans={plans} />
       <ScopeUnplannedHold initialPlans={plans} />
       <ScopeUnplannedTrafficOperationsV4 initialPlans={plans} />
       <ScopeSharedHoldSync />
