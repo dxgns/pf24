@@ -27,13 +27,25 @@ function getScopeConnection() {
 }
 
 function readSessionId() {
-  return sessionStorage.getItem(STORAGE_KEY);
+  const current = sessionStorage.getItem(STORAGE_KEY);
+  if (current) return current;
+
+  // One-time migration from the old cross-tab localStorage key. Keeping the
+  // live session id in sessionStorage prevents one Scope tab from closing or
+  // reusing another tab's ATC session while still surviving a normal reload.
+  const legacy = localStorage.getItem(STORAGE_KEY);
+  if (!legacy) return null;
+  sessionStorage.setItem(STORAGE_KEY, legacy);
+  localStorage.removeItem(STORAGE_KEY);
+  return legacy;
 }
 function writeSessionId(id: string) {
   sessionStorage.setItem(STORAGE_KEY, id);
+  localStorage.removeItem(STORAGE_KEY);
 }
 function clearSessionId() {
   sessionStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(STORAGE_KEY);
 }
 
 export default function ScopeAtcPresence({ controllerName }: { controllerName: string }) {
