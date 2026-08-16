@@ -17,6 +17,15 @@ function liveSelector(title: (typeof LIST_TITLES)[number]) {
   return "[data-pf24-live-freq-list='true']";
 }
 
+function windowCollapsed(win: HTMLElement) {
+  const header = win.firstElementChild as HTMLElement | null;
+  if (!header) return false;
+  const buttons = Array.from(header.querySelectorAll<HTMLButtonElement>(":scope button"));
+  const collapse = buttons.length >= 3 ? buttons[buttons.length - 2] : null;
+  const path = collapse?.querySelector<SVGPathElement>("path")?.getAttribute("d") ?? "";
+  return path.includes("M2 3") && path.includes("L6 7");
+}
+
 function syncListBodies() {
   const windows = Array.from(
     document.querySelectorAll<HTMLElement>("main.fixed > section > div.absolute.z-30"),
@@ -36,27 +45,21 @@ function syncListBodies() {
 
     let live = win.querySelector<HTMLElement>(`:scope > ${liveSelector(title)}`);
 
-    // FREQ predates the explicit live marker. When both native + live bodies are
-    // mounted, the operational portal is the last direct child; mark it once so
-    // collapse/expand can never confuse it with the legacy body again.
     if (title === "FREQ" && !live && connected && children.length >= 2) {
       live = children[children.length - 1];
       live.dataset.pf24LiveFreqList = "true";
     }
 
+    const collapsed = windowCollapsed(win);
     for (const child of children) {
       if (child === live) {
-        child.style.display = connected ? "" : "none";
+        child.style.display = connected && !collapsed ? "" : "none";
       } else {
-        // Everything that is not the operational portal is legacy PF24Scope
-        // content and must never become visible again.
         child.style.display = "none";
       }
     }
 
-    // If the operational component briefly treated its own portal as the native
-    // body during a collapse, undo that inline display:none here.
-    if (live && connected) live.style.display = "";
+    if (live) live.style.display = connected && !collapsed ? "" : "none";
   }
 }
 
@@ -71,7 +74,6 @@ function scheduleSync() {
 export default function ScopeNativeListBodyGuard() {
   useEffect(() => {
     scheduleSync();
-
     const onUiChange = () => scheduleSync();
 
     document.addEventListener("click", onUiChange, true);
