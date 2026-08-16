@@ -37,7 +37,6 @@ function jurisdiction(position: string) {
   const airport = upper.slice(0, 4);
   const facility = upper.split("_").at(-1) ?? "";
 
-  // ATIS is airport-local: only the airport's APP or TWR may create it.
   if ((facility === "APP" || facility === "TWR") && ATIS_AIRPORTS.has(airport)) {
     return new Set([airport]);
   }
@@ -146,14 +145,16 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
       window.setTimeout(() => void enforce(position || readPosition()), 80);
     };
 
-    const blockUnauthorized = (event: MouseEvent) => {
-      const dialog = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-pf24-atis-dialog='true']") : null;
+    const blockUnauthorizedSend = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const dialog = target?.closest<HTMLElement>("[data-pf24-atis-dialog='true']");
       if (!dialog) return;
+      const button = target?.closest<HTMLButtonElement>("button");
+      if (button?.textContent?.trim().toUpperCase() !== "SEND") return;
       const select = airportSelect(dialog);
       const selected = select?.value?.toUpperCase() ?? "";
-      if (!selected) return;
       const allowed = jurisdiction(position || readPosition());
-      if (ATIS_AIRPORTS.has(selected) && allowed.has(selected)) return;
+      if (selected && ATIS_AIRPORTS.has(selected) && allowed.has(selected)) return;
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -161,12 +162,12 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
 
     window.addEventListener("pf24-scope-connection-change", onConnection);
     document.addEventListener("click", onUi, true);
-    document.addEventListener("click", blockUnauthorized, true);
+    document.addEventListener("click", blockUnauthorizedSend, true);
 
     return () => {
       window.removeEventListener("pf24-scope-connection-change", onConnection);
       document.removeEventListener("click", onUi, true);
-      document.removeEventListener("click", blockUnauthorized, true);
+      document.removeEventListener("click", blockUnauthorizedSend, true);
     };
   }, [enforce, position]);
 
