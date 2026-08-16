@@ -129,8 +129,10 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       setPosition(detail?.connected ? (detail.callsign?.trim().toUpperCase() || readPosition()) : "");
     };
     const onUiClick = () => window.setTimeout(syncHosts, 0);
+    const onHoldSync = () => setHeldIds(readHeldIds());
 
     window.addEventListener("pf24-scope-connection-change", onConnection);
+    window.addEventListener("pf24-hold-sync", onHoldSync);
     document.addEventListener("click", onUiClick, true);
     window.addEventListener("resize", syncHosts);
 
@@ -138,6 +140,7 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       window.clearTimeout(first);
       window.clearTimeout(second);
       window.removeEventListener("pf24-scope-connection-change", onConnection);
+      window.removeEventListener("pf24-hold-sync", onHoldSync);
       document.removeEventListener("click", onUiClick, true);
       window.removeEventListener("resize", syncHosts);
     };
@@ -163,8 +166,6 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
   }, [plans]);
 
   const syncOperationalUi = useCallback(() => {
-    // Traffic-label colors are intentionally NOT written here. ScopeTrafficOwnershipVisuals
-    // is the sole source of truth for radar colors, preventing ATC synchronization flicker.
     const sector = document.querySelector<HTMLElement>("[data-pf24-live-sector-list='true']");
     if (sector) {
       const rows = Array.from(sector.children).slice(1).filter((element): element is HTMLElement => element instanceof HTMLElement);
@@ -214,11 +215,13 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
   }, [holdWindow]);
 
   const toggleHold = (plan: ScopeFlightPlan) => {
-    setHeldIds((current) => {
-      const next = current.includes(plan.id) ? current.filter((id) => id !== plan.id) : [...current, plan.id];
-      localStorage.setItem(HOLD_STORAGE_KEY, JSON.stringify(next));
-      return next;
-    });
+    const held = !heldIds.includes(plan.id);
+    const next = held ? [...heldIds, plan.id] : heldIds.filter((id) => id !== plan.id);
+    setHeldIds(next);
+    localStorage.setItem(HOLD_STORAGE_KEY, JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("pf24-hold-local-change", {
+      detail: { planId: plan.id, held },
+    }));
   };
 
   const assume = async (plan: ScopeFlightPlan) => {
@@ -342,7 +345,7 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
 
     document.addEventListener("click", onMenuClick, true);
     return () => document.removeEventListener("click", onMenuClick, true);
-  }, [plans, position, syncOperationalUi]);
+  }, [plans, position, syncOperationalUi, heldIds]);
 
   const holdPortal = holdWindow ? createPortal(
     <div data-pf24-live-hold-list="true" className="w-full max-w-full overflow-hidden border-x-2 border-b-2 border-[#ededed] bg-[#555c61] font-mono text-[10px] leading-[15px] text-[#e8e8e8] box-border">
