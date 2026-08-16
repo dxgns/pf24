@@ -150,7 +150,6 @@ function metarPhrases(parsed: ParsedMetar, language: Language) {
     out.push(wind);
   }
   if (parsed.cavok) {
-    // EASA/ICAO phraseology: CAVOK is pronounced "CAV-O-KAY", not letter by letter.
     out.push(language === "es" ? "cáv o kéy" : "CAV O KAY");
   } else {
     if (parsed.visibility) out.push(parsed.visibility==="9999"?(language==="es"?"visibilidad mayor a diez kilómetros":"visibility greater than ten kilometers"):(language==="es"?`visibilidad, ${digits(parsed.visibility,language)}, metros`:`visibility, ${digits(parsed.visibility,language)}, meters`));
@@ -167,8 +166,8 @@ function metarPhrases(parsed: ParsedMetar, language: Language) {
   return out;
 }
 
-function transitionValues(extraInfo: string | null | undefined) {
-  const value = extraInfo ?? "";
+function transitionValues(row: AtisSpeechData) {
+  const value = `${row.extra_info ?? ""} ${row.runway ?? ""}`;
   const altitude = value.match(/\[TRANS_ALT=(\d{1,5})\]/i)?.[1];
   const level = value.match(/\[TRANS_LVL=(\d{1,3})\]/i)?.[1];
   if (!altitude || !level) return null;
@@ -176,7 +175,7 @@ function transitionValues(extraInfo: string | null | undefined) {
 }
 
 function transitionPhrase(row: AtisSpeechData, language: Language) {
-  const transition = transitionValues(row.extra_info);
+  const transition = transitionValues(row);
   if (!transition) return "";
   const altitudeNumber = Number(transition.altitude);
   const altitudeSpeech = Number.isFinite(altitudeNumber)
@@ -187,14 +186,43 @@ function transitionPhrase(row: AtisSpeechData, language: Language) {
     : `Transition altitude ${altitudeSpeech} feet. Transition level, ${digits(transition.level,language)}`;
 }
 
+function replaceAviationDesignators(value: string, language: Language) {
+  const text = value.trim();
+  if (!text) return "";
+  const map = language === "es" ? NATO_ES : NATO_EN;
+  if (/^[A-Z]$/i.test(text)) return map[text.toUpperCase()] ?? text;
+
+  return text.replace(
+    /\b(CALLE DE RODAJE|V[IÍ]A DE RODAJE|TWY|TAXIWAY)\s+([A-Z])\b/gi,
+    (_match, prefix: string, letter: string) => `${prefix} ${map[letter.toUpperCase()] ?? letter}`,
+  );
+}
+
+function restoreEnglishDesignators(original: string | null | undefined, translated: string | null | undefined) {
+  const source = (original ?? "").trim();
+  let result = (translated ?? "").trim();
+  if (!source) return result;
+
+  if (/^[A-Z]$/i.test(source)) return NATO_EN[source.toUpperCase()] ?? source;
+
+  const designators = [...source.matchAll(/\b(?:CALLE DE RODAJE|V[IÍ]A DE RODAJE|TWY|TAXIWAY)\s+([A-Z])\b/gi)]
+    .map((match) => match[1].toUpperCase());
+
+  for (const letter of designators) {
+    const nato = NATO_EN[letter] ?? letter;
+    if (new RegExp(`\\b${nato}\\b`, "i").test(result)) continue;
+    if (/\bTAXIWAY\b/i.test(result)) {
+      result = result.replace(/\bTAXIWAY\b/i, (word) => `${word} ${nato}`);
+    }
+  }
+
+  return replaceAviationDesignators(result, "en");
+}
+
 function remarksPhrase(value: string | null | undefined, language: Language) {
-  const remarks = (value ?? "").trim();
+  const remarks = replaceAviationDesignators(value ?? "", language);
   if (!remarks) return "";
-  const isolatedLetter = /^[A-Z]$/i.test(remarks) ? remarks.toUpperCase() : null;
-  const spokenRemarks = isolatedLetter
-    ? ((language === "es" ? NATO_ES : NATO_EN)[isolatedLetter] ?? remarks)
-    : remarks;
-  return language === "es" ? `Observaciones. ${spokenRemarks}` : `Remarks. ${spokenRemarks}`;
+  return language === "es" ? `Observaciones. ${remarks}` : `Remarks. ${remarks}`;
 }
 
 export function buildSpanishAtisSpeech(row: AtisSpeechData) {
@@ -219,10 +247,10 @@ export function buildEnglishAtisSpeech(row: AtisSpeechData, translatedRemarks?: 
   const parsed=parseMetar(row.metar), primary=approachSpeech(row.approach_primary), optional=approachSpeech(row.approach_optional);
   const runways=splitRunways(row.runway);
   const dep=runwaySpeech(runways.departure,"en"), arr=runwaySpeech(runways.arrival,"en");
-  const originalRemarks = (row.remarks ?? "").trim();
-  const englishRemarks = /^[A-Z]$/i.test(originalRemarks)
-    ? originalRemarks
-    : (translatedRemarks !== undefined ? translatedRemarks : row.remarks);
+  const englishRemarks = restoreEnglishDesignators(
+    row.remarks,
+    translatedRemarks !== undefined ? translatedRemarks : row.remarks,
+  );
   return [
     `${airportName(row.airport_icao,"en")} ATIS information ${infoWord(row.info_letter,"en")}`,
     ...metarPhrases(parsed,"en"),
