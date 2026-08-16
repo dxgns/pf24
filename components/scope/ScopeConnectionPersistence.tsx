@@ -26,6 +26,21 @@ function connectDialog() {
   return document.querySelector<HTMLElement>(".connectBox");
 }
 
+function scopeConnected() {
+  return topConnectButton()?.textContent?.trim().toUpperCase() === "DISCONNECT";
+}
+
+function syncDialogLock() {
+  const dialog = connectDialog();
+  if (!dialog) return;
+  const locked = scopeConnected();
+  dialog.dataset.pf24ConnectionLocked = locked ? "true" : "false";
+  dialog.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input,select").forEach((field) => {
+    field.disabled = locked;
+    field.setAttribute("aria-disabled", locked ? "true" : "false");
+  });
+}
+
 function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   setter?.call(input, value);
@@ -110,22 +125,28 @@ export default function ScopeConnectionPersistence() {
           const connect = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Connect");
           if (connect && !connect.disabled) {
             connect.click();
-            window.setTimeout(() => emitConnection(true, stored.callsign), 0);
+            window.setTimeout(() => {
+              emitConnection(true, stored.callsign);
+              syncDialogLock();
+            }, 0);
           }
           restoringRef.current = false;
         }, 80);
       }, 40);
     };
 
-    // React restores profile/settings in its mount effects first; this then restores only the active tab session.
     const first = window.setTimeout(restore, 120);
     const second = window.setTimeout(restore, 320);
+    const lockTimer = window.setInterval(syncDialogLock, 180);
 
     const onClickCapture = (event: MouseEvent) => {
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
       if (!button) return;
       const dialog = button.closest<HTMLElement>(".connectBox");
-      if (!dialog) return;
+      if (!dialog) {
+        window.setTimeout(syncDialogLock, 0);
+        return;
+      }
       const label = button.textContent?.trim();
 
       if (label === "Connect" && !button.disabled) {
@@ -133,22 +154,29 @@ export default function ScopeConnectionPersistence() {
         if (!data) return;
         saveStored(data);
         window.setTimeout(() => {
-          const connected = topConnectButton()?.textContent?.trim().toUpperCase() === "DISCONNECT";
+          const connected = scopeConnected();
           if (connected) emitConnection(true, data.callsign);
+          syncDialogLock();
         }, 0);
       }
 
       if (label === "Disconnect" && !button.disabled) {
         clearStored();
-        window.setTimeout(() => emitConnection(false), 0);
+        window.setTimeout(() => {
+          emitConnection(false);
+          syncDialogLock();
+        }, 0);
       }
     };
 
     document.addEventListener("click", onClickCapture, true);
+    window.addEventListener("pf24-scope-connection-change", syncDialogLock);
     return () => {
       window.clearTimeout(first);
       window.clearTimeout(second);
+      window.clearInterval(lockTimer);
       document.removeEventListener("click", onClickCapture, true);
+      window.removeEventListener("pf24-scope-connection-change", syncDialogLock);
     };
   }, []);
 
