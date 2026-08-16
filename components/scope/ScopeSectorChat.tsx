@@ -413,7 +413,6 @@ export default function ScopeSectorChat() {
                 onDoubleClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  event.stopImmediatePropagation();
                   removeChat(chat.position);
                 }}
                 className={`cursor-default select-none px-[2px] leading-[18px] ${unread ? "text-[#00efff]" : selected ? "text-[#111] underline" : "text-[#333]"}`}
