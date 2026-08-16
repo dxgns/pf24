@@ -33,7 +33,7 @@ type ParsedMetar = {
 
 function digits(value: string, language: Language) {
   const map = language === "es" ? DIGIT_ES : DIGIT_EN;
-  return value.split("").map((d) => map[d] ?? d).join(" ");
+  return value.split("").map((d) => map[d] ?? d).join(", ");
 }
 function infoWord(letter: string, language: Language) {
   const map = language === "es" ? NATO_ES : NATO_EN;
@@ -62,7 +62,6 @@ function splitRunways(raw: string) {
     return { departure, arrival };
   }
 
-  // Compatibilidad con ATIS antiguos que tenían una sola pista.
   const one = normalizeSingleRunway(value);
   return { departure: one, arrival: one };
 }
@@ -118,35 +117,35 @@ function numberWords(n:number, language:Language) { return language === "es" ? n
 function signedDigits(value:string|undefined, language:Language) {
   if (!value) return "";
   const negative=value.startsWith("M"), raw=value.replace(/^M/,"");
-  return `${negative ? (language === "es" ? "menos " : "minus ") : ""}${digits(raw,language)}`;
+  return `${negative ? (language === "es" ? "menos, " : "minus, ") : ""}${digits(raw,language)}`;
 }
 
 function metarPhrases(parsed: ParsedMetar, language: Language) {
   const out:string[]=[];
   if (parsed.day && parsed.time) out.push(`${digits(parsed.day,language)}, ${digits(parsed.time,language)} Zulu`);
   if (parsed.windDirection && parsed.windSpeed) {
-    const dir=parsed.windDirection==="VRB"?"variable":`${digits(parsed.windDirection,language)} ${language==="es"?"grados":"degrees"}`;
-    let wind=language==="es"?`vientos ${dir}, ${digits(parsed.windSpeed,language)} nudos`:`wind ${dir}, ${digits(parsed.windSpeed,language)} knots`;
-    if (parsed.windGust) wind += language==="es"?`, rachas ${digits(parsed.windGust,language)} nudos`:` , gusting ${digits(parsed.windGust,language)} knots`;
+    const dir=parsed.windDirection==="VRB"?"variable":`${digits(parsed.windDirection,language)}, ${language==="es"?"grados":"degrees"}`;
+    let wind=language==="es"?`vientos, ${dir}, ${digits(parsed.windSpeed,language)}, nudos`:`wind, ${dir}, ${digits(parsed.windSpeed,language)}, knots`;
+    if (parsed.windGust) wind += language==="es"?`, rachas, ${digits(parsed.windGust,language)}, nudos`:` , gusting, ${digits(parsed.windGust,language)}, knots`;
     out.push(wind);
   }
-  if (parsed.visibility) out.push(parsed.visibility==="9999"?(language==="es"?"visibilidad mayor a diez kilómetros":"visibility greater than ten kilometers"):(language==="es"?`visibilidad ${digits(parsed.visibility,language)} metros`:`visibility ${digits(parsed.visibility,language)} meters`));
+  if (parsed.visibility) out.push(parsed.visibility==="9999"?(language==="es"?"visibilidad mayor a diez kilómetros":"visibility greater than ten kilometers"):(language==="es"?`visibilidad, ${digits(parsed.visibility,language)}, metros`:`visibility, ${digits(parsed.visibility,language)}, meters`));
   const coversEs:Record<string,string>={FEW:"nubes escasas",SCT:"nubes dispersas",BKN:"nubes rotas",OVC:"cielo cubierto"};
   const coversEn:Record<string,string>={FEW:"few clouds",SCT:"scattered clouds",BKN:"broken clouds",OVC:"overcast"};
   for (const cloud of parsed.clouds) if (cloud.feet) {
     const label=(language==="es"?coversEs:coversEn)[cloud.cover]??cloud.cover;
     out.push(language==="es"?`${label} a ${numberWords(cloud.feet,language)} pies`:`${label} at ${numberWords(cloud.feet,language)} feet`);
   }
-  if (parsed.temperature) out.push(language==="es"?`temperatura ${signedDigits(parsed.temperature,language)}`:`temperature ${signedDigits(parsed.temperature,language)}`);
-  if (parsed.dewPoint) out.push(language==="es"?`punto de rocío ${signedDigits(parsed.dewPoint,language)}`:`dew point ${signedDigits(parsed.dewPoint,language)}`);
-  if (parsed.qnh) out.push(`Q N H ${digits(parsed.qnh,language)}`);
+  if (parsed.temperature) out.push(language==="es"?`temperatura, ${signedDigits(parsed.temperature,language)}, grados`:`temperature, ${signedDigits(parsed.temperature,language)}, degrees`);
+  if (parsed.dewPoint) out.push(language==="es"?`punto de rocío, ${signedDigits(parsed.dewPoint,language)}, grados`:`dew point, ${signedDigits(parsed.dewPoint,language)}, degrees`);
+  if (parsed.qnh) out.push(`Q N H, ${digits(parsed.qnh,language)}`);
   return out;
 }
 
 function transitionPhrase(icao:string, language:Language) {
   const p=AIRPORTS[icao.toUpperCase()];
   if (!p?.transitionAltitude || !p.transitionLevel) return "";
-  return language==="es"?`Altitud de transición ${numberWords(p.transitionAltitude,language)} pies. Nivel de transición ${digits(p.transitionLevel,language)}`:`Transition altitude ${numberWords(p.transitionAltitude,language)} feet. Transition level ${digits(p.transitionLevel,language)}`;
+  return language==="es"?`Altitud de transición ${numberWords(p.transitionAltitude,language)} pies. Nivel de transición, ${digits(p.transitionLevel,language)}`:`Transition altitude ${numberWords(p.transitionAltitude,language)} feet. Transition level, ${digits(p.transitionLevel,language)}`;
 }
 
 export function buildSpanishAtisSpeech(row: AtisSpeechData) {
@@ -158,8 +157,8 @@ export function buildSpanishAtisSpeech(row: AtisSpeechData) {
     ...metarPhrases(parsed,"es"),
     `Aeronaves esperen aproximación ${primary}`,
     optional ? `O ${optional}` : "",
-    `Salidas pista ${dep}`,
-    `Llegadas pista ${arr}`,
+    `Salidas pista, ${dep}`,
+    `Llegadas pista, ${arr}`,
     transitionPhrase(row.airport_icao,"es"),
     "X P D R. Modo altitude. En todas las calles de rodaje y pistas en uso",
     `Notifique información ${infoWord(row.info_letter,"es")} en contacto inicial`,
@@ -175,8 +174,8 @@ export function buildEnglishAtisSpeech(row: AtisSpeechData) {
     ...metarPhrases(parsed,"en"),
     `Aircraft expect ${primary} approach`,
     optional ? `Or ${optional}` : "",
-    `Departures runway ${dep}`,
-    `Arrivals runway ${arr}`,
+    `Departures runway, ${dep}`,
+    `Arrivals runway, ${arr}`,
     transitionPhrase(row.airport_icao,"en"),
     "X P D R. Altitude mode. On all taxiways and runways in use",
     `Advise information ${infoWord(row.info_letter,"en")} on initial contact`,
