@@ -82,38 +82,54 @@ export default function ScopeTrafficLabelUX() {
         grid-template-columns: 32px 23px 25px !important;
         column-gap: 1px !important;
       }
-      ${LABEL_SELECTOR} > div.grid,
-      ${LABEL_SELECTOR} > div.grid button,
-      ${LABEL_SELECTOR} > div.grid input {
+      ${LABEL_SELECTOR} > div.grid {
+        line-height: 8px !important;
+        min-height: 8px !important;
+      }
+      ${LABEL_SELECTOR} > div.grid > button,
+      ${LABEL_SELECTOR} > div.grid > input,
+      ${LABEL_SELECTOR} > div.grid > div > button:not([data-pf24-callsign-menu='true'] button) {
         line-height: 8px !important;
         min-height: 8px !important;
       }
 
-      /* Rebuild callsign menu to match the larger reference menu. */
-      [data-pf24-callsign-menu='true'] {
+      /* Callsign menu must keep the exact same dimensions from simple and detailed tags. */
+      ${LABEL_SELECTOR} [data-pf24-callsign-menu='true'] {
         width: 164px !important;
+        min-width: 164px !important;
+        height: auto !important;
         border: 2px solid #f1f1f1 !important;
         background: #565d61 !important;
         font-size: 13px !important;
         line-height: 27px !important;
         letter-spacing: 0 !important;
         box-sizing: border-box !important;
+        overflow: visible !important;
       }
-      [data-pf24-callsign-menu='true'] > div:first-child {
+      ${LABEL_SELECTOR} [data-pf24-callsign-menu='true'] > div:first-child {
+        height: 30px !important;
         min-height: 30px !important;
         padding: 0 10px !important;
         font-size: 14px !important;
         line-height: 30px !important;
         border-bottom: 2px solid #f1f1f1 !important;
+        box-sizing: border-box !important;
       }
-      [data-pf24-callsign-menu='true'] > button {
+      ${LABEL_SELECTOR} [data-pf24-callsign-menu='true'] > button {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 100% !important;
+        height: 28px !important;
         min-height: 28px !important;
         padding: 0 10px !important;
         font-size: 13px !important;
         line-height: 27px !important;
+        letter-spacing: 0 !important;
         border-bottom-width: 2px !important;
+        box-sizing: border-box !important;
       }
-      [data-pf24-callsign-menu='true'] > button:last-child {
+      ${LABEL_SELECTOR} [data-pf24-callsign-menu='true'] > button:last-child {
         border-bottom-width: 0 !important;
       }
 
