@@ -3,6 +3,7 @@ name: PF24 Scope CI
 on:
   push:
     branches:
+      - main
       - feature/pf24-scope
   pull_request:
     branches:
