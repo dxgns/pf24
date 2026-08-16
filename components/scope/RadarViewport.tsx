@@ -6,7 +6,7 @@ type Viewport = { zoom: number; panX: number; panY: number };
 
 const STORAGE_KEY = "pf24_scope_radar_viewport_v1";
 const MIN_ZOOM = 0.55;
-const MAX_ZOOM = 3;
+const MAX_ZOOM = 6;
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
 function clamp(value: number, min: number, max: number) {
