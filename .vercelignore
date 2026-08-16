@@ -1,0 +1,2 @@
+# Standalone service deployed separately from the Next.js web app.
+services/atis-bot
