@@ -26,6 +26,16 @@ function getScopeConnection() {
   };
 }
 
+function readSessionId() {
+  return sessionStorage.getItem(STORAGE_KEY);
+}
+function writeSessionId(id: string) {
+  sessionStorage.setItem(STORAGE_KEY, id);
+}
+function clearSessionId() {
+  sessionStorage.removeItem(STORAGE_KEY);
+}
+
 export default function ScopeAtcPresence({ controllerName }: { controllerName: string }) {
   const syncingRef = useRef(false);
   const lastStateRef = useRef({ connected: false, position: "" });
@@ -40,23 +50,35 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
     };
 
     const closeSession = async () => {
-      const sessionId = localStorage.getItem(STORAGE_KEY);
+      const sessionId = readSessionId();
       if (sessionId) {
-        await supabase.from("atc_sessions").update({ is_active: false, ended_at: new Date().toISOString() }).eq("id", sessionId);
-        localStorage.removeItem(STORAGE_KEY);
+        const { error } = await supabase
+          .from("atc_sessions")
+          .update({ is_active: false, ended_at: new Date().toISOString() })
+          .eq("id", sessionId);
+        if (error) console.error("PF24 Scope ATC presence close failed:", error);
+        clearSessionId();
       }
       await removeOwnedAtis();
     };
 
     const openSession = async (position: string) => {
       if (!position) return;
-      const existingId = localStorage.getItem(STORAGE_KEY);
+      const existingId = readSessionId();
       if (existingId) {
-        const { data } = await supabase.from("atc_sessions").select("id,position,is_active").eq("id", existingId).maybeSingle();
+        const { data, error } = await supabase
+          .from("atc_sessions")
+          .select("id,position,is_active")
+          .eq("id", existingId)
+          .maybeSingle();
+        if (error) console.error("PF24 Scope ATC presence lookup failed:", error);
         if (data?.is_active && data.position === position) return;
         if (data && data.position === position) {
-          const { error } = await supabase.from("atc_sessions").update({ is_active: true, ended_at: null }).eq("id", existingId);
-          if (!error) return;
+          const { error: reopenError } = await supabase
+            .from("atc_sessions")
+            .update({ is_active: true, ended_at: null })
+            .eq("id", existingId);
+          if (!reopenError) return;
         }
         await closeSession();
       }
@@ -68,7 +90,7 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
         is_active: true,
       }).select("id").single();
 
-      if (!error && data?.id && !cancelled) localStorage.setItem(STORAGE_KEY, data.id);
+      if (!error && data?.id && !cancelled) writeSessionId(data.id);
       else if (error) console.error("PF24 Scope ATC presence insert failed:", error);
     };
 
@@ -80,8 +102,12 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
       lastStateRef.current = current;
       syncingRef.current = true;
       try {
-        if (current.connected && current.position) await openSession(current.position);
-        else if (!current.connected && previous.connected) await closeSession();
+        if (current.connected && current.position) {
+          if (previous.connected && previous.position && previous.position !== current.position) await closeSession();
+          await openSession(current.position);
+        } else if (!current.connected && previous.connected) {
+          await closeSession();
+        }
       } finally {
         syncingRef.current = false;
       }
@@ -100,9 +126,8 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
     navigation?.addEventListener("navigate", onNavigate);
 
     const handlePageHide = () => {
-      // A reload keeps the same Scope connection. A real tab/window leave still closes it.
       if (reloadingRef.current) return;
-      const sessionId = localStorage.getItem(STORAGE_KEY);
+      const sessionId = readSessionId();
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/+$/, "");
       const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
       if (!supabaseUrl || !supabaseKey) return;
@@ -111,16 +136,25 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
         void fetch(`${supabaseUrl}/rest/v1/atc_sessions?id=eq.${encodeURIComponent(sessionId)}`, {
           method: "PATCH",
           keepalive: true,
-          headers: { "Content-Type": "application/json", apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: "return=minimal" },
+          headers: {
+            "Content-Type": "application/json",
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+            Prefer: "return=minimal",
+          },
           body: JSON.stringify({ is_active: false, ended_at: new Date().toISOString() }),
         });
-        localStorage.removeItem(STORAGE_KEY);
+        clearSessionId();
       }
 
       void fetch(`${supabaseUrl}/rest/v1/atis_messages?created_by=eq.${encodeURIComponent(controllerName)}`, {
         method: "DELETE",
         keepalive: true,
-        headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, Prefer: "return=minimal" },
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Prefer: "return=minimal",
+        },
       });
     };
 
