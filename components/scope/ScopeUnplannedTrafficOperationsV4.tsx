@@ -13,11 +13,14 @@ type Owners = Record<string, string>;
 type PresencePayload = { position?: string; sessionId?: string; claims?: ClaimTimes; onlineAt?: number };
 type Winner = { owner: string; claimedAt: number; sessionId: string };
 
+type HandoverDetail = { key?: string; from?: string; to?: string };
+
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const CLAIMS_STORAGE_KEY = "pf24_scope_unplanned_claims_v4";
 const SESSION_STORAGE_KEY = "pf24_scope_unplanned_presence_session_v4";
 const OWNERS_EVENT = "pf24-unplanned-ownership-sync";
 const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
+const HANDOVER_APPLY_EVENT = "pf24-unplanned-handover-apply";
 const PRESENCE_CHANNEL = "scope-unplanned-ownership-v4";
 
 function norm(value: string) { return normalizeGameCallsign(value); }
@@ -118,12 +121,8 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       const detail = (event as CustomEvent<{ connected?: boolean; callsign?: string }>).detail;
       const previous = positionRef.current;
       const next = detail?.connected ? (detail.callsign?.trim().toUpperCase() || readPosition()) : "";
-      if (!next || (previous && next !== previous)) {
-        claimsRef.current = {};
-        clearClaimsStorage();
-      } else if (!previous && next && Object.keys(claimsRef.current).length === 0) {
-        claimsRef.current = readClaims();
-      }
+      if (!next || (previous && next !== previous)) { claimsRef.current = {}; clearClaimsStorage(); }
+      else if (!previous && next && Object.keys(claimsRef.current).length === 0) claimsRef.current = readClaims();
       positionRef.current = next;
       setPosition(next);
       void trackPresence();
@@ -191,6 +190,37 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
   }, [plannedKeys, setLocalClaims]);
 
   useEffect(() => {
+    const onHandoverApply = (event: Event) => {
+      const detail = (event as CustomEvent<HandoverDetail>).detail;
+      const key = norm(detail?.key ?? "");
+      const from = detail?.from?.trim().toUpperCase() ?? "";
+      const to = detail?.to?.trim().toUpperCase() ?? "";
+      const here = positionRef.current;
+      if (!key || !from || !to || !here || plannedKeys.has(key)) return;
+
+      if (here === from && key in claimsRef.current) {
+        const next = { ...claimsRef.current };
+        delete next[key];
+        setLocalClaims(next);
+        const optimistic = { ...ownersRef.current };
+        delete optimistic[key];
+        applyOwners(optimistic);
+      }
+
+      if (here === to) {
+        window.setTimeout(() => {
+          if (plannedKeys.has(key)) return;
+          const next = { ...claimsRef.current, [key]: Date.now() };
+          setLocalClaims(next);
+          applyOwners({ ...ownersRef.current, [key]: to });
+        }, 120);
+      }
+    };
+    window.addEventListener(HANDOVER_APPLY_EVENT, onHandoverApply);
+    return () => window.removeEventListener(HANDOVER_APPLY_EVENT, onHandoverApply);
+  }, [applyOwners, plannedKeys, setLocalClaims]);
+
+  useEffect(() => {
     const syncMenus = () => {
       document.querySelectorAll<HTMLElement>("[data-pf24-callsign-menu='true']").forEach((menu) => {
         const label = menu.closest<HTMLElement>("[data-pf24-traffic-label='true']");
@@ -215,13 +245,13 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       const menu = button?.closest<HTMLElement>("[data-pf24-callsign-menu='true']");
       const label = menu?.closest<HTMLElement>("[data-pf24-traffic-label='true']");
       if (!button || !menu || !label) return;
-      const action = button.textContent?.trim().toUpperCase() ?? "";
-      if (!["ASSUME", "TRANSFER", "REQ ON FREQ", "FPL", "FREE", "CONTACT ME"].includes(action)) return;
+      const action = (button.dataset.pf24OwnerActionLabel || button.textContent || "").trim().toUpperCase();
+      if (action === "TRANSFER" || action === "REQ ON FREQ" || action === "ACCEPT" || button.dataset.pf24HandoverDecline === "true") return;
+      if (!["ASSUME", "FPL", "FREE", "CONTACT ME"].includes(action)) return;
       const key = norm(trafficCallsign(label));
       if (!key || plannedKeys.has(key)) return;
       event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
       if (action === "FPL") { setRadarHost(document.querySelector<HTMLElement>("main.fixed > section")); setBlankFplOpen(true); return; }
-      if (action === "TRANSFER" || action === "REQ ON FREQ") return;
       if (action === "ASSUME") {
         if (!position) { alert("Debes estar conectado a un sector activo antes de asumir tráfico."); return; }
         const currentOwner = ownersRef.current[key];
