@@ -14,6 +14,7 @@ type PlannedMeta = { owner: string | null; transponder: string };
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const GREEN = "#00e000";
 const GREY = "#9b9b9b";
+const FREE = "#d8d8d8";
 const LIVE_ROOT = "[data-pf24-live-traffic='true']";
 const OWNERS_EVENT = "pf24-unplanned-ownership-sync";
 const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
@@ -70,6 +71,21 @@ function syncTransponder(label: HTMLElement, transponder: string) {
     child instanceof HTMLElement && /^A\d{4}$/.test(child.textContent?.trim().toUpperCase() ?? ""),
   );
   if (node instanceof HTMLElement) node.textContent = `A${transponder}`;
+}
+
+function syncMenuOwnership(label: HTMLElement, owner: string | null, position: string) {
+  const menu = label.querySelector<HTMLElement>("[data-pf24-callsign-menu='true']");
+  if (!menu) return;
+  const button = Array.from(menu.querySelectorAll<HTMLButtonElement>(":scope > button")).find((candidate) => {
+    const text = candidate.textContent?.trim().toUpperCase() ?? "";
+    return ["ASSUME", "TRANSFER", "REQ ON FREQ"].includes(text) || candidate.dataset.pf24OwnerAction === "true";
+  });
+  if (!button) return;
+
+  const labelText = owner ? (position && owner === position ? "Transfer" : "Req on Freq") : "Assume";
+  button.dataset.pf24OwnerAction = "true";
+  button.dataset.pf24OwnerActionLabel = labelText;
+  if (button.textContent?.trim() !== labelText) button.textContent = labelText;
 }
 
 export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
@@ -169,11 +185,12 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
           ? meta.owner
           : unplannedOwners[key]?.trim().toUpperCase() || null;
       const ownedByMe = Boolean(position && owner === position);
-      const color = ownedByMe ? GREEN : GREY;
+      const color = ownedByMe ? GREEN : owner ? GREY : FREE;
 
       label.dataset.pf24Ownership = ownedByMe ? "mine" : owner ? "other" : "free";
       paintLabel(label, color);
       syncTransponder(label, meta?.transponder ?? "9999");
+      syncMenuOwnership(label, owner, position);
 
       const target = targets[index];
       const group = groups[index];
@@ -187,14 +204,14 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
     const style = document.createElement("style");
     style.dataset.pf24TrafficOwnershipBaseline = "true";
     style.textContent = `
-      ${LIVE_ROOT} [data-pf24-traffic-label='true'] { color:${GREY} !important; }
-      ${LIVE_ROOT} [data-pf24-traffic-label='true'] span,
-      ${LIVE_ROOT} [data-pf24-traffic-label='true'] button,
-      ${LIVE_ROOT} [data-pf24-traffic-label='true'] input { color:${GREY} !important; }
-      ${LIVE_ROOT} [data-pf24-traffic-label='true'] input::placeholder { color:${GREY} !important; }
-      ${LIVE_ROOT} [data-pf24-traffic-select='true'] > span { border-color:${GREY} !important; }
-      ${LIVE_ROOT} svg > g line { stroke:${GREY} !important; }
-      ${LIVE_ROOT} svg > g circle { fill:${GREY} !important; }
+      ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='free'],
+      ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='free'] span,
+      ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='free'] button,
+      ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='free'] input { color:${FREE} !important; }
+      ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='other'],
+      ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='other'] span,
+      ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='other'] button,
+      ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='other'] input { color:${GREY} !important; }
       ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='mine'],
       ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='mine'] span,
       ${LIVE_ROOT} [data-pf24-traffic-label='true'][data-pf24-ownership='mine'] button,
@@ -203,11 +220,13 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       ${LIVE_ROOT} [data-pf24-traffic-label='true'] [data-pf24-callsign-menu='true'] button,
       ${LIVE_ROOT} [data-pf24-traffic-label='true'] [data-pf24-callsign-menu='true'] span { color:#ededed !important; }
       ${LIVE_ROOT} [data-pf24-traffic-label='true'] [data-pf24-callsign-menu='true'] > div:first-child { color:#22e000 !important; }
+      ${LIVE_ROOT} button[data-pf24-owner-action='true'] { font-size:0 !important; }
+      ${LIVE_ROOT} button[data-pf24-owner-action='true']::after { content:attr(data-pf24-owner-action-label); font-size:13px; }
     `;
     document.head.appendChild(style);
 
     sync();
-    const timer = window.setInterval(sync, 180);
+    const timer = window.setInterval(sync, 120);
     const schedule = () => window.requestAnimationFrame(sync);
 
     const onActionCapture = (event: MouseEvent) => {
@@ -215,6 +234,13 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       const menu = button?.closest<HTMLElement>("[data-pf24-callsign-menu='true']");
       const label = menu?.closest<HTMLElement>("[data-pf24-traffic-label='true']");
       if (!button || !menu || !label) return;
+
+      if (button.dataset.pf24OwnerActionLabel === "Req on Freq") {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        return;
+      }
 
       const action = button.textContent?.trim().toUpperCase() ?? "";
       if (action !== "ASSUME" && action !== "FREE") return;
