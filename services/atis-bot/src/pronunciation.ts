@@ -9,24 +9,18 @@ const NATO_EN: Record<string, string> = { ...NATO_ES, A: "Alpha" };
 const DIGIT_ES: Record<string, string> = { "0":"cero","1":"uno","2":"dos","3":"tres","4":"cuatro","5":"cinco","6":"seis","7":"siete","8":"ocho","9":"nueve" };
 const DIGIT_EN: Record<string, string> = { "0":"zero","1":"one","2":"two","3":"three","4":"four","5":"five","6":"six","7":"seven","8":"eight","9":"nine" };
 
-type AirportProfile = {
-  es: string;
-  en: string;
-  transitionAltitude?: number;
-};
-
-const AIRPORTS: Record<string, AirportProfile> = {
-  MDPC: { es: "Aeropuerto Internacional de Punta Cana", en: "Punta Cana International Airport", transitionAltitude: 3000 },
-  MDST: { es: "Aeropuerto Internacional del Cibao", en: "Cibao International Airport", transitionAltitude: 3000 },
+const AIRPORTS: Record<string, { es: string; en: string }> = {
+  MDPC: { es: "Aeropuerto Internacional de Punta Cana", en: "Punta Cana International Airport" },
+  MDST: { es: "Aeropuerto Internacional del Cibao", en: "Cibao International Airport" },
   MDAB: { es: "Aeropuerto de Arroyo Barril", en: "Arroyo Barril Airport" },
-  LCLK: { es: "Aeropuerto Internacional de Lárnaca", en: "Larnaka International Airport", transitionAltitude: 8000 },
-  LCPH: { es: "Aeropuerto Internacional de Pafos", en: "Pafos International Airport", transitionAltitude: 8000 },
+  LCLK: { es: "Aeropuerto Internacional de Lárnaca", en: "Larnaka International Airport" },
+  LCPH: { es: "Aeropuerto Internacional de Pafos", en: "Pafos International Airport" },
   LCRA: { es: "RAF Akrotiri", en: "RAF Akrotiri" },
-  EGKK: { es: "Aeropuerto de Londres Gatwick", en: "London Gatwick Airport", transitionAltitude: 6000 },
-  EGHI: { es: "Aeropuerto de Southampton", en: "Southampton Airport", transitionAltitude: 6000 },
-  LEMH: { es: "Aeropuerto de Menorca", en: "Menorca Airport", transitionAltitude: 6000 },
-  GCLP: { es: "Aeropuerto de Gran Canaria", en: "Gran Canaria Airport", transitionAltitude: 6000 },
-  EFKT: { es: "Aeropuerto de Kittilä", en: "Kittilä Airport", transitionAltitude: 5000 },
+  EGKK: { es: "Aeropuerto de Londres Gatwick", en: "London Gatwick Airport" },
+  EGHI: { es: "Aeropuerto de Southampton", en: "Southampton Airport" },
+  LEMH: { es: "Aeropuerto de Menorca", en: "Menorca Airport" },
+  GCLP: { es: "Aeropuerto de Gran Canaria", en: "Gran Canaria Airport" },
+  EFKT: { es: "Aeropuerto de Kittilä", en: "Kittilä Airport" },
 };
 
 export type AtisSpeechData = {
@@ -156,7 +150,8 @@ function metarPhrases(parsed: ParsedMetar, language: Language) {
     out.push(wind);
   }
   if (parsed.cavok) {
-    out.push(language === "es" ? "C A V O K" : "CAVOK");
+    // EASA/ICAO phraseology: CAVOK is pronounced "CAV-O-KAY", not letter by letter.
+    out.push(language === "es" ? "cáv o kéy" : "CAV O KAY");
   } else {
     if (parsed.visibility) out.push(parsed.visibility==="9999"?(language==="es"?"visibilidad mayor a diez kilómetros":"visibility greater than ten kilometers"):(language==="es"?`visibilidad, ${digits(parsed.visibility,language)}, metros`:`visibility, ${digits(parsed.visibility,language)}, meters`));
     const coversEs:Record<string,string>={FEW:"nubes escasas",SCT:"nubes dispersas",BKN:"nubes rotas",OVC:"cielo cubierto"};
@@ -172,21 +167,24 @@ function metarPhrases(parsed: ParsedMetar, language: Language) {
   return out;
 }
 
-function calculateTransitionLevel(transitionAltitude: number, qnh?: string) {
-  const qnhValue = Number(qnh ?? "1013");
-  const pressureOffsetFeet = (qnhValue - 1013.25) * 27;
-  const minimumPressureAltitude = transitionAltitude + 1000 - pressureOffsetFeet;
-  const flightLevel = Math.max(10, Math.ceil(minimumPressureAltitude / 1000) * 10);
-  return String(flightLevel).padStart(3, "0");
+function transitionValues(extraInfo: string | null | undefined) {
+  const value = extraInfo ?? "";
+  const altitude = value.match(/\[TRANS_ALT=(\d{1,5})\]/i)?.[1];
+  const level = value.match(/\[TRANS_LVL=(\d{1,3})\]/i)?.[1];
+  if (!altitude || !level) return null;
+  return { altitude, level: level.padStart(3, "0") };
 }
 
-function transitionPhrase(icao:string, parsed:ParsedMetar, language:Language) {
-  const p=AIRPORTS[icao.toUpperCase()];
-  if (!p?.transitionAltitude) return "";
-  const transitionLevel = calculateTransitionLevel(p.transitionAltitude, parsed.qnh);
-  return language==="es"
-    ? `Altitud de transición ${numberWords(p.transitionAltitude,language)} pies. Nivel de transición, ${digits(transitionLevel,language)}`
-    : `Transition altitude ${numberWords(p.transitionAltitude,language)} feet. Transition level, ${digits(transitionLevel,language)}`;
+function transitionPhrase(row: AtisSpeechData, language: Language) {
+  const transition = transitionValues(row.extra_info);
+  if (!transition) return "";
+  const altitudeNumber = Number(transition.altitude);
+  const altitudeSpeech = Number.isFinite(altitudeNumber)
+    ? numberWords(altitudeNumber, language)
+    : digits(transition.altitude, language);
+  return language === "es"
+    ? `Altitud de transición ${altitudeSpeech} pies. Nivel de transición, ${digits(transition.level,language)}`
+    : `Transition altitude ${altitudeSpeech} feet. Transition level, ${digits(transition.level,language)}`;
 }
 
 function remarksPhrase(value: string | null | undefined, language: Language) {
@@ -206,7 +204,7 @@ export function buildSpanishAtisSpeech(row: AtisSpeechData) {
     optional ? `O ${optional}` : "",
     `Salidas pista, ${dep}`,
     `Llegadas pista, ${arr}`,
-    transitionPhrase(row.airport_icao,parsed,"es"),
+    transitionPhrase(row,"es"),
     "X P D R. Modo altitude. En todas las calles de rodaje y pistas en uso",
     remarksPhrase(row.remarks,"es"),
     `Notifique información ${infoWord(row.info_letter,"es")} en contacto inicial`,
@@ -224,7 +222,7 @@ export function buildEnglishAtisSpeech(row: AtisSpeechData, translatedRemarks?: 
     optional ? `Or ${optional}` : "",
     `Departures runway, ${dep}`,
     `Arrivals runway, ${arr}`,
-    transitionPhrase(row.airport_icao,parsed,"en"),
+    transitionPhrase(row,"en"),
     "X P D R. Altitude mode. On all taxiways and runways in use",
     remarksPhrase(translatedRemarks !== undefined ? translatedRemarks : row.remarks,"en"),
     `Advise information ${infoWord(row.info_letter,"en")} on initial contact`,

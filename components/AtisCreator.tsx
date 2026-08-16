@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { buildAtisText } from "@/lib/buildAtis";
 
-const AIRPORTS = ["MDPC", "MDST", "MDAB", "LCLK", "LCPH", "LCRA", "EGKK", "EGHI", "LEMH", "GCLP", "EFKT"];
+const AIRPORTS = ["MDPC", "MDST", "LCLK", "LCPH", "LEMH", "GCLP", "EGKK", "EGHI", "EFKT"];
 
 function nextInfoLetter(last?: string) {
   if (!last) return "A";
@@ -20,6 +20,8 @@ export default function AtisCreator({ controllerPosition }: { controllerPosition
   const [approachOptional, setApproachOptional] = useState("");
   const [departureRunway, setDepartureRunway] = useState("");
   const [arrivalRunway, setArrivalRunway] = useState("");
+  const [transitionAltitude, setTransitionAltitude] = useState("");
+  const [transitionLevel, setTransitionLevel] = useState("");
   const [extraInfo, setExtraInfo] = useState("");
   const [remarks, setRemarks] = useState("");
   const [loading, setLoading] = useState(false);
@@ -41,6 +43,8 @@ export default function AtisCreator({ controllerPosition }: { controllerPosition
   async function publishAtis() {
     const departure = departureRunway.trim().toUpperCase();
     const arrival = arrivalRunway.trim().toUpperCase();
+    const transAlt = transitionAltitude.trim();
+    const transLvl = transitionLevel.trim().replace(/^FL/i, "").padStart(3, "0");
     const extraInfoFormatted = extraInfo.trim().toUpperCase();
     const remarksFormatted = remarks.trim().toUpperCase();
 
@@ -49,8 +53,19 @@ export default function AtisCreator({ controllerPosition }: { controllerPosition
       return;
     }
 
+    if (!/^\d{1,5}$/.test(transAlt) || !/^\d{3}$/.test(transLvl)) {
+      alert("Debes ingresar Trans Alt y Trans Lvl válidos. Ejemplo: 3000 y 040.");
+      return;
+    }
+
     // Se conserva una sola columna en Supabase para no requerir migración.
     const runwayFormatted = `DEP ${departure} | ARR ${arrival}`;
+    // Los valores de transición quedan embebidos en extra_info para que el bot
+    // reproduzca exactamente lo ingresado por el ATC sin usar datos externos.
+    const transitionMetadata = `[TRANS_ALT=${transAlt}][TRANS_LVL=${transLvl}]`;
+    const storedExtraInfo = extraInfoFormatted
+      ? `${transitionMetadata} ${extraInfoFormatted}`
+      : transitionMetadata;
 
     try {
       setLoading(true);
@@ -66,6 +81,8 @@ export default function AtisCreator({ controllerPosition }: { controllerPosition
         approachOptional,
         departureRunway: departure,
         arrivalRunway: arrival,
+        transitionAltitude: transAlt,
+        transitionLevel: transLvl,
         extraInfo: extraInfoFormatted,
         remarks: remarksFormatted,
       });
@@ -77,7 +94,7 @@ export default function AtisCreator({ controllerPosition }: { controllerPosition
         approach_primary: approachPrimary,
         approach_optional: approachOptional || null,
         runway: runwayFormatted,
-        extra_info: extraInfoFormatted || null,
+        extra_info: storedExtraInfo,
         remarks: remarksFormatted || null,
         full_text: fullText,
         created_by: controllerPosition,
@@ -136,6 +153,22 @@ export default function AtisCreator({ controllerPosition }: { controllerPosition
           onChange={(e) => setArrivalRunway(e.target.value.toUpperCase())}
           placeholder="Pista de llegada, ej: 09"
           className="rounded-xl bg-slate-800 p-3 uppercase"
+        />
+
+        <input
+          value={transitionAltitude}
+          onChange={(e) => setTransitionAltitude(e.target.value.replace(/\D/g, "").slice(0, 5))}
+          inputMode="numeric"
+          placeholder="Trans Alt, ej: 3000"
+          className="rounded-xl bg-slate-800 p-3"
+        />
+
+        <input
+          value={transitionLevel}
+          onChange={(e) => setTransitionLevel(e.target.value.replace(/\D/g, "").slice(0, 3))}
+          inputMode="numeric"
+          placeholder="Trans Lvl, ej: 040"
+          className="rounded-xl bg-slate-800 p-3"
         />
 
         <input
