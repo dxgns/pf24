@@ -56,7 +56,6 @@ function mergeState(current: HoldState, incoming: HoldState) {
 
 export default function ScopeSharedHoldSync() {
   const stateRef = useRef<HoldState>({});
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   useEffect(() => {
     stateRef.current = readState();
@@ -65,7 +64,6 @@ export default function ScopeSharedHoldSync() {
     const channel = supabase.channel(CHANNEL_NAME, {
       config: { broadcast: { self: false } },
     });
-    channelRef.current = channel;
 
     const sendSnapshot = () => {
       void channel.send({
@@ -121,7 +119,6 @@ export default function ScopeSharedHoldSync() {
     window.addEventListener(LOCAL_EVENT, onLocalChange);
     return () => {
       window.removeEventListener(LOCAL_EVENT, onLocalChange);
-      channelRef.current = null;
       void supabase.removeChannel(channel);
     };
   }, []);
