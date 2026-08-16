@@ -206,8 +206,8 @@ export function buildSpanishAtisSpeech(row: AtisSpeechData) {
     `Llegadas pista, ${arr}`,
     transitionPhrase(row,"es"),
     "X P D R. Modo altitude. En todas las calles de rodaje y pistas en uso",
-    remarksPhrase(row.remarks,"es"),
     `Notifique información ${infoWord(row.info_letter,"es")} en contacto inicial`,
+    remarksPhrase(row.remarks,"es"),
   ].filter(Boolean).join(". ")+".";
 }
 
@@ -224,7 +224,7 @@ export function buildEnglishAtisSpeech(row: AtisSpeechData, translatedRemarks?: 
     `Arrivals runway, ${arr}`,
     transitionPhrase(row,"en"),
     "X P D R. Altitude mode. On all taxiways and runways in use",
-    remarksPhrase(translatedRemarks !== undefined ? translatedRemarks : row.remarks,"en"),
     `Advise information ${infoWord(row.info_letter,"en")} on initial contact`,
+    remarksPhrase(translatedRemarks !== undefined ? translatedRemarks : row.remarks,"en"),
   ].filter(Boolean).join(". ")+".";
 }
