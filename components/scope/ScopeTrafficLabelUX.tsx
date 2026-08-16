@@ -44,7 +44,6 @@ export default function ScopeTrafficLabelUX() {
         letter-spacing: -0.3px !important;
       }
 
-      /* Simple tag: compact visual block while preserving the larger drag hitbox. */
       ${LABEL_SELECTOR} > div.relative {
         width: 50px !important;
       }
@@ -61,7 +60,6 @@ export default function ScopeTrafficLabelUX() {
         padding-left: 24px !important;
       }
 
-      /* Detailed tag: EuroScope-like dense 4-line block. */
       ${LABEL_SELECTOR} > div.grid:nth-of-type(2) {
         width: 79px !important;
         grid-template-columns: 43px 7px 27px !important;
@@ -88,12 +86,12 @@ export default function ScopeTrafficLabelUX() {
       }
       ${LABEL_SELECTOR} > div.grid > button,
       ${LABEL_SELECTOR} > div.grid > input,
-      ${LABEL_SELECTOR} > div.grid > div > button:not([data-pf24-callsign-menu='true'] button) {
+      ${LABEL_SELECTOR} > div.grid > div.relative > button:first-child {
         line-height: 8px !important;
         min-height: 8px !important;
       }
 
-      /* Callsign menu must keep the exact same dimensions from simple and detailed tags. */
+      /* Same action menu geometry regardless of simple/detailed tag state. */
       ${LABEL_SELECTOR} [data-pf24-callsign-menu='true'] {
         width: 164px !important;
         min-width: 164px !important;
@@ -133,7 +131,6 @@ export default function ScopeTrafficLabelUX() {
         border-bottom-width: 0 !important;
       }
 
-      /* Hold List: prevent the AFL column/borders from escaping the window. */
       [data-pf24-live-hold-list='true'] {
         width: 100% !important;
         max-width: 100% !important;
