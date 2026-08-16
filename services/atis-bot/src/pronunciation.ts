@@ -38,6 +38,7 @@ type Language = "es" | "en";
 type ParsedMetar = {
   day?: string; time?: string; windDirection?: string; windSpeed?: string; windGust?: string;
   windVariableFrom?: string; windVariableTo?: string;
+  cavok?: boolean;
   visibility?: string; clouds: Array<{ cover: string; feet?: number }>;
   temperature?: string; dewPoint?: string; qnh?: string;
 };
@@ -100,6 +101,7 @@ function parseMetar(input: string): ParsedMetar {
     if (w) { out.windDirection=w[1]; out.windSpeed=w[2]; out.windGust=w[3]; continue; }
     const variableWind = token.match(/^(\d{3})V(\d{3})$/);
     if (variableWind) { out.windVariableFrom=variableWind[1]; out.windVariableTo=variableWind[2]; continue; }
+    if (token === "CAVOK") { out.cavok = true; continue; }
     if (/^\d{4}$/.test(token)) { out.visibility=token; continue; }
     const c = token.match(/^(FEW|SCT|BKN|OVC)(\d{3})/);
     if (c) { out.clouds.push({ cover:c[1], feet:Number(c[2])*100 }); continue; }
@@ -147,12 +149,16 @@ function metarPhrases(parsed: ParsedMetar, language: Language) {
     }
     out.push(wind);
   }
-  if (parsed.visibility) out.push(parsed.visibility==="9999"?(language==="es"?"visibilidad mayor a diez kilómetros":"visibility greater than ten kilometers"):(language==="es"?`visibilidad, ${digits(parsed.visibility,language)}, metros`:`visibility, ${digits(parsed.visibility,language)}, meters`));
-  const coversEs:Record<string,string>={FEW:"nubes escasas",SCT:"nubes dispersas",BKN:"nubes rotas",OVC:"cielo cubierto"};
-  const coversEn:Record<string,string>={FEW:"few clouds",SCT:"scattered clouds",BKN:"broken clouds",OVC:"overcast"};
-  for (const cloud of parsed.clouds) if (cloud.feet) {
-    const label=(language==="es"?coversEs:coversEn)[cloud.cover]??cloud.cover;
-    out.push(language==="es"?`${label} a ${numberWords(cloud.feet,language)} pies`:`${label} at ${numberWords(cloud.feet,language)} feet`);
+  if (parsed.cavok) {
+    out.push(language === "es" ? "C A V O K" : "CAVOK");
+  } else {
+    if (parsed.visibility) out.push(parsed.visibility==="9999"?(language==="es"?"visibilidad mayor a diez kilómetros":"visibility greater than ten kilometers"):(language==="es"?`visibilidad, ${digits(parsed.visibility,language)}, metros`:`visibility, ${digits(parsed.visibility,language)}, meters`));
+    const coversEs:Record<string,string>={FEW:"nubes escasas",SCT:"nubes dispersas",BKN:"nubes rotas",OVC:"cielo cubierto"};
+    const coversEn:Record<string,string>={FEW:"few clouds",SCT:"scattered clouds",BKN:"broken clouds",OVC:"overcast"};
+    for (const cloud of parsed.clouds) if (cloud.feet) {
+      const label=(language==="es"?coversEs:coversEn)[cloud.cover]??cloud.cover;
+      out.push(language==="es"?`${label} a ${numberWords(cloud.feet,language)} pies`:`${label} at ${numberWords(cloud.feet,language)} feet`);
+    }
   }
   if (parsed.temperature) out.push(language==="es"?`temperatura, ${signedDigits(parsed.temperature,language)}, grados`:`temperature, ${signedDigits(parsed.temperature,language)}, degrees`);
   if (parsed.dewPoint) out.push(language==="es"?`punto de rocío, ${signedDigits(parsed.dewPoint,language)}, grados`:`dew point, ${signedDigits(parsed.dewPoint,language)}, degrees`);
