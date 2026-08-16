@@ -6,10 +6,7 @@ const NATO_ES: Record<string, string> = {
   X: "X-ray", Y: "Yankee", Z: "Zulu",
 };
 
-const NATO_EN: Record<string, string> = {
-  ...NATO_ES,
-  A: "Alpha",
-};
+const NATO_EN: Record<string, string> = { ...NATO_ES, A: "Alpha" };
 
 const DIGIT_ES: Record<string, string> = {
   "0": "cero", "1": "uno", "2": "dos", "3": "tres", "4": "cuatro",
@@ -21,15 +18,7 @@ const DIGIT_EN: Record<string, string> = {
   "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
 };
 
-const RUNWAY_SIDE_ES: Record<string, string> = { L: "izquierda", R: "derecha", C: "centro" };
-const RUNWAY_SIDE_EN: Record<string, string> = { L: "left", R: "right", C: "center" };
-
-const AIRPORTS: Record<string, {
-  es: string;
-  en: string;
-  transitionAltitude?: number;
-  transitionLevel?: string;
-}> = {
+const AIRPORTS: Record<string, { es: string; en: string; transitionAltitude?: number; transitionLevel?: string }> = {
   MDPC: {
     es: "Punta Cana Internacional",
     en: "Punta Cana International",
@@ -62,7 +51,6 @@ type ParsedMetar = {
   temperature?: string;
   dewPoint?: string;
   qnh?: string;
-  altimeter?: string;
 };
 
 function digits(value: string, language: Language) {
@@ -75,98 +63,42 @@ function infoWord(letter: string, language: Language) {
   return map[letter.toUpperCase()] ?? letter;
 }
 
-function spellIcao(value: string, language: Language) {
+function airportName(icao: string, language: Language) {
+  const profile = AIRPORTS[icao.toUpperCase()];
+  if (profile) return language === "es" ? profile.es : profile.en;
   const map = language === "es" ? NATO_ES : NATO_EN;
-  return value.toUpperCase().split("").map((c) => map[c] ?? c).join(" ");
+  return icao.toUpperCase().split("").map((c) => map[c] ?? c).join(" ");
 }
 
-function runway(value: string, language: Language) {
-  const normalized = value.trim().toUpperCase();
-  const number = normalized.replace(/[^0-9]/g, "");
-  const side = normalized.match(/[LRC]$/)?.[0];
-  const sideWord = side
-    ? (language === "es" ? RUNWAY_SIDE_ES : RUNWAY_SIDE_EN)[side] ?? ""
+function normalizeRunway(raw: string) {
+  const value = raw.toUpperCase().trim();
+  const match = value.match(/(?:^|\s)(\d{1,2})([LRC]?)(?=\s|$)/);
+  if (!match) {
+    const compact = value.match(/(\d{1,2})([LRC]?)/);
+    return compact ? `${compact[1].padStart(2, "0")}${compact[2] ?? ""}` : value;
+  }
+  return `${match[1].padStart(2, "0")}${match[2] ?? ""}`;
+}
+
+function runwaySpeech(raw: string, language: Language) {
+  const value = normalizeRunway(raw);
+  const match = value.match(/^(\d{2})([LRC]?)$/);
+  if (!match) return value;
+  const sideEs: Record<string, string> = { L: "izquierda", R: "derecha", C: "centro" };
+  const sideEn: Record<string, string> = { L: "left", R: "right", C: "center" };
+  const side = match[2]
+    ? ` ${(language === "es" ? sideEs : sideEn)[match[2]]}`
     : "";
-  return `${digits(number, language)}${sideWord ? ` ${sideWord}` : ""}`;
+  return `${digits(match[1], language)}${side}`;
 }
 
-function approach(value: string | null | undefined) {
-  if (!value) return "";
-  return value
+function approachSpeech(value: string | null | undefined) {
+  return (value ?? "")
     .toUpperCase()
-    .replace(/ILS/g, "I L S")
     .replace(/RNP/g, "R N P")
-    .replace(/VISUAL/g, "visual");
-}
-
-function normalizeSignedTwoDigits(value: string | undefined, language: Language) {
-  if (!value) return undefined;
-  const negative = value.startsWith("M");
-  const raw = value.replace(/^M/, "");
-  const spoken = digits(raw, language);
-  if (!negative) return spoken;
-  return language === "es" ? `menos ${spoken}` : `minus ${spoken}`;
-}
-
-function numberWordsEs(value: number): string {
-  if (value === 0) return "cero";
-  if (value === 100) return "cien";
-  if (value < 100) {
-    const units = ["", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve"];
-    const teens: Record<number, string> = {
-      10: "diez", 11: "once", 12: "doce", 13: "trece", 14: "catorce", 15: "quince",
-      16: "dieciséis", 17: "diecisiete", 18: "dieciocho", 19: "diecinueve",
-      20: "veinte", 21: "veintiuno", 22: "veintidós", 23: "veintitrés", 24: "veinticuatro",
-      25: "veinticinco", 26: "veintiséis", 27: "veintisiete", 28: "veintiocho", 29: "veintinueve",
-    };
-    if (teens[value]) return teens[value];
-    if (value < 10) return units[value];
-    const tensWords = ["", "", "", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
-    const tens = Math.floor(value / 10);
-    const unit = value % 10;
-    return unit ? `${tensWords[tens]} y ${units[unit]}` : tensWords[tens];
-  }
-  if (value < 1000) {
-    const hundreds = Math.floor(value / 100);
-    const rest = value % 100;
-    const head = hundreds === 1 ? "ciento" : ["", "", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"][hundreds];
-    return rest ? `${head} ${numberWordsEs(rest)}` : head;
-  }
-  if (value < 1_000_000) {
-    const thousands = Math.floor(value / 1000);
-    const rest = value % 1000;
-    const head = thousands === 1 ? "mil" : `${numberWordsEs(thousands)} mil`;
-    return rest ? `${head} ${numberWordsEs(rest)}` : head;
-  }
-  return String(value);
-}
-
-function numberWordsEn(value: number): string {
-  if (value === 0) return "zero";
-  if (value < 20) {
-    return ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"][value];
-  }
-  if (value < 100) {
-    const tensWords = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
-    const tens = Math.floor(value / 10);
-    const unit = value % 10;
-    return unit ? `${tensWords[tens]} ${numberWordsEn(unit)}` : tensWords[tens];
-  }
-  if (value < 1000) {
-    const hundreds = Math.floor(value / 100);
-    const rest = value % 100;
-    return rest ? `${numberWordsEn(hundreds)} hundred ${numberWordsEn(rest)}` : `${numberWordsEn(hundreds)} hundred`;
-  }
-  if (value < 1_000_000) {
-    const thousands = Math.floor(value / 1000);
-    const rest = value % 1000;
-    return rest ? `${numberWordsEn(thousands)} thousand ${numberWordsEn(rest)}` : `${numberWordsEn(thousands)} thousand`;
-  }
-  return String(value);
-}
-
-function numberWords(value: number, language: Language) {
-  return language === "es" ? numberWordsEs(value) : numberWordsEn(value);
+    .replace(/ILS/g, "I L S")
+    .replace(/VISUAL/g, "visual")
+    .trim();
 }
 
 function parseMetar(input: string): ParsedMetar {
@@ -174,13 +106,10 @@ function parseMetar(input: string): ParsedMetar {
   const tokens = input.toUpperCase().trim().split(/\s+/).filter(Boolean);
 
   for (const token of tokens) {
-    if (/^[A-Z]{4}$/.test(token)) continue;
-    if (token === "METAR" || token === "SPECI" || token === "AUTO" || token === "COR") continue;
-
-    const time = token.match(/^(\d{2})(\d{2})(\d{2})Z$/);
-    if (time) {
-      result.day = time[1];
-      result.time = `${time[2]}${time[3]}`;
+    const t = token.match(/^(\d{2})(\d{2})(\d{2})Z$/);
+    if (t) {
+      result.day = t[1];
+      result.time = `${t[2]}${t[3]}`;
       continue;
     }
 
@@ -197,13 +126,9 @@ function parseMetar(input: string): ParsedMetar {
       continue;
     }
 
-    const cloud = token.match(/^(FEW|SCT|BKN|OVC)(\d{3})(?:CB|TCU)?$/);
+    const cloud = token.match(/^(FEW|SCT|BKN|OVC)(\d{3})/);
     if (cloud) {
       result.clouds.push({ cover: cloud[1], feet: Number(cloud[2]) * 100 });
-      continue;
-    }
-    if (token === "SKC" || token === "CLR" || token === "NSC" || token === "NCD") {
-      result.clouds.push({ cover: token });
       continue;
     }
 
@@ -215,162 +140,162 @@ function parseMetar(input: string): ParsedMetar {
     }
 
     const qnh = token.match(/^Q(\d{4})$/);
-    if (qnh) {
-      result.qnh = qnh[1];
-      continue;
-    }
-
-    const altimeter = token.match(/^A(\d{4})$/);
-    if (altimeter) {
-      result.altimeter = altimeter[1];
-    }
+    if (qnh) result.qnh = qnh[1];
   }
 
   return result;
 }
 
-function cloudPhrase(cover: string, feet: number | undefined, language: Language) {
-  if (["SKC", "CLR", "NSC", "NCD"].includes(cover)) {
-    return language === "es" ? "cielo despejado" : "sky clear";
+function numberWordsEs(n: number): string {
+  if (n === 100) return "cien";
+  if (n < 30) {
+    return ["cero","uno","dos","tres","cuatro","cinco","seis","siete","ocho","nueve","diez","once","doce","trece","catorce","quince","dieciséis","diecisiete","dieciocho","diecinueve","veinte","veintiuno","veintidós","veintitrés","veinticuatro","veinticinco","veintiséis","veintisiete","veintiocho","veintinueve"][n];
   }
+  if (n < 100) {
+    const tens = ["","","","treinta","cuarenta","cincuenta","sesenta","setenta","ochenta","noventa"];
+    const t = Math.floor(n / 10);
+    const u = n % 10;
+    return u ? `${tens[t]} y ${numberWordsEs(u)}` : tens[t];
+  }
+  if (n < 1000) {
+    const h = Math.floor(n / 100);
+    const r = n % 100;
+    const hw = h === 1 ? "ciento" : ["","","doscientos","trescientos","cuatrocientos","quinientos","seiscientos","setecientos","ochocientos","novecientos"][h];
+    return r ? `${hw} ${numberWordsEs(r)}` : hw;
+  }
+  if (n < 1_000_000) {
+    const th = Math.floor(n / 1000);
+    const r = n % 1000;
+    const head = th === 1 ? "mil" : `${numberWordsEs(th)} mil`;
+    return r ? `${head} ${numberWordsEs(r)}` : head;
+  }
+  return String(n);
+}
 
-  const esCover: Record<string, string> = {
-    FEW: "nubes escasas",
-    SCT: "nubes dispersas",
-    BKN: "nubes rotas",
-    OVC: "cielo cubierto",
-  };
-  const enCover: Record<string, string> = {
-    FEW: "few clouds",
-    SCT: "scattered clouds",
-    BKN: "broken clouds",
-    OVC: "overcast",
-  };
-  const label = language === "es" ? esCover[cover] : enCover[cover];
-  if (!feet) return label ?? cover;
-  return language === "es"
-    ? `${label} a ${numberWords(feet, "es")} pies`
-    : `${label} at ${numberWords(feet, "en")} feet`;
+function numberWordsEn(n: number): string {
+  if (n < 20) return ["zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen","seventeen","eighteen","nineteen"][n];
+  if (n < 100) {
+    const tens = ["","","twenty","thirty","forty","fifty","sixty","seventy","eighty","ninety"];
+    const t = Math.floor(n / 10);
+    const u = n % 10;
+    return u ? `${tens[t]} ${numberWordsEn(u)}` : tens[t];
+  }
+  if (n < 1000) {
+    const h = Math.floor(n / 100);
+    const r = n % 100;
+    return r ? `${numberWordsEn(h)} hundred ${numberWordsEn(r)}` : `${numberWordsEn(h)} hundred`;
+  }
+  if (n < 1_000_000) {
+    const th = Math.floor(n / 1000);
+    const r = n % 1000;
+    return r ? `${numberWordsEn(th)} thousand ${numberWordsEn(r)}` : `${numberWordsEn(th)} thousand`;
+  }
+  return String(n);
+}
+
+function numberWords(n: number, language: Language) {
+  return language === "es" ? numberWordsEs(n) : numberWordsEn(n);
+}
+
+function signedDigits(value: string | undefined, language: Language) {
+  if (!value) return "";
+  const negative = value.startsWith("M");
+  const raw = value.replace(/^M/, "");
+  const spoken = digits(raw, language);
+  if (!negative) return spoken;
+  return `${language === "es" ? "menos" : "minus"} ${spoken}`;
 }
 
 function metarPhrases(parsed: ParsedMetar, language: Language) {
-  const phrases: string[] = [];
+  const out: string[] = [];
 
   if (parsed.day && parsed.time) {
-    phrases.push(`${digits(parsed.day, language)}, ${digits(parsed.time, language)} Zulu`);
+    out.push(`${digits(parsed.day, language)}, ${digits(parsed.time, language)} Zulu`);
   }
 
   if (parsed.windDirection && parsed.windSpeed) {
-    const direction = parsed.windDirection === "VRB"
-      ? (language === "es" ? "variable" : "variable")
+    const dir = parsed.windDirection === "VRB"
+      ? "variable"
       : `${digits(parsed.windDirection, language)} ${language === "es" ? "grados" : "degrees"}`;
     let wind = language === "es"
-      ? `vientos ${direction} ${digits(parsed.windSpeed, "es")} nudos`
-      : `wind ${direction} ${digits(parsed.windSpeed, "en")} knots`;
+      ? `vientos ${dir}, ${digits(parsed.windSpeed, language)} nudos`
+      : `wind ${dir}, ${digits(parsed.windSpeed, language)} knots`;
     if (parsed.windGust) {
       wind += language === "es"
-        ? `, rachas ${digits(parsed.windGust, "es")} nudos`
-        : `, gusting ${digits(parsed.windGust, "en")} knots`;
+        ? `, rachas ${digits(parsed.windGust, language)} nudos`
+        : `, gusting ${digits(parsed.windGust, language)} knots`;
     }
-    phrases.push(wind);
+    out.push(wind);
   }
 
   if (parsed.visibility) {
-    if (parsed.visibility === "9999") {
-      phrases.push(language === "es"
-        ? "visibilidad mayor a diez kilómetros"
-        : "visibility greater than ten kilometers");
-    } else {
-      phrases.push(language === "es"
-        ? `visibilidad ${digits(parsed.visibility, "es")} metros`
-        : `visibility ${digits(parsed.visibility, "en")} meters`);
+    out.push(parsed.visibility === "9999"
+      ? (language === "es" ? "visibilidad mayor a diez kilómetros" : "visibility greater than ten kilometers")
+      : (language === "es" ? `visibilidad ${digits(parsed.visibility, language)} metros` : `visibility ${digits(parsed.visibility, language)} meters`));
+  }
+
+  const coversEs: Record<string, string> = { FEW: "nubes escasas", SCT: "nubes dispersas", BKN: "nubes rotas", OVC: "cielo cubierto" };
+  const coversEn: Record<string, string> = { FEW: "few clouds", SCT: "scattered clouds", BKN: "broken clouds", OVC: "overcast" };
+  for (const cloud of parsed.clouds) {
+    const label = (language === "es" ? coversEs : coversEn)[cloud.cover] ?? cloud.cover;
+    if (cloud.feet) {
+      out.push(language === "es"
+        ? `${label} a ${numberWords(cloud.feet, language)} pies`
+        : `${label} at ${numberWords(cloud.feet, language)} feet`);
     }
   }
 
-  for (const cloud of parsed.clouds) {
-    phrases.push(cloudPhrase(cloud.cover, cloud.feet, language));
-  }
+  if (parsed.temperature) out.push(language === "es" ? `temperatura ${signedDigits(parsed.temperature, language)}` : `temperature ${signedDigits(parsed.temperature, language)}`);
+  if (parsed.dewPoint) out.push(language === "es" ? `punto de rocío ${signedDigits(parsed.dewPoint, language)}` : `dew point ${signedDigits(parsed.dewPoint, language)}`);
+  if (parsed.qnh) out.push(`Q N H ${digits(parsed.qnh, language)}`);
 
-  const temperature = normalizeSignedTwoDigits(parsed.temperature, language);
-  if (temperature) {
-    phrases.push(language === "es" ? `temperatura ${temperature}` : `temperature ${temperature}`);
-  }
-
-  const dewPoint = normalizeSignedTwoDigits(parsed.dewPoint, language);
-  if (dewPoint) {
-    phrases.push(language === "es" ? `punto de rocío ${dewPoint}` : `dew point ${dewPoint}`);
-  }
-
-  if (parsed.qnh) {
-    phrases.push(`Q N H ${digits(parsed.qnh, language)}`);
-  } else if (parsed.altimeter) {
-    phrases.push(language === "es"
-      ? `altímetro ${digits(parsed.altimeter, "es")}`
-      : `altimeter ${digits(parsed.altimeter, "en")}`);
-  }
-
-  return phrases;
-}
-
-function freeText(value: string | null | undefined, language: Language) {
-  return (value ?? "")
-    .replace(/\b\d+\b/g, (match) => digits(match, language))
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function airportName(icao: string, language: Language) {
-  const profile = AIRPORTS[icao.toUpperCase()];
-  if (profile) return language === "es" ? profile.es : profile.en;
-  return spellIcao(icao, language);
+  return out;
 }
 
 function transitionPhrase(icao: string, language: Language) {
   const profile = AIRPORTS[icao.toUpperCase()];
   if (!profile?.transitionAltitude || !profile.transitionLevel) return "";
   return language === "es"
-    ? `altitud de transición ${numberWords(profile.transitionAltitude, "es")} pies, nivel de transición ${digits(profile.transitionLevel, "es")}`
-    : `transition altitude ${numberWords(profile.transitionAltitude, "en")} feet, transition level ${digits(profile.transitionLevel, "en")}`;
+    ? `Altitud de transición ${numberWords(profile.transitionAltitude, language)} pies. Nivel de transición ${digits(profile.transitionLevel, language)}`
+    : `Transition altitude ${numberWords(profile.transitionAltitude, language)} feet. Transition level ${digits(profile.transitionLevel, language)}`;
 }
 
 export function buildSpanishAtisSpeech(row: AtisSpeechData) {
   const parsed = parseMetar(row.metar);
-  const optional = row.approach_optional ? ` o ${approach(row.approach_optional)}` : "";
-  const rwy = runway(row.runway, "es");
-  const extra = freeText(row.extra_info, "es");
-  const remarks = freeText(row.remarks, "es");
+  const primary = approachSpeech(row.approach_primary);
+  const optional = approachSpeech(row.approach_optional);
+  const rwy = runwaySpeech(row.runway, "es");
 
-  return [
+  const phrases = [
     `${airportName(row.airport_icao, "es")} ATIS información ${infoWord(row.info_letter, "es")}`,
     ...metarPhrases(parsed, "es"),
-    `aeronaves esperen aproximación ${approach(row.approach_primary)}${optional}`,
-    `salidas pista ${rwy}`,
-    `llegadas pista ${rwy}`,
+    `Aeronaves esperen aproximación ${primary}`,
+    optional ? `O visual` : "",
+    `Salidas y llegadas, pista ${rwy}`,
     transitionPhrase(row.airport_icao, "es"),
-    "transponder modo altitude en todas las calles de rodaje y pistas en uso",
-    extra ? `información adicional, ${extra}` : "",
-    remarks ? `observaciones, ${remarks}` : "",
-    `notifique información ${infoWord(row.info_letter, "es")} en contacto inicial`,
-  ].filter(Boolean).join(". ") + ".";
+    "X P D R. Modo altitude. En todas las calles de rodaje y pistas en uso",
+    `Notifique información ${infoWord(row.info_letter, "es")} en contacto inicial`,
+  ];
+
+  return phrases.filter(Boolean).join(". ") + ".";
 }
 
 export function buildEnglishAtisSpeech(row: AtisSpeechData) {
   const parsed = parseMetar(row.metar);
-  const optional = row.approach_optional ? ` or ${approach(row.approach_optional)}` : "";
-  const rwy = runway(row.runway, "en");
-  const extra = freeText(row.extra_info, "en");
-  const remarks = freeText(row.remarks, "en");
+  const primary = approachSpeech(row.approach_primary);
+  const optional = approachSpeech(row.approach_optional);
+  const rwy = runwaySpeech(row.runway, "en");
 
-  return [
+  const phrases = [
     `${airportName(row.airport_icao, "en")} ATIS information ${infoWord(row.info_letter, "en")}`,
     ...metarPhrases(parsed, "en"),
-    `aircraft expect ${approach(row.approach_primary)}${optional} approach`,
-    `departures runway ${rwy}`,
-    `arrivals runway ${rwy}`,
+    `Aircraft expect ${primary} approach`,
+    optional ? `Or visual` : "",
+    `Departures and arrivals, runway ${rwy}`,
     transitionPhrase(row.airport_icao, "en"),
-    "transponder altitude mode on all taxiways and runways in use",
-    extra ? `additional information, ${extra}` : "",
-    remarks ? `remarks, ${remarks}` : "",
-    `advise information ${infoWord(row.info_letter, "en")} on initial contact`,
-  ].filter(Boolean).join(". ") + ".";
+    "X P D R. Altitude mode. On all taxiways and runways in use",
+    `Advise information ${infoWord(row.info_letter, "en")} on initial contact`,
+  ];
+
+  return phrases.filter(Boolean).join(". ") + ".";
 }
