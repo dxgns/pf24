@@ -37,6 +37,7 @@ export type AtisSpeechData = {
 type Language = "es" | "en";
 type ParsedMetar = {
   day?: string; time?: string; windDirection?: string; windSpeed?: string; windGust?: string;
+  windVariableFrom?: string; windVariableTo?: string;
   visibility?: string; clouds: Array<{ cover: string; feet?: number }>;
   temperature?: string; dewPoint?: string; qnh?: string;
 };
@@ -97,6 +98,8 @@ function parseMetar(input: string): ParsedMetar {
     if (t) { out.day=t[1]; out.time=`${t[2]}${t[3]}`; continue; }
     const w = token.match(/^(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?KT$/);
     if (w) { out.windDirection=w[1]; out.windSpeed=w[2]; out.windGust=w[3]; continue; }
+    const variableWind = token.match(/^(\d{3})V(\d{3})$/);
+    if (variableWind) { out.windVariableFrom=variableWind[1]; out.windVariableTo=variableWind[2]; continue; }
     if (/^\d{4}$/.test(token)) { out.visibility=token; continue; }
     const c = token.match(/^(FEW|SCT|BKN|OVC)(\d{3})/);
     if (c) { out.clouds.push({ cover:c[1], feet:Number(c[2])*100 }); continue; }
@@ -135,8 +138,13 @@ function metarPhrases(parsed: ParsedMetar, language: Language) {
   if (parsed.day && parsed.time) out.push(`${digits(parsed.day,language)}, ${digits(parsed.time,language)} Zulu`);
   if (parsed.windDirection && parsed.windSpeed) {
     const dir=parsed.windDirection==="VRB"?"variable":`${digits(parsed.windDirection,language)}, ${language==="es"?"grados":"degrees"}`;
-    let wind=language==="es"?`vientos, ${dir}, ${digits(parsed.windSpeed,language)}, nudos`:`wind, ${dir}, ${digits(parsed.windSpeed,language)}, knots`;
+    let wind=language==="es"?`viento, ${dir}, ${digits(parsed.windSpeed,language)}, nudos`:`wind, ${dir}, ${digits(parsed.windSpeed,language)}, knots`;
     if (parsed.windGust) wind += language==="es"?`, rachas, ${digits(parsed.windGust,language)}, nudos`:` , gusting, ${digits(parsed.windGust,language)}, knots`;
+    if (parsed.windVariableFrom && parsed.windVariableTo) {
+      wind += language === "es"
+        ? `, variable entre, ${digits(parsed.windVariableFrom,language)}, y, ${digits(parsed.windVariableTo,language)}, grados`
+        : `, variable between, ${digits(parsed.windVariableFrom,language)}, and, ${digits(parsed.windVariableTo,language)}, degrees`;
+    }
     out.push(wind);
   }
   if (parsed.visibility) out.push(parsed.visibility==="9999"?(language==="es"?"visibilidad mayor a diez kilómetros":"visibility greater than ten kilometers"):(language==="es"?`visibilidad, ${digits(parsed.visibility,language)}, metros`:`visibility, ${digits(parsed.visibility,language)}, meters`));
@@ -158,6 +166,12 @@ function transitionPhrase(icao:string, language:Language) {
   return language==="es"?`Altitud de transición ${numberWords(p.transitionAltitude,language)} pies. Nivel de transición, ${digits(p.transitionLevel,language)}`:`Transition altitude ${numberWords(p.transitionAltitude,language)} feet. Transition level, ${digits(p.transitionLevel,language)}`;
 }
 
+function remarksPhrase(value: string | null | undefined, language: Language) {
+  const remarks = (value ?? "").trim();
+  if (!remarks) return "";
+  return language === "es" ? `Observaciones. ${remarks}` : `Remarks. ${remarks}`;
+}
+
 export function buildSpanishAtisSpeech(row: AtisSpeechData) {
   const parsed=parseMetar(row.metar), primary=approachSpeech(row.approach_primary), optional=approachSpeech(row.approach_optional);
   const runways=splitRunways(row.runway);
@@ -171,6 +185,7 @@ export function buildSpanishAtisSpeech(row: AtisSpeechData) {
     `Llegadas pista, ${arr}`,
     transitionPhrase(row.airport_icao,"es"),
     "X P D R. Modo altitude. En todas las calles de rodaje y pistas en uso",
+    remarksPhrase(row.remarks,"es"),
     `Notifique información ${infoWord(row.info_letter,"es")} en contacto inicial`,
   ].filter(Boolean).join(". ")+".";
 }
@@ -188,6 +203,7 @@ export function buildEnglishAtisSpeech(row: AtisSpeechData) {
     `Arrivals runway, ${arr}`,
     transitionPhrase(row.airport_icao,"en"),
     "X P D R. Altitude mode. On all taxiways and runways in use",
+    remarksPhrase(row.remarks,"en"),
     `Advise information ${infoWord(row.info_letter,"en")} on initial contact`,
   ].filter(Boolean).join(". ")+".";
 }
