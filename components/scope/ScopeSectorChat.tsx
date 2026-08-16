@@ -6,7 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { ATC_FREQUENCIES } from "@/lib/atcFrequencies";
 
 type StoredConnection = { callsign?: string };
-type ChatRef = { position: string; frequency: string };
+type ChatKind = "private" | "public" | "console";
+type ChatRef = { position: string; frequency: string; kind: ChatKind; fixed: boolean };
 type ChatMessage = { id: string; from: string; to: string; text: string; sentAt: number };
 type ChatState = {
   chats: ChatRef[];
@@ -17,10 +18,12 @@ type ChatState = {
 type ChatPayload = ChatMessage & { kind: "sector-chat" };
 
 const CONNECTION_KEY = "pf24_scope_connection_session_v1";
-const STORAGE_KEY = "pf24_scope_sector_chat_v3";
-const CHANNEL_NAME = "scope-sector-private-chat-v3";
+const STORAGE_KEY = "pf24_scope_sector_chat_v4";
+const CHANNEL_NAME = "scope-sector-private-chat-v4";
 const MAX_MESSAGES = 200;
-const MAX_CHATS = 12;
+const MAX_PRIVATE_CHATS = 10;
+const PUBLIC_CHAT_KEY = "__PF24_PUBLIC_FREQUENCY__";
+const CONSOLE_CHAT_KEY = "__PF24_CONSOLE__";
 const FREQUENCY_RE = /^\d{3}\.\d{3}$/;
 const CALLSIGN_RE = /^[A-Z0-9]+(?:_[A-Z0-9]+)+$/;
 
@@ -52,25 +55,65 @@ function loadAll(): Record<string, ChatState> {
   }
 }
 
-function sanitizeState(value: ChatState | undefined): ChatState {
-  if (!value) return emptyState();
-  const chats = Array.isArray(value.chats)
-    ? value.chats
-      .filter((chat) => chat && typeof chat.position === "string" && FREQUENCY_RE.test(String(chat.frequency)))
-      .map((chat) => ({ position: normalize(chat.position), frequency: String(chat.frequency).trim() }))
-      .filter((chat) => CALLSIGN_RE.test(chat.position) && FREQUENCY_RE.test(chat.frequency))
-      .slice(-MAX_CHATS)
+function normalizeChat(chat: Partial<ChatRef>): ChatRef | null {
+  const position = typeof chat.position === "string" ? normalize(chat.position) : "";
+  const frequency = typeof chat.frequency === "string" ? chat.frequency.trim() : "";
+
+  if (position === PUBLIC_CHAT_KEY) {
+    return { position, frequency, kind: "public", fixed: true };
+  }
+  if (position === CONSOLE_CHAT_KEY) {
+    return { position, frequency: "Console", kind: "console", fixed: true };
+  }
+  if (!CALLSIGN_RE.test(position) || !FREQUENCY_RE.test(frequency) || !ATC_FREQUENCIES[position]) return null;
+  return { position, frequency, kind: "private", fixed: false };
+}
+
+function sanitizeState(value: ChatState | undefined, ownFrequency: string): ChatState {
+  if (!value) {
+    const chats = ownFrequency
+      ? [
+          { position: PUBLIC_CHAT_KEY, frequency: ownFrequency, kind: "public" as const, fixed: true },
+          { position: CONSOLE_CHAT_KEY, frequency: "Console", kind: "console" as const, fixed: true },
+        ]
+      : [];
+    return { chats, active: chats[0]?.position ?? null, history: {}, unread: {} };
+  }
+
+  const normalizedChats = Array.isArray(value.chats)
+    ? value.chats.map((chat) => normalizeChat(chat)).filter((chat): chat is ChatRef => Boolean(chat))
     : [];
+
+  const privateChats: ChatRef[] = [];
+  for (const chat of normalizedChats) {
+    if (chat.kind !== "private") continue;
+    if (!privateChats.some((item) => item.position === chat.position)) privateChats.push(chat);
+  }
+
+  const defaults: ChatRef[] = ownFrequency
+    ? [
+        { position: PUBLIC_CHAT_KEY, frequency: ownFrequency, kind: "public", fixed: true },
+        { position: CONSOLE_CHAT_KEY, frequency: "Console", kind: "console", fixed: true },
+      ]
+    : [];
+
   const history = value.history && typeof value.history === "object" ? value.history : {};
   const unread = value.unread && typeof value.unread === "object" ? value.unread : {};
-  const active = typeof value.active === "string" && chats.some((chat) => chat.position === normalize(value.active))
-    ? normalize(value.active)
-    : null;
-  return { chats, active, history, unread };
+  const chats = [...defaults, ...privateChats.filter((chat) => !defaults.some((item) => item.position === chat.position))].slice(0, 2 + MAX_PRIVATE_CHATS);
+  const activeValue = typeof value.active === "string" ? normalize(value.active) : "";
+  const active = chats.some((chat) => chat.position === activeValue) ? activeValue : chats[0]?.position ?? null;
+
+  return {
+    chats,
+    active,
+    history,
+    unread: Object.fromEntries(chats.map((chat) => [chat.position, Math.max(0, Number(unread[chat.position] ?? 0) || 0)])),
+  };
 }
 
 function loadState(position: string) {
-  return position ? sanitizeState(loadAll()[position]) : emptyState();
+  if (!position) return emptyState();
+  return sanitizeState(loadAll()[position], ATC_FREQUENCIES[position] ?? "");
 }
 
 function saveState(position: string, state: ChatState) {
@@ -119,9 +162,9 @@ function messageId() {
   return `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function formatTime(timestamp: number) {
-  const date = new Date(timestamp);
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+function formatFrequency(message: ChatMessage, ownFrequency: string) {
+  if (message.from === PUBLIC_CHAT_KEY) return ownFrequency || "---.---";
+  return ATC_FREQUENCIES[normalize(message.from)] ?? ownFrequency || "---.---";
 }
 
 export default function ScopeSectorChat() {
@@ -164,44 +207,62 @@ export default function ScopeSectorChat() {
     for (const message of queued) sendBroadcast(message);
   }, [sendBroadcast]);
 
-  const openChat = useCallback((targetPosition: string, frequency: string) => {
+  const ensureChat = useCallback((targetPosition: string, frequency: string) => {
     const remote = normalize(targetPosition);
     const freq = frequency.trim();
     const me = positionRef.current;
     if (!me || !remote || remote === me || !ATC_FREQUENCIES[remote] || !FREQUENCY_RE.test(freq)) return;
 
     updateState((current) => {
-      const chats = current.chats.some((chat) => chat.position === remote)
+      const exists = current.chats.some((chat) => chat.position === remote);
+      const chats = exists
         ? current.chats.map((chat) => chat.position === remote ? { ...chat, frequency: freq } : chat)
-        : [...current.chats, { position: remote, frequency: freq }].slice(-MAX_CHATS);
-      return { ...current, chats, active: remote, unread: { ...current.unread, [remote]: 0 } };
+        : [...current.chats, { position: remote, frequency: freq, kind: "private", fixed: false }].slice(0, 2 + MAX_PRIVATE_CHATS);
+      return { ...current, chats, active: remote };
     });
   }, [updateState]);
 
-  const removeChat = useCallback((remote: string) => {
+  const markRead = useCallback((chatId: string) => {
+    updateState((current) => ({
+      ...current,
+      unread: { ...current.unread, [chatId]: 0 },
+    }));
+  }, [updateState]);
+
+  const removeChat = useCallback((chatId: string) => {
     updateState((current) => {
-      const chats = current.chats.filter((chat) => chat.position !== remote);
+      const chat = current.chats.find((item) => item.position === chatId);
+      if (!chat || chat.fixed) return current;
+      const chats = current.chats.filter((item) => item.position !== chatId);
       const history = { ...current.history };
       const unread = { ...current.unread };
-      delete history[remote];
-      delete unread[remote];
-      const active = current.active === remote ? chats[chats.length - 1]?.position ?? null : current.active;
+      delete history[chatId];
+      delete unread[chatId];
+      const active = current.active === chatId
+        ? chats.find((item) => item.position === PUBLIC_CHAT_KEY)?.position ?? chats[0]?.position ?? null
+        : current.active;
       return { ...current, chats, history, unread, active };
     });
   }, [updateState]);
 
   const sendCurrent = useCallback((raw: string) => {
     const me = positionRef.current;
-    const remote = stateRef.current.active;
+    const chatId = stateRef.current.active;
     const text = raw.trim().slice(0, 500);
-    if (!me || !remote || !text) return false;
+    if (!me || !chatId || !text) return false;
 
-    const message: ChatMessage = { id: messageId(), from: me, to: remote, text, sentAt: Date.now() };
+    const chat = stateRef.current.chats.find((item) => item.position === chatId);
+    if (!chat) return false;
+
+    const to = chat.kind === "private" ? chat.position : chat.position;
+    const message: ChatMessage = { id: messageId(), from: me, to, text, sentAt: Date.now() };
+
     updateState((current) => ({
       ...current,
-      history: { ...current.history, [remote]: [...(current.history[remote] ?? []), message].slice(-MAX_MESSAGES) },
+      history: { ...current.history, [chatId]: [...(current.history[chatId] ?? []), message].slice(-MAX_MESSAGES) },
     }));
-    sendBroadcast(message);
+
+    if (chat.kind === "private") sendBroadcast(message);
     return true;
   }, [sendBroadcast, updateState]);
 
@@ -239,6 +300,11 @@ export default function ScopeSectorChat() {
   }, []);
 
   useEffect(() => {
+    if (!positionRef.current) return;
+    updateState((current) => sanitizeState(current, ATC_FREQUENCIES[positionRef.current] ?? ""));
+  }, [positionRef.current]);
+
+  useEffect(() => {
     let disposed = false;
     let retryTimer: number | null = null;
 
@@ -266,15 +332,17 @@ export default function ScopeSectorChat() {
             const history = current.history[from] ?? [];
             if (history.some((item) => item.id === incoming.id)) return current;
             const frequency = ATC_FREQUENCIES[from] ?? "---.---";
-            const chats = current.chats.some((chat) => chat.position === from)
+            const hasChat = current.chats.some((chat) => chat.position === from);
+            const chats = hasChat
               ? current.chats.map((chat) => chat.position === from ? { ...chat, frequency } : chat)
-              : [...current.chats, { position: from, frequency }].slice(-MAX_CHATS);
-            const read = current.active === from && document.visibilityState === "visible";
+              : [...current.chats, { position: from, frequency, kind: "private", fixed: false }].slice(0, 2 + MAX_PRIVATE_CHATS);
+            const active = current.active === from ? from : from;
             return {
               ...current,
               chats,
+              active,
               history: { ...current.history, [from]: [...history, incoming].slice(-MAX_MESSAGES) },
-              unread: { ...current.unread, [from]: read ? 0 : (current.unread[from] ?? 0) + 1 },
+              unread: { ...current.unread, [from]: (current.unread[from] ?? 0) + 1 },
             };
           });
         })
@@ -316,13 +384,31 @@ export default function ScopeSectorChat() {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      openChat(parsed.position, parsed.frequency);
+      ensureChat(parsed.position, parsed.frequency);
       window.setTimeout(() => findFooter()?.querySelector<HTMLInputElement>("input")?.focus(), 0);
     };
 
+    const onContextMenu = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const row = target?.closest<HTMLElement>("div.flex.whitespace-nowrap");
+      if (!row) return;
+      const win = row.closest<HTMLElement>("main.fixed > section > div.absolute.z-30");
+      if (!win || !win.firstElementChild?.textContent?.toUpperCase().includes("FREQ")) return;
+      const parsed = parseFrequencyRow(row);
+      if (!parsed) return;
+      if ((stateRef.current.unread[parsed.position] ?? 0) <= 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      markRead(parsed.position);
+    };
+
     document.addEventListener("dblclick", onDoubleClick, true);
-    return () => document.removeEventListener("dblclick", onDoubleClick, true);
-  }, [openChat]);
+    document.addEventListener("contextmenu", onContextMenu, true);
+    return () => {
+      document.removeEventListener("dblclick", onDoubleClick, true);
+      document.removeEventListener("contextmenu", onContextMenu, true);
+    };
+  }, [ensureChat, markRead]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -350,14 +436,6 @@ export default function ScopeSectorChat() {
   }, [sendCurrent]);
 
   useEffect(() => {
-    const input = footer?.querySelector<HTMLInputElement>("input");
-    if (!input) return;
-    const previous = input.style.marginLeft;
-    input.style.marginLeft = state.chats.length > 0 ? "210px" : "";
-    return () => { input.style.marginLeft = previous; };
-  }, [footer, state.chats.length]);
-
-  useEffect(() => {
     const syncUnread = () => {
       const unread = stateRef.current.unread;
       for (const row of frequencyRows()) {
@@ -383,19 +461,34 @@ export default function ScopeSectorChat() {
 
   if (!footer) return null;
   const messages = state.active ? state.history[state.active] ?? [] : [];
+  const activeChat = state.chats.find((chat) => chat.position === state.active) ?? null;
+  const activeFrequency = activeChat?.frequency ?? "---.---";
+  const activeUnread = activeChat ? (state.unread[activeChat.position] ?? 0) > 0 : false;
+  const ownFrequency = positionRef.current ? ATC_FREQUENCIES[positionRef.current] ?? "---.---" : "---.---";
 
   return createPortal(
     <>
       {state.active && (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-[45] h-[76px] bg-[#555c61] font-mono text-[9px] text-[#e8e8e8]">
           <div ref={logRef} className="pointer-events-auto h-full overflow-y-auto px-[5px] py-[5px] leading-[12px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {messages.map((message) => (
-              <div key={message.id} className="whitespace-pre-wrap break-words">
-                <span className="text-[#bfc8c6]">{formatTime(message.sentAt)} </span>
-                <span className={message.from === positionRef.current ? "text-[#e8e8e8]" : "text-[#00efff]"}>{message.from}</span>
-                <span>: {message.text}</span>
-              </div>
-            ))}
+            {messages.map((message) => {
+              const frequency = formatFrequency(message, ownFrequency);
+              return (
+                <div key={message.id} className={`whitespace-pre-wrap break-words ${activeUnread ? "text-[#00efff]" : "text-[#e8e8e8]"}`}>
+                  <span
+                    className="cursor-context-menu"
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      markRead(state.active!);
+                    }}
+                  >
+                    {frequency}:
+                  </span>
+                  <span> {message.text}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -405,11 +498,17 @@ export default function ScopeSectorChat() {
           {state.chats.map((chat) => {
             const selected = state.active === chat.position;
             const unread = (state.unread[chat.position] ?? 0) > 0;
+            const label = chat.kind === "console" ? "Console" : chat.frequency;
             return (
               <span
                 key={chat.position}
-                title={`${chat.position} · doble click para eliminar chat`}
-                onClick={() => updateState((current) => ({ ...current, active: chat.position, unread: { ...current.unread, [chat.position]: 0 } }))}
+                title={chat.fixed ? `${label} · chat fijo` : `${label} · doble click para eliminar`}
+                onClick={() => updateState((current) => ({ ...current, active: chat.position }))}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  markRead(chat.position);
+                }}
                 onDoubleClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -417,12 +516,18 @@ export default function ScopeSectorChat() {
                 }}
                 className={`cursor-default select-none px-[2px] leading-[18px] ${unread ? "text-[#00efff]" : selected ? "text-[#111] underline" : "text-[#333]"}`}
               >
-                {chat.frequency}
+                {label}
               </span>
             );
           })}
         </div>
       )}
+
+      <div className="pointer-events-none absolute bottom-0 left-0 z-[64] h-[36px] w-full font-mono text-[9px]">
+        <div className="ml-[210px] flex h-[36px] items-center gap-[10px] pl-[2px] text-[#111]">
+          <span className="whitespace-nowrap">on {activeFrequency}</span>
+        </div>
+      </div>
     </>,
     footer,
   );
