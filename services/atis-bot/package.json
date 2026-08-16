@@ -1,0 +1,26 @@
+{
+  "name": "pf24-atis-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@andresaya/edge-tts": "^1.8.0",
+    "@discordjs/voice": "^0.19.2",
+    "@supabase/supabase-js": "^2.108.2",
+    "discord.js": "^14.27.0",
+    "ffmpeg-static": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
