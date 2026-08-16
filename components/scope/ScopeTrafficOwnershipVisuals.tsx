@@ -8,6 +8,7 @@ import type { ScopeFlightPlan } from "@/lib/scope/types";
 type Props = { initialPlans: ScopeFlightPlan[] };
 type StoredConnection = { callsign?: string };
 type UnplannedOwners = Record<string, string>;
+type OptimisticOwner = { owner: string | null; expiresAt: number };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const UNPLANNED_STORAGE_KEY = "pf24_scope_unplanned_assumed_v2";
@@ -69,6 +70,7 @@ function paintLabel(label: HTMLElement, color: string) {
 export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
+  const [optimisticOwners, setOptimisticOwners] = useState<Record<string, OptimisticOwner>>({});
 
   const plannedOwners = useMemo(() => {
     const map = new Map<string, string | null>();
@@ -95,6 +97,7 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
     const onConnection = (event: Event) => {
       const detail = (event as CustomEvent<{ connected?: boolean; callsign?: string }>).detail;
       setPosition(detail?.connected ? (detail.callsign?.trim().toUpperCase() || readPosition()) : "");
+      if (!detail?.connected) setOptimisticOwners({});
     };
     window.addEventListener("pf24-scope-connection-change", onConnection);
     return () => window.removeEventListener("pf24-scope-connection-change", onConnection);
@@ -108,6 +111,21 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
     return () => { void supabase.removeChannel(channel); };
   }, [loadPlans]);
 
+  useEffect(() => {
+    setOptimisticOwners((current) => {
+      const now = Date.now();
+      const next = { ...current };
+      let changed = false;
+      for (const [key, optimistic] of Object.entries(current)) {
+        if (optimistic.expiresAt <= now || (plannedOwners.has(key) && plannedOwners.get(key) === optimistic.owner)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [plannedOwners]);
+
   const sync = useCallback(() => {
     const root = document.querySelector<HTMLElement>(LIVE_ROOT);
     if (!root) return;
@@ -116,15 +134,19 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
     const targets = Array.from(root.querySelectorAll<HTMLButtonElement>("[data-pf24-traffic-select='true']"));
     const groups = Array.from(root.querySelectorAll<SVGGElement>("svg > g"));
     const unplannedOwners = readUnplannedOwners();
+    const now = Date.now();
 
     labels.forEach((label, index) => {
       const callsign = trafficCallsign(label);
       const key = norm(callsign);
       if (!key) return;
 
-      const owner = plannedOwners.has(key)
-        ? plannedOwners.get(key) ?? null
-        : unplannedOwners[key]?.trim().toUpperCase() || null;
+      const optimistic = optimisticOwners[key];
+      const owner = optimistic && optimistic.expiresAt > now
+        ? optimistic.owner
+        : plannedOwners.has(key)
+          ? plannedOwners.get(key) ?? null
+          : unplannedOwners[key]?.trim().toUpperCase() || null;
       const ownedByMe = Boolean(position && owner === position);
       const color = ownedByMe ? GREEN : GREY;
 
@@ -137,7 +159,7 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       group?.querySelectorAll<SVGLineElement>("line").forEach((line) => setImportant(line, "stroke", color));
       group?.querySelectorAll<SVGCircleElement>("circle").forEach((circle) => setImportant(circle, "fill", color));
     });
-  }, [plannedOwners, position]);
+  }, [optimisticOwners, plannedOwners, position]);
 
   useEffect(() => {
     const style = document.createElement("style");
@@ -161,20 +183,43 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
     sync();
     const timer = window.setInterval(sync, 180);
     const schedule = () => window.requestAnimationFrame(sync);
-    const onOwnershipChange = () => schedule();
+
+    const onActionCapture = (event: MouseEvent) => {
+      const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
+      const menu = button?.closest<HTMLElement>("[data-pf24-callsign-menu='true']");
+      const label = menu?.closest<HTMLElement>("[data-pf24-traffic-label='true']");
+      if (!button || !menu || !label) return;
+
+      const action = button.textContent?.trim().toUpperCase() ?? "";
+      if (action !== "ASSUME" && action !== "FREE") return;
+      const key = norm(trafficCallsign(label));
+      if (!key || !plannedOwners.has(key)) return;
+
+      const currentOwner = plannedOwners.get(key) ?? null;
+      if (action === "ASSUME" && (!currentOwner || currentOwner === position) && position) {
+        setOptimisticOwners((current) => ({ ...current, [key]: { owner: position, expiresAt: Date.now() + 2500 } }));
+        window.setTimeout(() => void loadPlans(), 300);
+      }
+      if (action === "FREE" && currentOwner === position) {
+        setOptimisticOwners((current) => ({ ...current, [key]: { owner: null, expiresAt: Date.now() + 2500 } }));
+        window.setTimeout(() => void loadPlans(), 300);
+      }
+    };
 
     document.addEventListener("click", schedule, true);
+    window.addEventListener("click", onActionCapture, true);
     window.addEventListener("pf24-scope-connection-change", schedule);
-    window.addEventListener("pf24-traffic-ownership-change", onOwnershipChange);
+    window.addEventListener("pf24-traffic-ownership-change", schedule);
 
     return () => {
       style.remove();
       window.clearInterval(timer);
       document.removeEventListener("click", schedule, true);
+      window.removeEventListener("click", onActionCapture, true);
       window.removeEventListener("pf24-scope-connection-change", schedule);
-      window.removeEventListener("pf24-traffic-ownership-change", onOwnershipChange);
+      window.removeEventListener("pf24-traffic-ownership-change", schedule);
     };
-  }, [sync]);
+  }, [loadPlans, plannedOwners, position, sync]);
 
   return null;
 }
