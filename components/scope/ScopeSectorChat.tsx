@@ -215,9 +215,9 @@ export default function ScopeSectorChat() {
 
     updateState((current) => {
       const exists = current.chats.some((chat) => chat.position === remote);
-      const chats = exists
+      const chats: ChatRef[] = exists
         ? current.chats.map((chat) => chat.position === remote ? { ...chat, frequency: freq } : chat)
-        : [...current.chats, { position: remote, frequency: freq, kind: "private", fixed: false }].slice(0, 2 + MAX_PRIVATE_CHATS);
+        : [...current.chats, { position: remote, frequency: freq, kind: "private" as const, fixed: false }].slice(0, 2 + MAX_PRIVATE_CHATS);
       return { ...current, chats, active: remote };
     });
   }, [updateState]);
@@ -325,9 +325,9 @@ export default function ScopeSectorChat() {
             const history = current.history[from] ?? [];
             if (history.some((item) => item.id === incoming.id)) return current;
             const frequency = ATC_FREQUENCIES[from] ?? "---.---";
-            const chats = current.chats.some((chat) => chat.position === from)
+            const chats: ChatRef[] = current.chats.some((chat) => chat.position === from)
               ? current.chats.map((chat) => chat.position === from ? { ...chat, frequency } : chat)
-              : [...current.chats, { position: from, frequency, kind: "private", fixed: false }].slice(0, 2 + MAX_PRIVATE_CHATS);
+              : [...current.chats, { position: from, frequency, kind: "private" as const, fixed: false }].slice(0, 2 + MAX_PRIVATE_CHATS);
             return {
               ...current,
               chats,
