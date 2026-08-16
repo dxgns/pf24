@@ -18,15 +18,6 @@ const ATIS_AIRPORTS = new Set([
   "EFKT",
 ]);
 
-const FIR_AIRPORTS: Record<string, string[]> = {
-  MDCS: ["MDPC", "MDST"],
-  GCCC: ["GCLP"],
-  LECB: ["LEMH"],
-  LCCC: ["LCLK", "LCPH"],
-  EGTT: ["EGKK", "EGHI"],
-  EFIN: ["EFKT"],
-};
-
 type StoredConnection = { callsign?: string };
 type StoredAtisConfig = { active?: boolean; dep?: string; arr?: string; approach?: string; remarks?: string };
 type StoredAtisConfigs = Record<string, StoredAtisConfig>;
@@ -46,20 +37,9 @@ function jurisdiction(position: string) {
   const airport = upper.slice(0, 4);
   const facility = upper.split("_").at(-1) ?? "";
 
-  if (["DEL", "GND", "TWR"].includes(facility)) {
-    return ATIS_AIRPORTS.has(airport) ? new Set([airport]) : new Set<string>();
-  }
-
-  if (facility === "APP") {
-    const fir = Object.entries(FIR_AIRPORTS).find(([, airports]) => airports.includes(airport))?.[0];
-    return new Set((fir ? FIR_AIRPORTS[fir] : []).filter((icao) => ATIS_AIRPORTS.has(icao)));
-  }
-
-  if (facility === "CTR") {
-    const fir = Object.keys(FIR_AIRPORTS).find((candidate) => upper.startsWith(candidate));
-    if (fir) return new Set(FIR_AIRPORTS[fir].filter((icao) => ATIS_AIRPORTS.has(icao)));
-    const airportFir = Object.entries(FIR_AIRPORTS).find(([, airports]) => airports.includes(airport))?.[0];
-    return new Set((airportFir ? FIR_AIRPORTS[airportFir] : []).filter((icao) => ATIS_AIRPORTS.has(icao)));
+  // ATIS is airport-local: only the airport's APP or TWR may create it.
+  if ((facility === "APP" || facility === "TWR") && ATIS_AIRPORTS.has(airport)) {
+    return new Set([airport]);
   }
 
   return new Set<string>();
@@ -127,7 +107,6 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
       }
     }
 
-    // Global invariant: ATIS may only exist for the explicitly approved airports.
     const { data: allAtis } = await supabase.from("atis_messages").select("id,airport_icao");
     const globallyInvalidIds = (allAtis ?? [])
       .filter((row) => !ATIS_AIRPORTS.has(String(row.airport_icao ?? "").toUpperCase()))
@@ -137,7 +116,6 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
       await supabase.from("atis_messages").delete().in("id", globallyInvalidIds);
     }
 
-    if (!nextPosition) return;
     const { data } = await supabase
       .from("atis_messages")
       .select("id,airport_icao")
