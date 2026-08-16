@@ -12,8 +12,7 @@ type ClaimTimes = Record<string, number>;
 type Owners = Record<string, string>;
 type PresencePayload = { position?: string; sessionId?: string; claims?: ClaimTimes; onlineAt?: number };
 type Winner = { owner: string; claimedAt: number; sessionId: string };
-
-type HandoverDetail = { key?: string; from?: string; to?: string };
+type HandoverDetail = { refId?: string; key?: string; from?: string; to?: string };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const CLAIMS_STORAGE_KEY = "pf24_scope_unplanned_claims_v4";
@@ -21,7 +20,8 @@ const SESSION_STORAGE_KEY = "pf24_scope_unplanned_presence_session_v4";
 const OWNERS_EVENT = "pf24-unplanned-ownership-sync";
 const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
 const HANDOVER_APPLY_EVENT = "pf24-unplanned-handover-apply";
-const PRESENCE_CHANNEL = "scope-unplanned-ownership-v4";
+const PRESENCE_CHANNEL = "scope-unplanned-ownership-v5";
+const HANDOVER_PROTECTION_MS = 3500;
 
 function norm(value: string) { return normalizeGameCallsign(value); }
 function readPosition() {
@@ -34,7 +34,11 @@ function readClaims(): ClaimTimes {
   try {
     const parsed = JSON.parse(sessionStorage.getItem(CLAIMS_STORAGE_KEY) ?? "{}") as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(Object.entries(parsed as Record<string, unknown>).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]));
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>)
+        .filter(([, value]) => Number.isFinite(Number(value)))
+        .map(([key, value]) => [key, Number(value)]),
+    );
   } catch { return {}; }
 }
 function writeClaims(claims: ClaimTimes) { sessionStorage.setItem(CLAIMS_STORAGE_KEY, JSON.stringify(claims)); }
@@ -42,7 +46,9 @@ function clearClaimsStorage() { sessionStorage.removeItem(CLAIMS_STORAGE_KEY); }
 function getSessionId() {
   const existing = sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (existing) return existing;
-  const next = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `scope-${Date.now()}-${Math.random()}`;
+  const next = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `scope-${Date.now()}-${Math.random()}`;
   sessionStorage.setItem(SESSION_STORAGE_KEY, next);
   return next;
 }
@@ -61,12 +67,13 @@ function planKeys(plan: ScopeFlightPlan) {
   if (game) keys.add(game);
   return Array.from(keys);
 }
-function publishOwners(owners: Owners) { window.dispatchEvent(new CustomEvent(OWNERS_EVENT, { detail: { owners } })); }
+function publishOwners(owners: Owners) {
+  window.dispatchEvent(new CustomEvent(OWNERS_EVENT, { detail: { owners } }));
+}
 
 export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
-  const [owners, setOwners] = useState<Owners>({});
   const [blankFplOpen, setBlankFplOpen] = useState(false);
   const [radarHost, setRadarHost] = useState<HTMLElement | null>(null);
 
@@ -76,6 +83,8 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
   const ownersRef = useRef<Owners>({});
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const subscribedRef = useRef(false);
+  const protectedClaimsRef = useRef(new Map<string, number>());
+  const processedHandoverRef = useRef(new Set<string>());
 
   if (!sessionIdRef.current && typeof window !== "undefined") sessionIdRef.current = getSessionId();
 
@@ -94,7 +103,16 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
   const trackPresence = useCallback(async () => {
     const channel = channelRef.current;
     if (!channel || !subscribedRef.current) return;
-    await channel.track({ position: positionRef.current, sessionId: sessionIdRef.current, claims: claimsRef.current, onlineAt: Date.now() } satisfies PresencePayload);
+    try {
+      await channel.track({
+        position: positionRef.current,
+        sessionId: sessionIdRef.current,
+        claims: claimsRef.current,
+        onlineAt: Date.now(),
+      } satisfies PresencePayload);
+    } catch (error) {
+      console.error("PF24 Scope unplanned presence track failed:", error);
+    }
   }, []);
 
   const setLocalClaims = useCallback((claims: ClaimTimes, persist = true) => {
@@ -105,7 +123,6 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
 
   const applyOwners = useCallback((next: Owners) => {
     ownersRef.current = next;
-    setOwners(next);
     publishOwners(next);
   }, []);
 
@@ -121,8 +138,13 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       const detail = (event as CustomEvent<{ connected?: boolean; callsign?: string }>).detail;
       const previous = positionRef.current;
       const next = detail?.connected ? (detail.callsign?.trim().toUpperCase() || readPosition()) : "";
-      if (!next || (previous && next !== previous)) { claimsRef.current = {}; clearClaimsStorage(); }
-      else if (!previous && next && Object.keys(claimsRef.current).length === 0) claimsRef.current = readClaims();
+      if (!next || (previous && next !== previous)) {
+        claimsRef.current = {};
+        protectedClaimsRef.current.clear();
+        clearClaimsStorage();
+      } else if (!previous && next && Object.keys(claimsRef.current).length === 0) {
+        claimsRef.current = readClaims();
+      }
       positionRef.current = next;
       setPosition(next);
       void trackPresence();
@@ -140,36 +162,58 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
   useEffect(() => {
     const channel = supabase.channel(PRESENCE_CHANNEL, { config: { presence: { key: sessionIdRef.current } } });
     channelRef.current = channel;
+
     const syncPresence = () => {
       const state = channel.presenceState() as unknown as Record<string, PresencePayload[]>;
       const winners: Record<string, Winner> = {};
-      for (const entries of Object.values(state)) for (const entry of entries) {
-        const owner = entry.position?.trim().toUpperCase() ?? "";
-        const sessionId = entry.sessionId ?? "";
-        if (!owner || !sessionId || !entry.claims) continue;
-        for (const [key, rawTime] of Object.entries(entry.claims)) {
-          const claimedAt = Number(rawTime);
-          if (!key || !Number.isFinite(claimedAt)) continue;
-          const current = winners[key];
-          if (!current || claimedAt < current.claimedAt || (claimedAt === current.claimedAt && sessionId < current.sessionId)) winners[key] = { owner, claimedAt, sessionId };
+      for (const entries of Object.values(state)) {
+        for (const entry of entries) {
+          const owner = entry.position?.trim().toUpperCase() ?? "";
+          const sessionId = entry.sessionId ?? "";
+          if (!owner || !sessionId || !entry.claims) continue;
+          for (const [key, rawTime] of Object.entries(entry.claims)) {
+            const claimedAt = Number(rawTime);
+            if (!key || !Number.isFinite(claimedAt)) continue;
+            const current = winners[key];
+            if (!current || claimedAt < current.claimedAt || (claimedAt === current.claimedAt && sessionId < current.sessionId)) {
+              winners[key] = { owner, claimedAt, sessionId };
+            }
+          }
         }
       }
+
       const nextOwners: Owners = {};
       Object.entries(winners).forEach(([key, winner]) => { nextOwners[key] = winner.owner; });
       applyOwners(nextOwners);
+
+      const now = Date.now();
+      for (const [key, expiresAt] of protectedClaimsRef.current) {
+        if (expiresAt <= now) protectedClaimsRef.current.delete(key);
+      }
+
       const local = { ...claimsRef.current };
       let changed = false;
       for (const key of Object.keys(local)) {
         const winner = winners[key];
-        if (winner && winner.sessionId !== sessionIdRef.current) { delete local[key]; changed = true; }
+        const protectedUntil = protectedClaimsRef.current.get(key) ?? 0;
+        if (winner && winner.sessionId !== sessionIdRef.current && protectedUntil <= now) {
+          delete local[key];
+          changed = true;
+        }
       }
       if (changed) setLocalClaims(local);
     };
-    channel.on("presence", { event: "sync" }, syncPresence).on("presence", { event: "join" }, syncPresence).on("presence", { event: "leave" }, syncPresence).subscribe((status) => {
-      if (status !== "SUBSCRIBED") return;
-      subscribedRef.current = true;
-      void trackPresence();
-    });
+
+    channel
+      .on("presence", { event: "sync" }, syncPresence)
+      .on("presence", { event: "join" }, syncPresence)
+      .on("presence", { event: "leave" }, syncPresence)
+      .subscribe((status) => {
+        if (status !== "SUBSCRIBED") return;
+        subscribedRef.current = true;
+        void trackPresence();
+      });
+
     return () => {
       subscribedRef.current = false;
       channelRef.current = null;
@@ -178,65 +222,76 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
   }, [applyOwners, setLocalClaims, trackPresence]);
 
   useEffect(() => {
-    const channel = supabase.channel("scope-unplanned-plans-v4").on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans()).subscribe();
+    const channel = supabase.channel("scope-unplanned-plans-v5")
+      .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
+      .subscribe();
     return () => { void supabase.removeChannel(channel); };
   }, [loadPlans]);
 
   useEffect(() => {
     const next = { ...claimsRef.current };
     let changed = false;
-    for (const key of Object.keys(next)) if (plannedKeys.has(key)) { delete next[key]; changed = true; }
+    for (const key of Object.keys(next)) {
+      if (!plannedKeys.has(key)) continue;
+      delete next[key];
+      protectedClaimsRef.current.delete(key);
+      changed = true;
+    }
     if (changed) setLocalClaims(next);
   }, [plannedKeys, setLocalClaims]);
 
   useEffect(() => {
     const onHandoverApply = (event: Event) => {
       const detail = (event as CustomEvent<HandoverDetail>).detail;
+      const refId = String(detail?.refId ?? "").trim();
       const key = norm(detail?.key ?? "");
       const from = detail?.from?.trim().toUpperCase() ?? "";
       const to = detail?.to?.trim().toUpperCase() ?? "";
       const here = positionRef.current;
       if (!key || !from || !to || !here || plannedKeys.has(key)) return;
 
-      if (here === from && key in claimsRef.current) {
-        const next = { ...claimsRef.current };
-        delete next[key];
-        setLocalClaims(next);
+      const dedupeKey = refId || `${key}:${from}:${to}`;
+      if (processedHandoverRef.current.has(dedupeKey)) return;
+      processedHandoverRef.current.add(dedupeKey);
+      window.setTimeout(() => processedHandoverRef.current.delete(dedupeKey), 10_000);
+
+      if (here === from) {
+        protectedClaimsRef.current.delete(key);
+        if (key in claimsRef.current) {
+          const next = { ...claimsRef.current };
+          delete next[key];
+          setLocalClaims(next);
+        } else {
+          void trackPresence();
+        }
         const optimistic = { ...ownersRef.current };
         delete optimistic[key];
         applyOwners(optimistic);
       }
 
       if (here === to) {
+        const now = Date.now();
+        protectedClaimsRef.current.set(key, now + HANDOVER_PROTECTION_MS);
+        const next = { ...claimsRef.current, [key]: now };
+        setLocalClaims(next);
+        applyOwners({ ...ownersRef.current, [key]: to });
+
+        // Retrack while the previous owner is leaving Presence. Protection prevents
+        // the normal collision resolver from deleting the incoming claim too early.
         window.setTimeout(() => {
-          if (plannedKeys.has(key)) return;
-          const next = { ...claimsRef.current, [key]: Date.now() };
-          setLocalClaims(next);
-          applyOwners({ ...ownersRef.current, [key]: to });
-        }, 120);
+          if (plannedKeys.has(key) || !(key in claimsRef.current)) return;
+          void trackPresence();
+        }, 250);
+        window.setTimeout(() => {
+          if (plannedKeys.has(key) || !(key in claimsRef.current)) return;
+          void trackPresence();
+        }, 1000);
       }
     };
+
     window.addEventListener(HANDOVER_APPLY_EVENT, onHandoverApply);
     return () => window.removeEventListener(HANDOVER_APPLY_EVENT, onHandoverApply);
-  }, [applyOwners, plannedKeys, setLocalClaims]);
-
-  useEffect(() => {
-    const syncMenus = () => {
-      document.querySelectorAll<HTMLElement>("[data-pf24-callsign-menu='true']").forEach((menu) => {
-        const label = menu.closest<HTMLElement>("[data-pf24-traffic-label='true']");
-        if (!label) return;
-        const key = norm(trafficCallsign(label));
-        if (!key || plannedKeys.has(key)) return;
-        const button = Array.from(menu.querySelectorAll<HTMLButtonElement>("button")).find((candidate) => ["ASSUME", "TRANSFER", "REQ ON FREQ"].includes(candidate.textContent?.trim().toUpperCase() ?? ""));
-        if (!button) return;
-        const owner = owners[key] ?? "";
-        button.textContent = owner ? (owner === position && position ? "Transfer" : "Req on Freq") : "Assume";
-      });
-    };
-    syncMenus();
-    const timer = window.setInterval(syncMenus, 250);
-    return () => window.clearInterval(timer);
-  }, [owners, plannedKeys, position]);
+  }, [applyOwners, plannedKeys, setLocalClaims, trackPresence]);
 
   useEffect(() => {
     const onMenuClick = (event: MouseEvent) => {
@@ -245,15 +300,29 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       const menu = button?.closest<HTMLElement>("[data-pf24-callsign-menu='true']");
       const label = menu?.closest<HTMLElement>("[data-pf24-traffic-label='true']");
       if (!button || !menu || !label) return;
+
       const action = (button.dataset.pf24OwnerActionLabel || button.textContent || "").trim().toUpperCase();
-      if (action === "TRANSFER" || action === "REQ ON FREQ" || action === "ACCEPT" || button.dataset.pf24HandoverDecline === "true") return;
+      if (["TRANSFER", "REQ ON FREQ", "ACCEPT", "DECLINE"].includes(action) || button.dataset.pf24HandoverDecline === "true") return;
       if (!["ASSUME", "FPL", "FREE", "CONTACT ME"].includes(action)) return;
+
       const key = norm(trafficCallsign(label));
       if (!key || plannedKeys.has(key)) return;
-      event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
-      if (action === "FPL") { setRadarHost(document.querySelector<HTMLElement>("main.fixed > section")); setBlankFplOpen(true); return; }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      if (action === "FPL") {
+        setRadarHost(document.querySelector<HTMLElement>("main.fixed > section"));
+        setBlankFplOpen(true);
+        return;
+      }
+
       if (action === "ASSUME") {
-        if (!position) { alert("Debes estar conectado a un sector activo antes de asumir tráfico."); return; }
+        if (!position) {
+          alert("Debes estar conectado a un sector activo antes de asumir tráfico.");
+          return;
+        }
         const currentOwner = ownersRef.current[key];
         if (currentOwner && currentOwner !== position) return;
         const next = { ...claimsRef.current, [key]: Date.now() };
@@ -261,24 +330,63 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
         applyOwners({ ...ownersRef.current, [key]: position });
         return;
       }
+
       if (action === "FREE") {
-        if (!position || ownersRef.current[key] !== position || !(key in claimsRef.current)) { alert("Solo puedes liberar tráfico asumido por tu mismo sector."); return; }
-        const next = { ...claimsRef.current }; delete next[key];
+        if (!position || ownersRef.current[key] !== position || !(key in claimsRef.current)) {
+          alert("Solo puedes liberar tráfico asumido por tu mismo sector.");
+          return;
+        }
+        protectedClaimsRef.current.delete(key);
+        const next = { ...claimsRef.current };
+        delete next[key];
         setLocalClaims(next);
-        const optimistic = { ...ownersRef.current }; delete optimistic[key]; applyOwners(optimistic);
+        const optimistic = { ...ownersRef.current };
+        delete optimistic[key];
+        applyOwners(optimistic);
         return;
       }
-      if (action === "CONTACT ME") alert("Contact Me requiere un plan PF24 para identificar al piloto.");
+
+      if (action === "CONTACT ME") {
+        alert("Contact Me requiere un plan PF24 para identificar al piloto.");
+      }
     };
+
     window.addEventListener("click", onMenuClick, true);
     return () => window.removeEventListener("click", onMenuClick, true);
   }, [applyOwners, plannedKeys, position, setLocalClaims]);
 
   const fplPortal = radarHost && blankFplOpen ? createPortal(
     <div className="absolute left-1/2 top-1/2 z-[130] w-[900px] max-w-[calc(100%-40px)] -translate-x-1/2 -translate-y-1/2 border border-[#888] bg-[#cecece] p-[10px] font-mono text-[#111] shadow-xl">
-      <div className="mb-2 text-[18px]">Flight Plan</div><div className="border border-white p-[10px]"><div className="grid grid-cols-2 gap-x-[50px] gap-y-[8px]">{["Callsign", "Flight Level", "Departure", "Cruising Speed", "Arrival", "Aircraft", "Alternative", "Fuel Endurance", "Flight Rules", "Acft Registration"].map((label) => <BlankRow key={label} label={label} />)}</div><div className="mt-3 grid grid-cols-2 gap-5"><BlankArea label="Route" /><BlankArea label="Remarks" /></div></div><div className="mt-3 flex justify-end"><button type="button" onClick={() => setBlankFplOpen(false)} className="border border-[#888] bg-[#e8e8e8] px-4 py-1">Close</button></div>
-    </div>, radarHost) : null;
+      <div className="mb-2 text-[18px]">Flight Plan</div>
+      <div className="border border-white p-[10px]">
+        <div className="grid grid-cols-2 gap-x-[50px] gap-y-[8px]">
+          {["Callsign", "Flight Level", "Departure", "Cruising Speed", "Arrival", "Aircraft", "Alternative", "Fuel Endurance", "Flight Rules", "Acft Registration"]
+            .map((label) => <BlankRow key={label} label={label} />)}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-5">
+          <BlankArea label="Route" />
+          <BlankArea label="Remarks" />
+        </div>
+      </div>
+      <div className="mt-3 flex justify-end">
+        <button type="button" onClick={() => setBlankFplOpen(false)} className="border border-[#888] bg-[#e8e8e8] px-4 py-1">Close</button>
+      </div>
+    </div>,
+    radarHost,
+  ) : null;
+
   return <>{fplPortal}</>;
 }
-function BlankRow({ label }: { label: string }) { return <div className="grid grid-cols-[170px_1fr] items-center"><span className="pr-2 text-right text-[18px]">{label}</span><div className="h-[28px] bg-[#ececec]" /></div>; }
-function BlankArea({ label }: { label: string }) { return <div><div className="mb-1 text-[18px]">{label}</div><div className="h-[150px] bg-[#ececec]" /></div>; }
+
+function BlankRow({ label }: { label: string }) {
+  return <div className="grid grid-cols-[170px_1fr] items-center">
+    <span className="pr-2 text-right text-[18px]">{label}</span>
+    <div className="h-[28px] bg-[#ececec]" />
+  </div>;
+}
+function BlankArea({ label }: { label: string }) {
+  return <div>
+    <div className="mb-1 text-[18px]">{label}</div>
+    <div className="h-[150px] bg-[#ececec]" />
+  </div>;
+}
