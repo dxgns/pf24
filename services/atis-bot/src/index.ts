@@ -37,8 +37,8 @@ const config = {
   supabaseAnonKey: required("SUPABASE_ANON_KEY"),
   spanishVoice: process.env.ATIS_ROBOT_VOICE_ES ?? "es-DO-EmilioNeural",
   englishVoice: process.env.ATIS_ROBOT_VOICE_EN ?? "en-US-ChristopherNeural",
-  languageGapMs: Number(process.env.ATIS_LANGUAGE_GAP_MS ?? "2000"),
-  loopDelayMs: Number(process.env.ATIS_LOOP_DELAY_MS ?? "4000"),
+  languageGapMs: Number(process.env.ATIS_LANGUAGE_GAP_MS ?? "2600"),
+  loopDelayMs: Number(process.env.ATIS_LOOP_DELAY_MS ?? "4500"),
 };
 
 const discord = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
@@ -132,15 +132,25 @@ function playEnglish(delay = config.languageGapMs) {
   }, delay);
 }
 
+function addAtisPauses(text: string) {
+  return text
+    .replace(/\.\s+/g, ". … ")
+    .replace(/;\s+/g, "; … ")
+    .replace(/,\s+/g, ", ")
+    .trim();
+}
+
 async function applyRadioProcessing(inputPath: string, filename: string) {
   if (!ffmpegPath) throw new Error("ffmpeg-static no entregó una ruta ejecutable.");
 
   const outputPath = join(audioDir, `${filename}-radio.mp3`);
   const filter = [
-    "highpass=f=300",
-    "lowpass=f=3400",
-    "acompressor=threshold=0.125:ratio=4:attack=5:release=80:makeup=2",
-    "alimiter=limit=0.85",
+    "highpass=f=450",
+    "lowpass=f=2800",
+    "acompressor=threshold=0.08:ratio=8:attack=3:release=55:makeup=3",
+    "acrusher=bits=10:mix=0.18:mode=lin",
+    "volume=1.25",
+    "alimiter=limit=0.78",
   ].join(",");
 
   await new Promise<void>((resolve, reject) => {
@@ -151,8 +161,8 @@ async function applyRadioProcessing(inputPath: string, filename: string) {
       "-i", inputPath,
       "-af", filter,
       "-ac", "1",
-      "-ar", "24000",
-      "-b:a", "48k",
+      "-ar", "12000",
+      "-b:a", "24k",
       outputPath,
     ]);
 
@@ -170,9 +180,9 @@ async function applyRadioProcessing(inputPath: string, filename: string) {
 
 async function synthesize(text: string, voice: string, filename: string) {
   const tts = new EdgeTTS();
-  await tts.synthesize(text, voice, {
-    rate: "+1%",
-    pitch: "-8Hz",
+  await tts.synthesize(addAtisPauses(text), voice, {
+    rate: "-14%",
+    pitch: "-12Hz",
     volume: "0%",
     outputFormat: Constants.OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3,
   });
@@ -187,7 +197,7 @@ async function prepareAtis(row: AtisRow) {
   const spanish = buildSpanishAtisSpeech(row);
   const english = buildEnglishAtisSpeech(row);
 
-  console.log(`[ATIS 01] Sintetizando y procesando INFO ${row.info_letter} estilo radio...`);
+  console.log(`[ATIS 01] Sintetizando y procesando INFO ${row.info_letter} estilo radio degradada...`);
   const [spanishPath, englishPath] = await Promise.all([
     synthesize(spanish, config.spanishVoice, `${config.airport}-${row.info_letter}-${stamp}-es`),
     synthesize(english, config.englishVoice, `${config.airport}-${row.info_letter}-${stamp}-en`),
@@ -206,7 +216,7 @@ async function prepareAtis(row: AtisRow) {
     currentAudio = prepared;
     pendingAudio = null;
     await ensureVoiceConnection();
-    playSpanish(250);
+    playSpanish(350);
     return;
   }
 
@@ -281,7 +291,7 @@ player.on(AudioPlayerStatus.Idle, () => {
       console.log(`[ATIS 01] Cambio a INFO ${pendingAudio.infoLetter}.`);
       currentAudio = pendingAudio;
       pendingAudio = null;
-      playSpanish(500);
+      playSpanish(700);
       return;
     }
 
