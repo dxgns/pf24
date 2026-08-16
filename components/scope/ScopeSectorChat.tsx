@@ -164,7 +164,7 @@ function messageId() {
 
 function formatFrequency(message: ChatMessage, ownFrequency: string) {
   if (message.from === PUBLIC_CHAT_KEY) return ownFrequency || "---.---";
-  return ATC_FREQUENCIES[normalize(message.from)] ?? ownFrequency || "---.---";
+  return (ATC_FREQUENCIES[normalize(message.from)] ?? ownFrequency) || "---.---";
 }
 
 export default function ScopeSectorChat() {
@@ -254,9 +254,7 @@ export default function ScopeSectorChat() {
     const chat = stateRef.current.chats.find((item) => item.position === chatId);
     if (!chat) return false;
 
-    const to = chat.kind === "private" ? chat.position : chat.position;
-    const message: ChatMessage = { id: messageId(), from: me, to, text, sentAt: Date.now() };
-
+    const message: ChatMessage = { id: messageId(), from: me, to: chat.position, text, sentAt: Date.now() };
     updateState((current) => ({
       ...current,
       history: { ...current.history, [chatId]: [...(current.history[chatId] ?? []), message].slice(-MAX_MESSAGES) },
@@ -300,11 +298,6 @@ export default function ScopeSectorChat() {
   }, []);
 
   useEffect(() => {
-    if (!positionRef.current) return;
-    updateState((current) => sanitizeState(current, ATC_FREQUENCIES[positionRef.current] ?? ""));
-  }, [positionRef.current]);
-
-  useEffect(() => {
     let disposed = false;
     let retryTimer: number | null = null;
 
@@ -332,15 +325,13 @@ export default function ScopeSectorChat() {
             const history = current.history[from] ?? [];
             if (history.some((item) => item.id === incoming.id)) return current;
             const frequency = ATC_FREQUENCIES[from] ?? "---.---";
-            const hasChat = current.chats.some((chat) => chat.position === from);
-            const chats = hasChat
+            const chats = current.chats.some((chat) => chat.position === from)
               ? current.chats.map((chat) => chat.position === from ? { ...chat, frequency } : chat)
               : [...current.chats, { position: from, frequency, kind: "private", fixed: false }].slice(0, 2 + MAX_PRIVATE_CHATS);
-            const active = current.active === from ? from : from;
             return {
               ...current,
               chats,
-              active,
+              active: from,
               history: { ...current.history, [from]: [...history, incoming].slice(-MAX_MESSAGES) },
               unread: { ...current.unread, [from]: (current.unread[from] ?? 0) + 1 },
             };
@@ -395,8 +386,7 @@ export default function ScopeSectorChat() {
       const win = row.closest<HTMLElement>("main.fixed > section > div.absolute.z-30");
       if (!win || !win.firstElementChild?.textContent?.toUpperCase().includes("FREQ")) return;
       const parsed = parseFrequencyRow(row);
-      if (!parsed) return;
-      if ((stateRef.current.unread[parsed.position] ?? 0) <= 0) return;
+      if (!parsed || (stateRef.current.unread[parsed.position] ?? 0) <= 0) return;
       event.preventDefault();
       event.stopPropagation();
       markRead(parsed.position);
@@ -434,6 +424,14 @@ export default function ScopeSectorChat() {
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [sendCurrent]);
+
+  useEffect(() => {
+    const input = footer?.querySelector<HTMLInputElement>("input");
+    if (!input) return;
+    const previous = input.style.marginLeft;
+    input.style.marginLeft = state.chats.length > 0 ? "210px" : "";
+    return () => { input.style.marginLeft = previous; };
+  }, [footer, state.chats.length]);
 
   useEffect(() => {
     const syncUnread = () => {
@@ -524,7 +522,7 @@ export default function ScopeSectorChat() {
       )}
 
       <div className="pointer-events-none absolute bottom-0 left-0 z-[64] h-[36px] w-full font-mono text-[9px]">
-        <div className="ml-[210px] flex h-[36px] items-center gap-[10px] pl-[2px] text-[#111]">
+        <div className="ml-[168px] flex h-[36px] items-center gap-[10px] pl-[2px] text-[#111]">
           <span className="whitespace-nowrap">on {activeFrequency}</span>
         </div>
       </div>
