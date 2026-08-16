@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +15,7 @@ import {
   joinVoiceChannel,
 } from "@discordjs/voice";
 import { Client, GatewayIntentBits } from "discord.js";
+import ffmpegPath from "ffmpeg-static";
 import { AtisSpeechData, buildEnglishAtisSpeech, buildSpanishAtisSpeech } from "./pronunciation.js";
 
 type AtisRow = AtisSpeechData & { id: string; created_at?: string };
@@ -33,7 +35,7 @@ const config = {
   airport: (process.env.ATIS_AIRPORT ?? "MDPC").toUpperCase(),
   supabaseUrl: required("SUPABASE_URL"),
   supabaseAnonKey: required("SUPABASE_ANON_KEY"),
-  spanishVoice: process.env.ATIS_ROBOT_VOICE_ES ?? "es-ES-AlvaroNeural",
+  spanishVoice: process.env.ATIS_ROBOT_VOICE_ES ?? "es-DO-EmilioNeural",
   englishVoice: process.env.ATIS_ROBOT_VOICE_EN ?? "en-US-ChristopherNeural",
   languageGapMs: Number(process.env.ATIS_LANGUAGE_GAP_MS ?? "2000"),
   loopDelayMs: Number(process.env.ATIS_LOOP_DELAY_MS ?? "4000"),
@@ -47,9 +49,9 @@ const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavi
 const audioDir = join(tmpdir(), "pf24-atis-01");
 
 let voiceConnection: VoiceConnection | null = null;
-let currentAudio: AudioSet | null = null; // audio que está sonando en este ciclo
-let pendingAudio: AudioSet | null = null; // nuevo ATIS listo para el próximo ciclo
-let latestAtisId: string | null = null; // ATIS actualmente vigente en PF24
+let currentAudio: AudioSet | null = null;
+let pendingAudio: AudioSet | null = null;
+let latestAtisId: string | null = null;
 let phase: Phase = "idle";
 let timer: NodeJS.Timeout | null = null;
 let synthesisVersion = 0;
@@ -130,15 +132,53 @@ function playEnglish(delay = config.languageGapMs) {
   }, delay);
 }
 
+async function applyRadioProcessing(inputPath: string, filename: string) {
+  if (!ffmpegPath) throw new Error("ffmpeg-static no entregó una ruta ejecutable.");
+
+  const outputPath = join(audioDir, `${filename}-radio.mp3`);
+  const filter = [
+    "highpass=f=300",
+    "lowpass=f=3400",
+    "acompressor=threshold=0.125:ratio=4:attack=5:release=80:makeup=2",
+    "alimiter=limit=0.85",
+  ].join(",");
+
+  await new Promise<void>((resolve, reject) => {
+    const ffmpeg = spawn(ffmpegPath, [
+      "-hide_banner",
+      "-loglevel", "error",
+      "-y",
+      "-i", inputPath,
+      "-af", filter,
+      "-ac", "1",
+      "-ar", "24000",
+      "-b:a", "48k",
+      outputPath,
+    ]);
+
+    let stderr = "";
+    ffmpeg.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    ffmpeg.on("error", reject);
+    ffmpeg.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`FFmpeg terminó con código ${code}: ${stderr.trim()}`));
+    });
+  });
+
+  return outputPath;
+}
+
 async function synthesize(text: string, voice: string, filename: string) {
   const tts = new EdgeTTS();
   await tts.synthesize(text, voice, {
-    rate: "-2%",
-    pitch: "-10Hz",
+    rate: "+1%",
+    pitch: "-8Hz",
     volume: "0%",
     outputFormat: Constants.OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3,
   });
-  return tts.toFile(join(audioDir, filename));
+
+  const rawPath = await tts.toFile(join(audioDir, `${filename}-raw.mp3`));
+  return applyRadioProcessing(rawPath, filename);
 }
 
 async function prepareAtis(row: AtisRow) {
@@ -147,13 +187,12 @@ async function prepareAtis(row: AtisRow) {
   const spanish = buildSpanishAtisSpeech(row);
   const english = buildEnglishAtisSpeech(row);
 
-  console.log(`[ATIS 01] Sintetizando INFO ${row.info_letter}...`);
+  console.log(`[ATIS 01] Sintetizando y procesando INFO ${row.info_letter} estilo radio...`);
   const [spanishPath, englishPath] = await Promise.all([
     synthesize(spanish, config.spanishVoice, `${config.airport}-${row.info_letter}-${stamp}-es`),
     synthesize(english, config.englishVoice, `${config.airport}-${row.info_letter}-${stamp}-en`),
   ]);
 
-  // Si apareció otro ATIS mientras se sintetizaba este, descartamos el anterior.
   if (version !== synthesisVersion || latestAtisId !== row.id) return;
 
   const prepared: AudioSet = {
@@ -171,7 +210,6 @@ async function prepareAtis(row: AtisRow) {
     return;
   }
 
-  // No se interrumpe A. B espera hasta terminar español + inglés de A.
   pendingAudio = prepared;
   console.log(`[ATIS 01] INFO ${row.info_letter} preparada; cambiará al finalizar el ciclo actual.`);
 }
@@ -247,7 +285,6 @@ player.on(AudioPlayerStatus.Idle, () => {
       return;
     }
 
-    // Si el ATIS vigente cambió pero todavía no existe audio preparado, no repetimos el viejo.
     if (currentAudio.atisId !== latestAtisId) {
       console.log("[ATIS 01] Esperando audio del nuevo ATIS...");
       return;
