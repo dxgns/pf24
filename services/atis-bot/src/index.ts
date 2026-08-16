@@ -235,6 +235,7 @@ class AtisVoiceBot {
     const connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: guild.id,
+      group: `atis-${slot(this.config.number)}`,
       adapterCreator: guild.voiceAdapterCreator,
       selfDeaf: true,
       selfMute: false,
