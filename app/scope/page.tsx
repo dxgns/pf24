@@ -11,7 +11,6 @@ import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopeTrafficLabelUX from "@/components/scope/ScopeTrafficLabelUX";
 import ScopeTrafficOperations from "@/components/scope/ScopeTrafficOperations";
 import ScopeUnplannedTrafficOperationsV2 from "@/components/scope/ScopeUnplannedTrafficOperationsV2";
-import ScopeTrafficColorSync from "@/components/scope/ScopeTrafficColorSync";
 import ScopeTrafficFooterPlacement from "@/components/scope/ScopeTrafficFooterPlacement";
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
@@ -73,7 +72,6 @@ export default async function ScopePage() {
       <ScopeTrafficLabelUX />
       <ScopeUnplannedTrafficOperationsV2 initialPlans={plans} />
       <ScopeTrafficOperations initialPlans={plans} />
-      <ScopeTrafficColorSync />
       <ScopeTrafficFooterPlacement />
       <ScopePersonalization />
       <RadarViewport />
