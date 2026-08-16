@@ -1,0 +1,42 @@
+name: Temporary chat patch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'chore(scope): fix chat syntax and input alignment'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch chat
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('components/scope/ScopeSectorChat.tsx')
+          text = path.read_text()
+          old = 'return ATC_FREQUENCIES[normalize(message.from)] ?? ownFrequency || "---.---";'
+          new = 'return (ATC_FREQUENCIES[normalize(message.from)] ?? ownFrequency) || "---.---";'
+          if old not in text:
+              raise SystemExit('formatFrequency target not found')
+          text = text.replace(old, new, 1)
+
+          marker = '  useEffect(() => {\n    const syncUnread = () => {'
+          effect = '''  useEffect(() => {\n    const input = footer?.querySelector<HTMLInputElement>("input");\n    if (!input) return;\n    const previous = input.style.marginLeft;\n    input.style.marginLeft = state.chats.length > 0 ? "210px" : "";\n    return () => { input.style.marginLeft = previous; };\n  }, [footer, state.chats.length]);\n\n'''
+          if marker not in text:
+              raise SystemExit('input alignment marker not found')
+          text = text.replace(marker, effect + marker, 1)
+          text = text.replace('className="ml-[210px] flex h-[36px]', 'className="ml-[168px] flex h-[36px]', 1)
+          path.write_text(text)
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/scope/ScopeSectorChat.tsx
+          git commit -m "chore(scope): fix chat syntax and input alignment"
+          git push
