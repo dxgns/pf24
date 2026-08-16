@@ -11,7 +11,9 @@ import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopeTrafficLabelUX from "@/components/scope/ScopeTrafficLabelUX";
 import ScopeTrafficMappState from "@/components/scope/ScopeTrafficMappState";
 import ScopeTrafficOperations from "@/components/scope/ScopeTrafficOperations";
-import ScopeUnplannedTrafficOperationsV3 from "@/components/scope/ScopeUnplannedTrafficOperationsV3";
+import ScopeUnplannedTrafficOperationsV4 from "@/components/scope/ScopeUnplannedTrafficOperationsV4";
+import ScopeUnplannedHold from "@/components/scope/ScopeUnplannedHold";
+import ScopeOwnedTrafficLifecycle from "@/components/scope/ScopeOwnedTrafficLifecycle";
 import ScopeTrafficOwnershipVisuals from "@/components/scope/ScopeTrafficOwnershipVisuals";
 import ScopeSharedHoldSync from "@/components/scope/ScopeSharedHoldSync";
 import ScopeHoldTelemetry from "@/components/scope/ScopeHoldTelemetry";
@@ -68,6 +70,7 @@ export default async function ScopePage() {
       <ScopeNativeListCss />
       <PF24Scope initialPlans={plans} controllerName={controllerName} />
       <ScopeConnectionPersistence />
+      <ScopeOwnedTrafficLifecycle />
       <ScopeLayoutGuards />
       <WeatherPanelV2 />
       <ScopeRadarMap />
@@ -76,7 +79,8 @@ export default async function ScopePage() {
       <ScopeTrafficSettings />
       <ScopeTrafficLabelUX />
       <ScopeTrafficMappState />
-      <ScopeUnplannedTrafficOperationsV3 initialPlans={plans} />
+      <ScopeUnplannedHold initialPlans={plans} />
+      <ScopeUnplannedTrafficOperationsV4 initialPlans={plans} />
       <ScopeSharedHoldSync />
       <ScopeTrafficOperations initialPlans={plans} />
       <ScopeHoldTelemetry />
