@@ -24,7 +24,6 @@ import ScopeTrafficFooterPlacement from "@/components/scope/ScopeTrafficFooterPl
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
 import ScopeRadarMap from "@/components/scope/ScopeRadarMap";
-import ScopeRadarMapVisibility from "@/components/scope/ScopeRadarMapVisibility";
 import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
 import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
@@ -75,7 +74,6 @@ export default async function ScopePage() {
       <ScopeLayoutGuards />
       <WeatherPanelV2 />
       <ScopeRadarMap />
-      <ScopeRadarMapVisibility />
       <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
       <ScopeTrafficSettings />
       <ScopeTrafficLabelUX />
