@@ -6,6 +6,7 @@ import { MAP_BOUNDS } from "@/lib/scope/mapData";
 import { SECONDARY_AIRPORTS } from "@/lib/scope/secondaryAirportData";
 
 type Viewport = { zoom: number; panX: number; panY: number };
+type StandPoint = { x: number; y: number; name: string };
 
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
@@ -30,6 +31,29 @@ function findRadar() {
 function polygonCenter(points: Array<{ x: number; y: number }>) {
   const total = points.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
   return { x: total.x / points.length, y: total.y / points.length };
+}
+
+/**
+ * Most MDST stands use a short straight lead-in. B6 and B2R are deliberately
+ * different: the supplied overhead reference shows B6 entering on an offset
+ * curved/angled alignment and B2R branching from the B2 family rather than
+ * behaving as another parallel straight stand.
+ */
+function mdstLeadIns(stand: StandPoint) {
+  if (stand.name === "B6") {
+    return [
+      "M 68.545 93.245 Q 68.505 93.285 68.478 93.310 Q 68.458 93.330 68.450 93.350",
+    ];
+  }
+
+  if (stand.name === "B2R") {
+    return [
+      "M 68.735 93.285 Q 68.715 93.315 68.700 93.335 Q 68.692 93.347 68.690 93.360",
+      "M 68.700 93.335 Q 68.688 93.338 68.680 93.340",
+    ];
+  }
+
+  return [`M ${stand.x + 0.041} ${stand.y - 0.092} L ${stand.x} ${stand.y}`];
 }
 
 export default function SecondaryAirportGround() {
@@ -215,18 +239,18 @@ export default function SecondaryAirportGround() {
 
               {standDetail && airport.stands?.map((stand) => (
                 <g key={`${airport.id}-${stand.name}`}>
-                  {airport.id === "MDST" && (
-                    <line
-                      x1={stand.x + 0.041}
-                      y1={stand.y - 0.092}
-                      x2={stand.x}
-                      y2={stand.y}
+                  {airport.id === "MDST" && mdstLeadIns(stand).map((d, index) => (
+                    <path
+                      key={`${stand.name}-lead-${index}`}
+                      d={d}
+                      fill="none"
                       stroke="#c2bd0a"
                       strokeWidth={0.045}
                       strokeLinecap="round"
+                      strokeLinejoin="round"
                       vectorEffect="non-scaling-stroke"
                     />
-                  )}
+                  ))}
                   <circle cx={stand.x} cy={stand.y} r={0.027} fill="#d6d3b1" />
                   <text
                     x={stand.x + 0.035}
