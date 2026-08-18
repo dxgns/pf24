@@ -11,6 +11,7 @@ import {
   WAYPOINTS,
   type MapPath,
 } from "@/lib/scope/mapData";
+import { MDPC_TERMINAL_B_OUTLINE } from "@/lib/scope/mdpcGroundDetail";
 
 type Viewport = { zoom: number; panX: number; panY: number };
 
@@ -41,6 +42,10 @@ function points(path: MapPath) {
   return `${list} ${first.x},${first.y}`;
 }
 
+function polygonPoints(list: Array<{ x: number; y: number }>) {
+  return list.map((point) => `${point.x},${point.y}`).join(" ");
+}
+
 function pathStyle(tone: MapPath["tone"]) {
   if (tone === "fir") return { stroke: "#087153", width: 0.16, dash: undefined };
   if (tone === "app") return { stroke: "#176997", width: 0.13, dash: "0.55 0.38" };
@@ -64,21 +69,63 @@ function Fix({ x, y, name, vor = false }: { x: number; y: number; name: string; 
 
 function MdpcGround({ zoom }: { zoom: number }) {
   const detail = zoom >= 3.1;
+  const buildingDetail = zoom >= 4.0;
   const standDetail = zoom >= 5.2;
+
   return (
     <g data-map-layer="mdpc-ground">
-      {MDPC_RUNWAYS.map((runway) => {
-        const style = pathStyle(runway.tone);
-        return <polyline key={runway.id} points={points(runway)} fill="none" stroke={style.stroke} strokeWidth={style.width} vectorEffect="non-scaling-stroke" />;
-      })}
-      {detail && MDPC_TAXIWAYS.map((taxiway) => (
-        <path key={taxiway.id} d={taxiway.d} fill="none" stroke="#777d7f" strokeWidth={0.07} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      {MDPC_RUNWAYS.map((runway) => (
+        <g key={runway.id}>
+          <polyline
+            points={points(runway)}
+            fill="none"
+            stroke="#373d3e"
+            strokeWidth={0.31}
+            strokeLinecap="butt"
+            vectorEffect="non-scaling-stroke"
+          />
+          <polyline
+            points={points(runway)}
+            fill="none"
+            stroke="#d5dad9"
+            strokeWidth={0.055}
+            strokeLinecap="butt"
+            vectorEffect="non-scaling-stroke"
+          />
+        </g>
       ))}
+
+      {detail && MDPC_TAXIWAYS.map((taxiway) => (
+        <path
+          key={taxiway.id}
+          d={taxiway.d}
+          fill="none"
+          stroke="#b7b30a"
+          strokeWidth={0.065}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+
+      {buildingDetail && (
+        <polygon
+          points={polygonPoints(MDPC_TERMINAL_B_OUTLINE)}
+          fill="#101ab0"
+          fillOpacity={0.86}
+          stroke="#6e7576"
+          strokeWidth={0.065}
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+
       {detail && <text x={87.28} y={102.42} fontSize={0.42} fill="#8a9092" fontFamily="monospace">MDPC</text>}
+
       {standDetail && MDPC_STANDS.map((stand) => (
         <g key={stand.name}>
-          <circle cx={stand.x} cy={stand.y} r={0.035} fill="#909596" />
-          <text x={stand.x + 0.06} y={stand.y + 0.03} fontSize={0.25} fill="#858b8d" fontFamily="monospace">{stand.name}</text>
+          <circle cx={stand.x} cy={stand.y} r={0.035} fill="#d6d3b1" />
+          <text x={stand.x + 0.06} y={stand.y + 0.03} fontSize={0.25} fill="#d3d6d4" fontFamily="monospace">{stand.name}</text>
         </g>
       ))}
     </g>
