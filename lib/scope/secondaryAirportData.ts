@@ -233,7 +233,7 @@ export const SECONDARY_AIRPORTS: SecondaryAirport[] = [
       { name: "C1", x: 68.97, y: 93.49 },
       { name: "C2", x: 68.92, y: 93.47 },
       { name: "C3", x: 68.87, y: 93.45 },
-      { name: "C4", x: 68.44, y: 93.44 },
+      { name: "C4", x: 68.80, y: 93.45 },
     ],
   },
 ];
