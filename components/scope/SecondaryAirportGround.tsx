@@ -54,6 +54,15 @@ const MDST_HOLDING_BARS = [
   { id: "MDST_HOLD_B", a: { x: 68.8476, y: 93.1787 }, b: { x: 68.9117, y: 93.2070 } },
 ];
 
+// MDAB has no painted taxiway centerline or marked parking stands in the
+// supplied simulator reference. The only yellow airside marking on the apron
+// connector is the runway holding-position bar. Its placement is approximate,
+// derived from the reference image and anchored to the known apron/runway geometry.
+const MDAB_HOLDING_BAR = {
+  a: { x: 81.085, y: 95.407 },
+  b: { x: 81.170, y: 95.422 },
+};
+
 function readViewport(): Viewport {
   try {
     const parsed = JSON.parse(localStorage.getItem(VIEWPORT_KEY) ?? "{}") as Partial<Viewport>;
@@ -225,6 +234,19 @@ export default function SecondaryAirportGround() {
                 </g>
               )}
 
+              {chartDetail && airport.id === "MDAB" && (
+                <line
+                  x1={MDAB_HOLDING_BAR.a.x}
+                  y1={MDAB_HOLDING_BAR.a.y}
+                  x2={MDAB_HOLDING_BAR.b.x}
+                  y2={MDAB_HOLDING_BAR.b.y}
+                  stroke="#c69b24"
+                  strokeWidth={0.052}
+                  strokeLinecap="butt"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+
               {groundDetail && airport.aprons?.map((apron) => (
                 <polygon
                   key={apron.id}
@@ -249,15 +271,17 @@ export default function SecondaryAirportGround() {
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
                   />
-                  <path
-                    d={taxiway.d}
-                    fill="none"
-                    stroke="#c69b24"
-                    strokeWidth={0.055}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
+                  {taxiway.id !== "MDAB_TX_A" && (
+                    <path
+                      d={taxiway.d}
+                      fill="none"
+                      stroke="#c69b24"
+                      strokeWidth={0.055}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  )}
                   {chartDetail && taxiway.label && taxiway.labelAt && (
                     <text
                       x={taxiway.labelAt.x}
