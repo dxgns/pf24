@@ -42,10 +42,6 @@ function points(path: MapPath) {
   return `${list} ${first.x},${first.y}`;
 }
 
-function polygonPoints(list: Array<{ x: number; y: number }>) {
-  return list.map((point) => `${point.x},${point.y}`).join(" ");
-}
-
 function pathStyle(tone: MapPath["tone"]) {
   if (tone === "fir") return { stroke: "#087153", width: 0.16, dash: undefined };
   if (tone === "app") return { stroke: "#176997", width: 0.13, dash: "0.55 0.38" };
@@ -108,18 +104,22 @@ function MdpcGround({ zoom }: { zoom: number }) {
         />
       ))}
 
-      {buildingDetail && MDPC_TERMINAL_B_BUILDINGS.map((building) => (
-        <polygon
-          key={building.id}
-          points={polygonPoints(building.points)}
-          fill="#101ab0"
-          fillOpacity={0.86}
-          stroke="#6e7576"
-          strokeWidth={0.065}
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
+      {buildingDetail && (
+        <g data-map-layer="mdpc-buildings">
+          {MDPC_TERMINAL_B_BUILDINGS.map((building) => (
+            <path
+              key={building.id}
+              d={building.d}
+              fill="#101ab0"
+              fillOpacity={0.86}
+              stroke="#6e7576"
+              strokeWidth={0.065}
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </g>
+      )}
 
       {detail && <text x={87.28} y={102.42} fontSize={0.42} fill="#8a9092" fontFamily="monospace">MDPC</text>}
 
