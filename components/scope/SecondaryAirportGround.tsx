@@ -7,9 +7,52 @@ import { SECONDARY_AIRPORTS } from "@/lib/scope/secondaryAirportData";
 
 type Viewport = { zoom: number; panX: number; panY: number };
 type StandPoint = { x: number; y: number; name: string };
+type GroundPoint = { x: number; y: number };
 
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
+
+const MDST_TURNPADS: Array<{ id: string; points: GroundPoint[] }> = [
+  {
+    id: "MDST_TURNPAD_11",
+    points: [
+      { x: 67.0668, y: 92.3577 },
+      { x: 67.0528, y: 92.4389 },
+      { x: 67.1058, y: 92.5170 },
+      { x: 67.2196, y: 92.5563 },
+      { x: 67.2947, y: 92.5348 },
+      { x: 67.3046, y: 92.4627 },
+    ],
+  },
+  {
+    id: "MDST_TURNPAD_29",
+    points: [
+      { x: 69.7032, y: 93.5223 },
+      { x: 69.6526, y: 93.5874 },
+      { x: 69.5592, y: 93.6008 },
+      { x: 69.4534, y: 93.5432 },
+      { x: 69.4188, y: 93.4732 },
+      { x: 69.4654, y: 93.4173 },
+    ],
+  },
+];
+
+// Calibrated from the simulator overview using A1-A4 plus TX A as control points.
+const MDST_HELIPAD = {
+  id: "MDST_HELIPAD_H",
+  points: [
+    { x: 68.2250, y: 93.1059 },
+    { x: 68.2125, y: 93.0991 },
+    { x: 68.1814, y: 93.1117 },
+    { x: 68.1939, y: 93.1185 },
+  ],
+  center: { x: 68.2032, y: 93.1088 },
+};
+
+const MDST_HOLDING_BARS = [
+  { id: "MDST_HOLD_A", a: { x: 68.3910, y: 92.9810 }, b: { x: 68.4551, y: 93.0093 } },
+  { id: "MDST_HOLD_B", a: { x: 68.8476, y: 93.1787 }, b: { x: 68.9117, y: 93.2070 } },
+];
 
 function readViewport(): Viewport {
   try {
@@ -34,12 +77,24 @@ function polygonCenter(points: Array<{ x: number; y: number }>) {
 }
 
 /**
- * Most MDST stands use a short straight lead-in. B6 and B2R are deliberately
- * different: the supplied overhead reference shows B6 entering on an offset
- * curved/angled alignment and B2R branching from the B2 family rather than
- * behaving as another parallel straight stand.
+ * Lead-ins are anchored to the PFTracker stand coordinates. A1-A4 and C1-C4
+ * follow the long curved lead-ins visible in the simulator overhead views.
+ * B6 and B2R retain their distinctive non-parallel geometry.
  */
 function mdstLeadIns(stand: StandPoint) {
+  const calibrated: Record<string, string[]> = {
+    A4: ["M 68.456 93.147 Q 68.405 93.166 68.352 93.190 Q 68.325 93.202 68.300 93.210"],
+    A3: ["M 68.430 93.134 Q 68.380 93.151 68.326 93.179 Q 68.298 93.192 68.270 93.200"],
+    A2: ["M 68.404 93.120 Q 68.355 93.138 68.301 93.163 Q 68.274 93.176 68.250 93.180"],
+    A1: ["M 68.378 93.105 Q 68.331 93.124 68.274 93.151 Q 68.245 93.165 68.220 93.170"],
+    C4: ["M 68.850 93.260 Q 68.828 93.335 68.808 93.402 Q 68.802 93.428 68.800 93.450"],
+    C3: ["M 68.958 93.286 Q 68.925 93.345 68.894 93.407 Q 68.878 93.435 68.870 93.450"],
+    C2: ["M 69.015 93.301 Q 68.982 93.360 68.947 93.425 Q 68.930 93.454 68.920 93.470"],
+    C1: ["M 69.080 93.318 Q 69.040 93.378 69.000 93.440 Q 68.982 93.470 68.970 93.490"],
+  };
+
+  if (calibrated[stand.name]) return calibrated[stand.name];
+
   if (stand.name === "B6") {
     return [
       "M 68.545 93.245 Q 68.505 93.285 68.478 93.310 Q 68.458 93.330 68.450 93.350",
@@ -117,6 +172,59 @@ export default function SecondaryAirportGround() {
         <g data-map-layer="secondary-airports">
           {SECONDARY_AIRPORTS.map((airport) => (
             <g key={airport.id} data-airport={airport.id}>
+              {groundDetail && airport.id === "MDST" && (
+                <g data-map-layer="mdst-simulator-detail">
+                  {MDST_TURNPADS.map((turnpad) => (
+                    <polygon
+                      key={turnpad.id}
+                      points={turnpad.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                      fill="#343a3b"
+                      fillOpacity={0.92}
+                      stroke="#626b6c"
+                      strokeWidth={0.045}
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                  <polygon
+                    points={MDST_HELIPAD.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                    fill="#555b59"
+                    fillOpacity={0.9}
+                    stroke="#c69b24"
+                    strokeWidth={0.045}
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  {chartDetail && (
+                    <text
+                      x={MDST_HELIPAD.center.x}
+                      y={MDST_HELIPAD.center.y}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize={0.13}
+                      fontFamily="monospace"
+                      fontWeight="700"
+                      fill="#d8d6c0"
+                    >
+                      H
+                    </text>
+                  )}
+                  {chartDetail && MDST_HOLDING_BARS.map((bar) => (
+                    <line
+                      key={bar.id}
+                      x1={bar.a.x}
+                      y1={bar.a.y}
+                      x2={bar.b.x}
+                      y2={bar.b.y}
+                      stroke="#c69b24"
+                      strokeWidth={0.052}
+                      strokeLinecap="butt"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                </g>
+              )}
+
               {groundDetail && airport.aprons?.map((apron) => (
                 <polygon
                   key={apron.id}
@@ -144,7 +252,7 @@ export default function SecondaryAirportGround() {
                   <path
                     d={taxiway.d}
                     fill="none"
-                    stroke="#c2bd0a"
+                    stroke="#c69b24"
                     strokeWidth={0.055}
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -244,7 +352,7 @@ export default function SecondaryAirportGround() {
                       key={`${stand.name}-lead-${index}`}
                       d={d}
                       fill="none"
-                      stroke="#c2bd0a"
+                      stroke="#c69b24"
                       strokeWidth={0.045}
                       strokeLinecap="round"
                       strokeLinejoin="round"
