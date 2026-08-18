@@ -11,7 +11,7 @@ import {
   WAYPOINTS,
   type MapPath,
 } from "@/lib/scope/mapData";
-import { MDPC_TERMINAL_B_OUTLINE } from "@/lib/scope/mdpcGroundDetail";
+import { MDPC_TERMINAL_B_BUILDINGS } from "@/lib/scope/mdpcGroundDetail";
 
 type Viewport = { zoom: number; panX: number; panY: number };
 
@@ -108,9 +108,10 @@ function MdpcGround({ zoom }: { zoom: number }) {
         />
       ))}
 
-      {buildingDetail && (
+      {buildingDetail && MDPC_TERMINAL_B_BUILDINGS.map((building) => (
         <polygon
-          points={polygonPoints(MDPC_TERMINAL_B_OUTLINE)}
+          key={building.id}
+          points={polygonPoints(building.points)}
           fill="#101ab0"
           fillOpacity={0.86}
           stroke="#6e7576"
@@ -118,7 +119,7 @@ function MdpcGround({ zoom }: { zoom: number }) {
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
         />
-      )}
+      ))}
 
       {detail && <text x={87.28} y={102.42} fontSize={0.42} fill="#8a9092" fontFamily="monospace">MDPC</text>}
 
