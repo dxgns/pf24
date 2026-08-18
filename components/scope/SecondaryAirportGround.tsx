@@ -27,6 +27,11 @@ function findRadar() {
   return document.querySelector<HTMLElement>("main.fixed > section");
 }
 
+function polygonCenter(points: Array<{ x: number; y: number }>) {
+  const total = points.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
+  return { x: total.x / points.length, y: total.y / points.length };
+}
+
 export default function SecondaryAirportGround() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [viewport, setViewport] = useState<Viewport>({ zoom: 1, panX: 0, panY: 0 });
@@ -67,6 +72,7 @@ export default function SecondaryAirportGround() {
 
   const groundDetail = viewport.zoom >= 3.0;
   const labelDetail = viewport.zoom >= 2.0;
+  const chartDetail = viewport.zoom >= 4.0;
   const standDetail = viewport.zoom >= 5.0;
 
   return createPortal(
@@ -120,21 +126,49 @@ export default function SecondaryAirportGround() {
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
                   />
+                  {chartDetail && taxiway.label && taxiway.labelAt && (
+                    <text
+                      x={taxiway.labelAt.x}
+                      y={taxiway.labelAt.y}
+                      fontSize={0.17}
+                      fill="#d6d3b1"
+                      fontFamily="monospace"
+                    >
+                      {taxiway.label}
+                    </text>
+                  )}
                 </g>
               ))}
 
-              {groundDetail && airport.buildings?.map((building) => (
-                <polygon
-                  key={building.id}
-                  points={building.points.map((point) => `${point.x},${point.y}`).join(" ")}
-                  fill="#111f98"
-                  fillOpacity={0.88}
-                  stroke="#798384"
-                  strokeWidth={0.05}
-                  strokeLinejoin="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))}
+              {groundDetail && airport.buildings?.map((building) => {
+                const center = polygonCenter(building.points);
+                return (
+                  <g key={building.id}>
+                    <polygon
+                      points={building.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                      fill="#111f98"
+                      fillOpacity={0.88}
+                      stroke="#798384"
+                      strokeWidth={0.05}
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    {chartDetail && building.label && (
+                      <text
+                        x={center.x}
+                        y={center.y}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fontSize={0.13}
+                        fill="#c8cecd"
+                        fontFamily="monospace"
+                      >
+                        {building.label}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
 
               {airport.runways.map((runway) => (
                 <g key={runway.id}>
