@@ -6,7 +6,7 @@ type Viewport = { zoom: number; panX: number; panY: number };
 
 const STORAGE_KEY = "pf24_scope_radar_viewport_v1";
 const MIN_ZOOM = 0.55;
-const MAX_ZOOM = 10;
+const MAX_ZOOM = 40;
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
 function clamp(value: number, min: number, max: number) {
@@ -81,7 +81,7 @@ export default function RadarViewport() {
       const cursorX = event.clientX - rect.left;
       const cursorY = event.clientY - rect.top;
       const oldZoom = viewport.zoom;
-      const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const factor = event.deltaY < 0 ? 1.16 : 1 / 1.16;
       const nextZoom = clamp(oldZoom * factor, MIN_ZOOM, MAX_ZOOM);
       if (nextZoom === oldZoom) return;
       const worldX = (cursorX - viewport.panX) / oldZoom;
