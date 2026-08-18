@@ -26,6 +26,7 @@ import RadarViewport from "@/components/scope/RadarViewport";
 import ScopeRadarMap from "@/components/scope/ScopeRadarMap";
 import SecondaryAirportGround from "@/components/scope/SecondaryAirportGround";
 import MdcrSimulatorDetail from "@/components/scope/MdcrSimulatorDetail";
+import MtcaSimulatorDetail from "@/components/scope/MtcaSimulatorDetail";
 import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
 import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
@@ -78,6 +79,7 @@ export default async function ScopePage() {
       <ScopeRadarMap />
       <SecondaryAirportGround />
       <MdcrSimulatorDetail />
+      <MtcaSimulatorDetail />
       <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
       <ScopeTrafficSettings />
       <ScopeTrafficLabelUX />
