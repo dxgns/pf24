@@ -7,68 +7,85 @@ export type SecondaryRunway = {
 };
 
 export type SecondaryStand = MapPoint & { name: string };
+export type SecondaryTaxiway = {
+  id: string;
+  d: string;
+  label?: string;
+  labelAt?: MapPoint;
+};
+export type SecondaryBuilding = {
+  id: string;
+  points: MapPoint[];
+  label?: string;
+};
 
 export type SecondaryAirport = {
   id: "MDAB" | "MDCR" | "MTCA" | "MDST";
   label: MapPoint;
   runways: SecondaryRunway[];
   aprons?: Array<{ id: string; points: MapPoint[] }>;
-  taxiways?: Array<{ id: string; d: string }>;
-  buildings?: Array<{ id: string; points: MapPoint[] }>;
+  taxiways?: SecondaryTaxiway[];
+  buildings?: SecondaryBuilding[];
   stands?: SecondaryStand[];
   uncontrolled?: boolean;
 };
 
 /**
- * Coordinates below come from PFTracker measurements supplied during the
- * Scope map tracing pass.  The screenshots are references only; the Scope
- * renders these vectors and never loads the Tracker images.
+ * Runway ends, taxiway reference points and stands are PFTracker measurements
+ * supplied during the Scope tracing pass. Apron/building outlines are schematic
+ * vectors refined against the supplied Project Flight 10-9 charts and Tracker
+ * screenshots. The Scope never loads those source images at runtime.
  */
 export const SECONDARY_AIRPORTS: SecondaryAirport[] = [
   {
     id: "MDAB",
-    label: { x: 81.16, y: 94.93 },
+    label: { x: 81.16, y: 94.91 },
     runways: [
       {
-        id: "MDAB_12_30",
-        endA: { x: 80.58, y: 95.40, label: "12" },
-        endB: { x: 82.31, y: 95.71, label: "30" },
+        // The 10-9 chart identifies this runway as 11/29.
+        id: "MDAB_11_29",
+        endA: { x: 80.58, y: 95.40, label: "11" },
+        endB: { x: 82.31, y: 95.71, label: "29" },
       },
     ],
     aprons: [
       {
         id: "MDAB_MAIN_APRON",
         points: [
-          { x: 80.96, y: 95.13 },
-          { x: 81.22, y: 95.12 },
-          { x: 81.34, y: 95.20 },
-          { x: 81.31, y: 95.31 },
-          { x: 81.09, y: 95.35 },
-          { x: 80.96, y: 95.28 },
+          { x: 81.0084, y: 95.0501 },
+          { x: 81.2285, y: 95.0692 },
+          { x: 81.3487, y: 95.1923 },
+          { x: 81.3240, y: 95.3301 },
+          { x: 81.2034, y: 95.3796 },
+          { x: 81.0459, y: 95.3514 },
+          { x: 80.9320, y: 95.2497 },
         ],
       },
     ],
     taxiways: [
       {
-        id: "MDAB_APRON_LINK",
+        id: "MDAB_TX_A",
+        label: "A",
+        labelAt: { x: 81.13, y: 95.37 },
         d: "M 81.16 95.23 Q 81.13 95.36 81.1124 95.4954",
       },
     ],
     buildings: [
       {
-        id: "MDAB_TERMINAL",
+        id: "MDAB_PASSENGER_TERMINAL",
+        label: "PAX",
         points: [
-          { x: 81.03, y: 95.04 },
-          { x: 81.24, y: 95.05 },
-          { x: 81.27, y: 95.13 },
-          { x: 81.06, y: 95.14 },
+          { x: 81.0879, y: 95.0034 },
+          { x: 81.2651, y: 95.0351 },
+          { x: 81.2545, y: 95.0942 },
+          { x: 81.0773, y: 95.0624 },
         ],
       },
     ],
   },
   {
     id: "MDCR",
-    label: { x: 56.84, y: 108.80 },
+    label: { x: 56.80, y: 108.77 },
     runways: [
       {
         id: "MDCR_12_30",
@@ -80,19 +97,27 @@ export const SECONDARY_AIRPORTS: SecondaryAirport[] = [
       {
         id: "MDCR_THRESHOLD_APRON",
         points: [
-          { x: 56.78, y: 108.93 },
-          { x: 56.94, y: 108.91 },
-          { x: 57.06, y: 109.00 },
-          { x: 57.04, y: 109.10 },
-          { x: 56.86, y: 109.12 },
-          { x: 56.79, y: 109.05 },
+          { x: 56.8991, y: 108.9272 },
+          { x: 57.0350, y: 108.9914 },
+          { x: 57.0620, y: 109.0867 },
+          { x: 57.0076, y: 109.1021 },
+          { x: 56.8941, y: 109.0389 },
+          { x: 56.8524, y: 108.9698 },
         ],
       },
     ],
     taxiways: [
       {
-        id: "MDCR_APRON_LINK",
-        d: "M 56.90 109.02 Q 56.88 109.06 56.8565 109.0981",
+        id: "MDCR_TX_A",
+        label: "A",
+        labelAt: { x: 56.89, y: 109.01 },
+        d: "M 56.8731 109.1073 Q 56.8900 109.0700 56.9120 109.0374",
+      },
+      {
+        id: "MDCR_TX_B",
+        label: "B",
+        labelAt: { x: 57.00, y: 109.07 },
+        d: "M 56.9605 109.1560 Q 56.9780 109.1200 56.9994 109.0861",
       },
     ],
   },
@@ -122,25 +147,28 @@ export const SECONDARY_AIRPORTS: SecondaryAirport[] = [
       {
         id: "MDST_MAIN_APRON",
         points: [
-          { x: 68.14, y: 93.08 },
-          { x: 68.32, y: 93.12 },
-          { x: 68.47, y: 93.25 },
-          { x: 68.80, y: 93.31 },
-          { x: 69.04, y: 93.43 },
-          { x: 69.02, y: 93.58 },
-          { x: 68.72, y: 93.52 },
-          { x: 68.42, y: 93.49 },
-          { x: 68.20, y: 93.30 },
+          { x: 68.1354, y: 92.9828 },
+          { x: 68.4332, y: 93.1253 },
+          { x: 68.4759, y: 93.1770 },
+          { x: 68.8133, y: 93.3041 },
+          { x: 68.8601, y: 93.3467 },
+          { x: 69.0796, y: 93.4437 },
+          { x: 68.9786, y: 93.6723 },
+          { x: 68.0182, y: 93.2480 },
         ],
       },
     ],
     taxiways: [
       {
         id: "MDST_TX_A",
+        label: "A",
+        labelAt: { x: 68.40, y: 93.04 },
         d: "M 68.4372 92.9631 Q 68.42 93.02 68.39 93.07",
       },
       {
         id: "MDST_TX_B",
+        label: "B",
+        labelAt: { x: 68.86, y: 93.23 },
         d: "M 68.8924 93.1641 Q 68.87 93.21 68.85 93.26",
       },
       {
@@ -150,12 +178,43 @@ export const SECONDARY_AIRPORTS: SecondaryAirport[] = [
     ],
     buildings: [
       {
-        id: "MDST_TERMINAL",
+        id: "MDST_GENERAL_AVIATION",
+        label: "GA",
         points: [
-          { x: 68.37, y: 93.51 },
-          { x: 68.77, y: 93.58 },
-          { x: 68.73, y: 93.70 },
-          { x: 68.34, y: 93.63 },
+          { x: 68.0487, y: 93.2779 },
+          { x: 68.2865, y: 93.3830 },
+          { x: 68.2502, y: 93.4653 },
+          { x: 68.0123, y: 93.3602 },
+        ],
+      },
+      {
+        id: "MDST_PASSENGER_TERMINAL",
+        label: "PAX",
+        points: [
+          { x: 68.3597, y: 93.4153 },
+          { x: 68.6341, y: 93.5365 },
+          { x: 68.5897, y: 93.6372 },
+          { x: 68.3152, y: 93.5159 },
+        ],
+      },
+      {
+        id: "MDST_TOWER",
+        label: "TWR",
+        points: [
+          { x: 68.6478, y: 93.5426 },
+          { x: 68.7119, y: 93.5709 },
+          { x: 68.6836, y: 93.6349 },
+          { x: 68.6195, y: 93.6066 },
+        ],
+      },
+      {
+        id: "MDST_CARGO_TERMINAL",
+        label: "CARGO",
+        points: [
+          { x: 68.7388, y: 93.5718 },
+          { x: 68.9400, y: 93.6607 },
+          { x: 68.9036, y: 93.7431 },
+          { x: 68.7024, y: 93.6542 },
         ],
       },
     ],
