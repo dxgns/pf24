@@ -17,6 +17,7 @@ import {
   MDPC_PAVEMENT_PIXEL_PATH,
   MDPC_TRACE_TRANSFORM,
 } from "@/lib/scope/mdpcGroundDetail";
+import { MDPC_SIMULATOR_MARKINGS } from "@/lib/scope/mdpcSimulatorDetail";
 
 type Viewport = { zoom: number; panX: number; panY: number };
 
@@ -113,8 +114,8 @@ function MdpcGround({ zoom }: { zoom: number }) {
                   key={line.id}
                   d={line.d}
                   fill="none"
-                  stroke="#817f16"
-                  strokeOpacity={0.82}
+                  stroke="#b7851d"
+                  strokeOpacity={0.9}
                   strokeWidth={0.055}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -170,13 +171,41 @@ function MdpcGround({ zoom }: { zoom: number }) {
             key={taxiway.id}
             d={taxiway.d}
             fill="none"
-            stroke="#c2bd0a"
+            stroke="#c28a18"
             strokeWidth={0.072}
             strokeLinecap="round"
             strokeLinejoin="round"
             vectorEffect="non-scaling-stroke"
           />
         ))}
+
+      {detail && (
+        <g data-map-layer="mdpc-simulator-markings">
+          {MDPC_SIMULATOR_MARKINGS.filter((marking) => marking.kind === "turn").map((marking) => (
+            <path
+              key={marking.id}
+              d={marking.d}
+              fill="none"
+              stroke="#c28a18"
+              strokeWidth={0.052}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {MDPC_SIMULATOR_MARKINGS.filter((marking) => marking.kind === "hold").map((marking) => (
+            <path
+              key={marking.id}
+              d={marking.d}
+              fill="none"
+              stroke="#d3a62b"
+              strokeWidth={0.085}
+              strokeLinecap="butt"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </g>
+      )}
 
       {detail && (
         <g data-map-layer="mdpc-runway-labels" fontFamily="monospace" fill="#b4bbba">
