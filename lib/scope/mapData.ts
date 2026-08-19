@@ -30,7 +30,8 @@ export const WAYPOINTS: NamedPoint[] = [
   { name: "EFLA", x: 190.44, y: 42.25 }, { name: "AMUBA", x: 210.0, y: 37.44 },
   { name: "MADAS", x: 100.45, y: 53.56 }, { name: "CANDE", x: 79.08, y: 53.56 },
   { name: "PELIN", x: 67.24, y: 60.31 }, { name: "MEROS", x: 136.70, y: 49.82 },
-  { name: "SARGO", x: 121.20, y: 49.84 },
+  { name: "SARGO", x: 121.20, y: 49.84 }, { name: "ELTAN", x: 109.75, y: 75.94 },
+  { name: "RIXOT", x: 148.82, y: 44.56 },
 ];
 
 export const AIRSPACE_PATHS: MapPath[] = [
@@ -49,6 +50,16 @@ export const AIRSPACE_PATHS: MapPath[] = [
   { id: "LCCC_N", tone: "fir", closed: true, points: [
     { x: 109.75, y: 89.25 }, { x: 159.82, y: 91.21 }, { x: 210, y: 91.21 }, { x: 210, y: 37.44 },
     { x: 190.44, y: 42.25 }, { x: 162.06, y: 40.71 }, { x: 148.82, y: 61.44 }, { x: 136.95, y: 73.81 },
+  ]},
+  { id: "GCCC_CTR", tone: "fir", closed: true, points: [
+    { x: 67.24, y: 75.0 }, { x: 79.86, y: 77.39 }, { x: 87.68, y: 80.0 },
+    { x: 93.35, y: 83.87 }, { x: 109.75, y: 89.25 }, { x: 109.75, y: 75.94 },
+    { x: 100.45, y: 53.56 }, { x: 79.08, y: 53.56 }, { x: 67.24, y: 60.31 },
+  ]},
+  { id: "LEMH_CTR", tone: "fir", closed: true, points: [
+    { x: 109.75, y: 75.94 }, { x: 136.95, y: 73.81 }, { x: 148.82, y: 61.44 },
+    { x: 148.82, y: 44.56 }, { x: 136.70, y: 49.82 }, { x: 121.20, y: 49.84 },
+    { x: 100.45, y: 53.56 },
   ]},
   { id: "LCLK_APP", tone: "app", closed: true, points: [
     { x: 136.19, y: 91.40 }, { x: 140.93, y: 86.24 }, { x: 176.44, y: 78.94 }, { x: 171.94, y: 94.95 },
