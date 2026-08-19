@@ -7,11 +7,11 @@ import {
   MAP_BOUNDS,
   MDPC_RUNWAYS,
   MDPC_STANDS,
-  MDPC_TAXIWAYS,
   WAYPOINTS,
   type MapPath,
 } from "@/lib/scope/mapData";
 import { MDPC_BUILDINGS, MDPC_TRACE_TRANSFORM } from "@/lib/scope/mdpcGroundDetail";
+import { MDPC_CHART_TAXIWAYS } from "@/lib/scope/mdpcChartTaxiways";
 import { MDPC_SIMULATOR_MARKINGS } from "@/lib/scope/mdpcSimulatorDetail";
 
 type Viewport = { zoom: number; panX: number; panY: number };
@@ -126,10 +126,7 @@ function MdpcPavement({ zoom }: { zoom: number }) {
 
   return (
     <g data-map-layer="mdpc-pavement">
-      {/* Only PF-coordinate movement lines are allowed to create taxiway pavement.
-          The old pixel trace is intentionally excluded: it was producing false streets
-          and the wrong scale. */}
-      {MDPC_TAXIWAYS.map((taxiway) => (
+      {MDPC_CHART_TAXIWAYS.map((taxiway) => (
         <path
           key={`pavement-${taxiway.id}`}
           d={taxiway.d}
@@ -157,15 +154,13 @@ function MdpcGround({ zoom }: { zoom: number }) {
     <g data-map-layer="mdpc-ground">
       {MDPC_RUNWAYS.map((runway) => (
         <g key={runway.id}>
-          {/* MDPC runway proportions are kept close to physical scale instead of the
-              exaggerated chart stroke used by the first prototype. */}
           <polyline points={points(runway)} fill="none" stroke="#080a0a" strokeWidth={0.070} strokeLinecap="butt" />
           <polyline points={points(runway)} fill="none" stroke="#d5d9d8" strokeWidth={0.009} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
           <polyline points={points(runway)} fill="none" stroke="#d9dddd" strokeWidth={0.006} strokeDasharray="0.08 0.07" vectorEffect="non-scaling-stroke" />
         </g>
       ))}
 
-      {detail && MDPC_TAXIWAYS.map((taxiway) => (
+      {detail && MDPC_CHART_TAXIWAYS.map((taxiway) => (
         <path
           key={taxiway.id}
           d={taxiway.d}
