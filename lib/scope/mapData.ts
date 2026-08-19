@@ -49,7 +49,7 @@ export const WAYPOINTS: NamedPoint[] = [
   { name: "LIMA", x: 163.25, y: 25.00 }, { name: "AMULU", x: 151.94, y: 31.44 },
   { name: "ROSE", x: 152.34, y: 18.84 }, { name: "KETF", x: 150.31, y: 4.16 },
   { name: "KRDSH", x: 158.00, y: 6.25 }, { name: "HTML", x: 161.60, y: 2.31 },
-  { name: "KITTL", x: 163.35, y: 7.69 }, { name: "KIT VOR", x: 165.63, y: 12.20, kind: "vor" },
+  { name: "KITTL", x: 163.35, y: 7.69 }, { name: "KIT", x: 165.63, y: 12.20, kind: "vor" },
   { name: "ROBUX", x: 172.23, y: 24.01 }, { name: "BEREP", x: 143.79, y: 10.11 },
   { name: "CARBO", x: 143.99, y: 0.00 },
 ];
