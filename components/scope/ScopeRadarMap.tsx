@@ -14,6 +14,7 @@ import {
 import {
   MDPC_BUILDINGS,
   MDPC_GROUND_REFERENCE_LINES,
+  MDPC_PAVEMENT_PIXEL_PATH,
   MDPC_TRACE_TRANSFORM,
 } from "@/lib/scope/mdpcGroundDetail";
 import { MDPC_SIMULATOR_MARKINGS } from "@/lib/scope/mdpcSimulatorDetail";
@@ -119,6 +120,22 @@ function MdpcAirportBackground({ zoom }: { zoom: number }) {
   return (
     <g data-map-layer="mdpc-airport-background" transform={MDPC_TRACE_TRANSFORM}>
       <path d={MDPC_AIRPORT_GROUNDS_PATH} fill="#00520d" stroke="none" />
+    </g>
+  );
+}
+
+function MdpcPavement({ zoom }: { zoom: number }) {
+  if (zoom < 2.35) return null;
+
+  return (
+    <g data-map-layer="mdpc-pavement" transform={MDPC_TRACE_TRANSFORM}>
+      <path
+        d={MDPC_PAVEMENT_PIXEL_PATH}
+        fill="#080a0a"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        stroke="none"
+      />
     </g>
   );
 }
@@ -290,8 +307,11 @@ export default function ScopeRadarMap() {
         preserveAspectRatio="xMidYMid meet"
         style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}
       >
-        {/* Bottom-most airport layer. Everything else is rendered above it. */}
+        {/* Layer 1: airport grounds / infield. */}
         <MdpcAirportBackground zoom={viewport.zoom} />
+
+        {/* Layer 2: every paved MDPC surface, in black, directly above the green infield. */}
+        <MdpcPavement zoom={viewport.zoom} />
 
         <g data-map-layer="airspace">
           {AIRSPACE_PATHS.map((airspace) => {
