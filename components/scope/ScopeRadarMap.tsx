@@ -14,7 +14,6 @@ import {
 import {
   MDPC_BUILDINGS,
   MDPC_GROUND_REFERENCE_LINES,
-  MDPC_PAVEMENT_PIXEL_PATH,
   MDPC_TRACE_TRANSFORM,
 } from "@/lib/scope/mdpcGroundDetail";
 import { MDPC_SIMULATOR_MARKINGS } from "@/lib/scope/mdpcSimulatorDetail";
@@ -28,6 +27,14 @@ const VIEWPORT_EVENT = "pf24-radar-viewport";
 // as the MDPC ground detail. This is deliberately a fill-only layer: no gray border.
 const MDPC_AIRPORT_GROUNDS_PATH =
   "M 70 105 L 1600 70 L 1705 185 L 1690 680 L 1530 780 L 600 825 L 190 730 L 90 520 Z";
+
+// Clean apron masses. These are intentionally simple chart-style shapes; the old
+// satellite-derived pavement silhouette was too jagged and created false bays/spikes.
+const MDPC_APRONS = [
+  "M 86.93 103.28 L 87.67 103.31 L 87.71 103.67 L 87.52 103.73 L 87.16 103.72 L 86.96 103.63 Z",
+  "M 87.55 103.34 L 88.70 103.42 L 88.76 103.68 L 88.62 103.73 L 87.62 103.68 Z",
+  "M 88.12 103.34 L 88.59 103.38 L 88.62 103.54 L 88.18 103.51 Z",
+];
 
 function readViewport(): Viewport {
   try {
@@ -128,14 +135,39 @@ function MdpcPavement({ zoom }: { zoom: number }) {
   if (zoom < 2.35) return null;
 
   return (
-    <g data-map-layer="mdpc-pavement" transform={MDPC_TRACE_TRANSFORM}>
-      <path
-        d={MDPC_PAVEMENT_PIXEL_PATH}
-        fill="#080a0a"
-        fillRule="evenodd"
-        clipRule="evenodd"
-        stroke="none"
-      />
+    <g data-map-layer="mdpc-pavement">
+      {/* Smooth pavement corridors from the airport trace centerlines. */}
+      <g transform={MDPC_TRACE_TRANSFORM}>
+        {MDPC_GROUND_REFERENCE_LINES.map((line) => (
+          <path
+            key={`pavement-${line.id}`}
+            d={line.d}
+            fill="none"
+            stroke="#080a0a"
+            strokeWidth={18}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+      </g>
+
+      {/* Confirmed taxiways in PFTracker coordinates. */}
+      {MDPC_TAXIWAYS.map((taxiway) => (
+        <path
+          key={`pavement-${taxiway.id}`}
+          d={taxiway.d}
+          fill="none"
+          stroke="#080a0a"
+          strokeWidth={0.20}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ))}
+
+      {/* Main apron surfaces are clean chart-style masses instead of the noisy trace. */}
+      {MDPC_APRONS.map((d, index) => (
+        <path key={`mdpc-apron-${index}`} d={d} fill="#080a0a" stroke="none" />
+      ))}
     </g>
   );
 }
@@ -150,26 +182,8 @@ function MdpcGround({ zoom }: { zoom: number }) {
     <g data-map-layer="mdpc-ground">
       {surfaceDetail && (
         <g data-map-layer="mdpc-chart-ground" transform={MDPC_TRACE_TRANSFORM}>
-          {/* Taxiways are pavement, not green corridors. The green in the reference chart is infield. */}
           {MDPC_GROUND_REFERENCE_LINES.map((line) => (
             <g key={line.id}>
-              <path
-                d={line.d}
-                fill="none"
-                stroke="#303637"
-                strokeWidth={1.65}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d={line.d}
-                fill="none"
-                stroke="#626b6c"
-                strokeWidth={0.12}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                vectorEffect="non-scaling-stroke"
-              />
               {detail && (
                 <path
                   d={line.d}
@@ -212,10 +226,16 @@ function MdpcGround({ zoom }: { zoom: number }) {
       ))}
 
       {detail && MDPC_TAXIWAYS.map((taxiway) => (
-        <g key={taxiway.id}>
-          <path d={taxiway.d} fill="none" stroke="#303637" strokeWidth={0.16} strokeLinecap="round" strokeLinejoin="round" />
-          <path d={taxiway.d} fill="none" stroke="#c79216" strokeWidth={0.058} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-        </g>
+        <path
+          key={taxiway.id}
+          d={taxiway.d}
+          fill="none"
+          stroke="#c79216"
+          strokeWidth={0.058}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
       ))}
 
       {detail && (
@@ -310,7 +330,7 @@ export default function ScopeRadarMap() {
         {/* Layer 1: airport grounds / infield. */}
         <MdpcAirportBackground zoom={viewport.zoom} />
 
-        {/* Layer 2: every paved MDPC surface, in black, directly above the green infield. */}
+        {/* Layer 2: clean paved surfaces, directly above the green infield. */}
         <MdpcPavement zoom={viewport.zoom} />
 
         <g data-map-layer="airspace">
