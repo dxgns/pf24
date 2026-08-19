@@ -70,15 +70,19 @@ export const MDPC_RUNWAYS: MapPath[] = [
   { id: "MDPC_09_27", tone: "runway", points: [{ x: 86.37, y: 102.93 }, { x: 90.21, y: 103.34 }] },
 ];
 
+// Ground centerlines are kept in PFTracker coordinates so scale and intersections
+// stay tied to the user's confirmed measurements. Straight L segments are used
+// through confirmed intermediate points; this avoids the old quadratic paths
+// drifting away from the measured point.
 export const MDPC_TAXIWAYS: Array<{ id: string; d: string }> = [
-  { id: "H", d: "M 87.55 102.08 Q 87.78 102.44 87.82 102.84" },
-  { id: "G", d: "M 87.82 102.84 Q 87.76 102.96 87.75 103.08" },
-  { id: "B", d: "M 88.21 102.87 Q 88.19 103.00 88.18 103.13" },
-  { id: "A", d: "M 89.05 102.96 Q 89.02 103.08 89.07 103.20" },
+  { id: "H", d: "M 87.55 102.08 L 87.78 102.44 L 87.82 102.84" },
+  { id: "G", d: "M 87.82 102.84 L 87.76 102.96 L 87.75 103.08" },
+  { id: "B", d: "M 88.21 102.87 L 88.19 103.00 L 88.18 103.13" },
+  { id: "A", d: "M 89.05 102.96 L 89.02 103.08 L 89.07 103.20" },
   { id: "K", d: "M 87.82 102.84 L 88.21 102.87 L 89.05 102.96" },
-  { id: "E", d: "M 86.38 102.97 Q 87.10 103.26 87.60 103.31" },
-  { id: "J", d: "M 85.97 102.25 Q 86.00 102.48 86.08 102.72" },
-  { id: "F", d: "M 86.54 103.20 Q 86.63 103.34 86.69 103.51" },
+  { id: "E", d: "M 86.38 102.97 L 87.10 103.26 L 87.60 103.31" },
+  { id: "J", d: "M 85.97 102.25 L 86.00 102.48" },
+  { id: "F", d: "M 86.54 103.20 L 86.63 103.34" },
   { id: "D", d: "M 87.80 103.34 L 87.93 103.47" },
 ];
 
