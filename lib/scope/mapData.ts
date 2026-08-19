@@ -28,6 +28,9 @@ export const WAYPOINTS: NamedPoint[] = [
   { name: "NIMSI", x: 124.76, y: 103.21 }, { name: "GINRE", x: 136.95, y: 73.81 },
   { name: "MORSS", x: 148.82, y: 61.44 }, { name: "KONAN", x: 162.06, y: 40.71 },
   { name: "EFLA", x: 190.44, y: 42.25 }, { name: "AMUBA", x: 210.0, y: 37.44 },
+  { name: "MADAS", x: 100.45, y: 53.56 }, { name: "CANDE", x: 79.08, y: 53.56 },
+  { name: "PELIN", x: 67.24, y: 60.31 }, { name: "MEROS", x: 136.70, y: 49.82 },
+  { name: "SARGO", x: 121.20, y: 49.84 },
 ];
 
 export const AIRSPACE_PATHS: MapPath[] = [
@@ -70,10 +73,6 @@ export const MDPC_RUNWAYS: MapPath[] = [
   { id: "MDPC_09_27", tone: "runway", points: [{ x: 86.37, y: 102.93 }, { x: 90.21, y: 103.34 }] },
 ];
 
-// Ground centerlines are kept in PFTracker coordinates so scale and intersections
-// stay tied to the user's confirmed measurements. Straight L segments are used
-// through confirmed intermediate points; this avoids the old quadratic paths
-// drifting away from the measured point.
 export const MDPC_TAXIWAYS: Array<{ id: string; d: string }> = [
   { id: "H", d: "M 87.55 102.08 L 87.78 102.44 L 87.82 102.84" },
   { id: "G", d: "M 87.82 102.84 L 87.76 102.96 L 87.75 103.08" },
