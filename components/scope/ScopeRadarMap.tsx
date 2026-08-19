@@ -23,6 +23,11 @@ type Viewport = { zoom: number; panX: number; panY: number };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
+// Airport property/background outline traced in the same PFTracker reference pixel space
+// as the MDPC ground detail. This is deliberately a fill-only layer: no gray border.
+const MDPC_AIRPORT_GROUNDS_PATH =
+  "M 70 105 L 1600 70 L 1705 185 L 1690 680 L 1530 780 L 600 825 L 190 730 L 90 520 Z";
+
 function readViewport(): Viewport {
   try {
     const parsed = JSON.parse(localStorage.getItem(VIEWPORT_KEY) ?? "{}") as Partial<Viewport>;
@@ -104,6 +109,16 @@ function Fix({ x, y, name, zoom, vor = false }: { x: number; y: number; name: st
       <text x={x + 0.16} y={y + 0.095} fontSize={0.46} fill="#73797b" fontFamily="monospace">
         {name}
       </text>
+    </g>
+  );
+}
+
+function MdpcAirportBackground({ zoom }: { zoom: number }) {
+  if (zoom < 2.35) return null;
+
+  return (
+    <g data-map-layer="mdpc-airport-background" transform={MDPC_TRACE_TRANSFORM}>
+      <path d={MDPC_AIRPORT_GROUNDS_PATH} fill="#00520d" stroke="none" />
     </g>
   );
 }
@@ -275,6 +290,9 @@ export default function ScopeRadarMap() {
         preserveAspectRatio="xMidYMid meet"
         style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}
       >
+        {/* Bottom-most airport layer. Everything else is rendered above it. */}
+        <MdpcAirportBackground zoom={viewport.zoom} />
+
         <g data-map-layer="airspace">
           {AIRSPACE_PATHS.map((airspace) => {
             const style = pathStyle(airspace.tone);
