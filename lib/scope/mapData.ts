@@ -2,7 +2,7 @@ export type MapPoint = { x: number; y: number };
 export type NamedPoint = MapPoint & { name: string; kind?: "fix" | "vor" | "airport" | "stand" };
 export type MapPath = { id: string; points: MapPoint[]; closed?: boolean; tone: "fir" | "app" | "tower" | "ground" | "runway" };
 
-export const MAP_BOUNDS = { minX: 15, maxX: 210, minY: 37, maxY: 120 } as const;
+export const MAP_BOUNDS = { minX: 15, maxX: 210, minY: 0, maxY: 120 } as const;
 
 export const WAYPOINTS: NamedPoint[] = [
   { name: "BODLO", x: 15.0, y: 75.0 }, { name: "POKEG", x: 67.24, y: 75.0 },
@@ -44,6 +44,14 @@ export const WAYPOINTS: NamedPoint[] = [
   { name: "PELIN", x: 67.24, y: 60.31 }, { name: "MEROS", x: 136.70, y: 49.82 },
   { name: "SARGO", x: 121.20, y: 49.84 }, { name: "ELTAN", x: 109.75, y: 75.94 },
   { name: "RIXOT", x: 148.82, y: 44.56 },
+
+  { name: "BRAVO", x: 178.56, y: 35.50 }, { name: "KIT", x: 186.56, y: 27.59 },
+  { name: "LIMA", x: 163.25, y: 25.00 }, { name: "AMULU", x: 151.94, y: 31.44 },
+  { name: "ROSE", x: 152.34, y: 18.84 }, { name: "KETF", x: 150.31, y: 4.16 },
+  { name: "KRDSH", x: 158.00, y: 6.25 }, { name: "HTML", x: 161.60, y: 2.31 },
+  { name: "KITTL", x: 163.35, y: 7.69 }, { name: "KIT VOR", x: 165.63, y: 12.20, kind: "vor" },
+  { name: "ROBUX", x: 172.23, y: 24.01 }, { name: "BEREP", x: 143.79, y: 10.11 },
+  { name: "CARBO", x: 143.99, y: 0.00 },
 ];
 
 export const AIRSPACE_PATHS: MapPath[] = [
@@ -72,6 +80,11 @@ export const AIRSPACE_PATHS: MapPath[] = [
     { x: 109.75, y: 89.25 }, { x: 136.95, y: 73.81 }, { x: 148.82, y: 61.44 },
     { x: 148.82, y: 44.56 }, { x: 136.70, y: 49.82 }, { x: 121.20, y: 49.84 },
     { x: 100.45, y: 53.56 }, { x: 109.75, y: 75.94 },
+  ]},
+  { id: "EFKT_CTR", tone: "fir", closed: true, points: [
+    { x: 148.82, y: 44.56 }, { x: 151.94, y: 31.44 }, { x: 143.79, y: 10.11 },
+    { x: 143.99, y: 0.00 }, { x: 210.00, y: 0.00 }, { x: 210.00, y: 37.44 },
+    { x: 190.44, y: 42.25 }, { x: 162.06, y: 40.71 },
   ]},
   { id: "LCLK_APP", tone: "app", closed: true, points: [
     { x: 136.19, y: 91.40 }, { x: 140.93, y: 86.24 }, { x: 176.44, y: 78.94 }, { x: 171.94, y: 94.95 },
