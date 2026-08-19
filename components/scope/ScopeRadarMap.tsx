@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AIRSPACE_PATHS,
   MAP_BOUNDS,
-  MDPC_STANDS,
   WAYPOINTS,
   type MapPath,
 } from "@/lib/scope/mapData";
@@ -52,6 +51,49 @@ const MDPC_TAXI_LABELS = [
   { name: "D", x: 87.86, y: 103.40 },
   { name: "R1", x: 87.94, y: 103.31 },
   { name: "R2", x: 88.06, y: 103.32 },
+] as const;
+
+// Display positions follow the ends of the stand lead-in lines in the user's SVG.
+// These are intentionally independent from the aircraft stop coordinates in mapData.
+const MDPC_STAND_LABELS = [
+  { name: "B33", x: 87.00, y: 103.34 },
+  { name: "B32", x: 87.06, y: 103.35 },
+  { name: "B31", x: 87.12, y: 103.36 },
+  { name: "B30", x: 87.19, y: 103.38 },
+  { name: "B29", x: 87.20, y: 103.43 },
+  { name: "B28", x: 87.20, y: 103.48 },
+  { name: "B27", x: 87.19, y: 103.54 },
+  { name: "B25", x: 87.19, y: 103.61 },
+
+  { name: "B23", x: 87.43, y: 103.39 },
+  { name: "B26", x: 87.43, y: 103.46 },
+  { name: "B21", x: 87.43, y: 103.52 },
+  { name: "B24", x: 87.64, y: 103.40 },
+  { name: "B22", x: 87.64, y: 103.47 },
+  { name: "B20", x: 87.64, y: 103.53 },
+
+  // Terminal A, left-to-right. 11A is the first stand in this sequence.
+  { name: "11A", x: 87.78, y: 103.59 },
+  { name: "11", x: 87.86, y: 103.60 },
+  { name: "10", x: 87.94, y: 103.61 },
+  { name: "9A", x: 88.01, y: 103.62 },
+  { name: "9", x: 88.08, y: 103.63 },
+  { name: "8", x: 88.15, y: 103.64 },
+  { name: "7", x: 88.23, y: 103.65 },
+  { name: "6", x: 88.31, y: 103.66 },
+  { name: "5", x: 88.39, y: 103.67 },
+  { name: "4", x: 88.47, y: 103.68 },
+  { name: "3", x: 88.55, y: 103.69 },
+  { name: "2", x: 88.63, y: 103.70 },
+  { name: "1A", x: 88.70, y: 103.71 },
+  { name: "1", x: 88.77, y: 103.72 },
+
+  // N stands: labels belong at the terminal end of each line, not mid-line.
+  { name: "N5", x: 88.25, y: 103.56 },
+  { name: "N4", x: 88.32, y: 103.57 },
+  { name: "N3", x: 88.39, y: 103.58 },
+  { name: "N2", x: 88.46, y: 103.59 },
+  { name: "N1", x: 88.53, y: 103.60 },
 ] as const;
 
 function readViewport(): Viewport {
@@ -250,14 +292,14 @@ function MdpcLabels({ zoom }: { zoom: number }) {
 
       {zoom >= 8.5 && (
         <g data-map-layer="mdpc-stand-labels">
-          {MDPC_STANDS.map((stand) => (
+          {MDPC_STAND_LABELS.map((stand) => (
             <ReadableText
               key={stand.name}
               x={stand.x}
-              y={stand.y + 0.045}
+              y={stand.y}
               zoom={zoom}
               fontSize={0.25}
-              fill="#f0efe0"
+              fill="#ffffff"
             >
               {stand.name}
             </ReadableText>
