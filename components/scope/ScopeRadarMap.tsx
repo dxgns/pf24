@@ -55,10 +55,9 @@ function pathStyle(tone: MapPath["tone"]) {
   return { stroke: "#777d7f", width: 0.075, dash: undefined };
 }
 
-// Labels should not explode with zoom, but fully screen-fixed labels became too tiny.
-// This uses a square-root response: geometry scales normally while text grows gently.
+// Keep labels readable without letting them grow at the same rate as airport geometry.
 function readableScaleTransform(x: number, y: number, zoom: number) {
-  const inverse = 1 / Math.sqrt(Math.max(zoom, 1));
+  const inverse = 1 / Math.pow(Math.max(zoom, 1), 0.38);
   return `translate(${x} ${y}) scale(${inverse}) translate(${-x} ${-y})`;
 }
 
@@ -67,7 +66,7 @@ function ReadableText({
   y,
   zoom,
   children,
-  fontSize = 0.52,
+  fontSize = 0.62,
   fill = "#8a9092",
   anchor,
 }: {
@@ -92,17 +91,17 @@ function Fix({ x, y, name, zoom, vor = false }: { x: number; y: number; name: st
   return (
     <g transform={readableScaleTransform(x, y, zoom)}>
       {vor ? (
-        <circle cx={x} cy={y} r={0.13} fill="none" stroke="#8b9092" strokeWidth={0.045} vectorEffect="non-scaling-stroke" />
+        <circle cx={x} cy={y} r={0.15} fill="none" stroke="#8b9092" strokeWidth={0.045} vectorEffect="non-scaling-stroke" />
       ) : (
         <path
-          d={`M ${x} ${y - 0.085} L ${x - 0.075} ${y + 0.055} L ${x + 0.075} ${y + 0.055} Z`}
+          d={`M ${x} ${y - 0.10} L ${x - 0.085} ${y + 0.065} L ${x + 0.085} ${y + 0.065} Z`}
           fill="none"
           stroke="#777d7f"
           strokeWidth={0.04}
           vectorEffect="non-scaling-stroke"
         />
       )}
-      <text x={x + 0.14} y={y + 0.085} fontSize={0.40} fill="#73797b" fontFamily="monospace">
+      <text x={x + 0.16} y={y + 0.095} fontSize={0.46} fill="#73797b" fontFamily="monospace">
         {name}
       </text>
     </g>
@@ -113,23 +112,31 @@ function MdpcGround({ zoom }: { zoom: number }) {
   const surfaceDetail = zoom >= 2.35;
   const detail = zoom >= 3.0;
   const buildingDetail = zoom >= 4.2;
-  const standDetail = zoom >= 7.5;
+  const standDetail = zoom >= 9.0;
 
   return (
     <g data-map-layer="mdpc-ground">
       {surfaceDetail && (
         <g data-map-layer="mdpc-chart-ground" transform={MDPC_TRACE_TRANSFORM}>
-          {/* Chart-style movement areas: clean corridors instead of the jagged satellite silhouette. */}
+          {/* Taxiways are pavement, not green corridors. The green in the reference chart is infield. */}
           {MDPC_GROUND_REFERENCE_LINES.map((line) => (
             <g key={line.id}>
               <path
                 d={line.d}
                 fill="none"
-                stroke="#0d4c16"
-                strokeOpacity={0.92}
-                strokeWidth={3.2}
+                stroke="#303637"
+                strokeWidth={1.65}
                 strokeLinecap="round"
                 strokeLinejoin="round"
+              />
+              <path
+                d={line.d}
+                fill="none"
+                stroke="#626b6c"
+                strokeWidth={0.12}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
               />
               {detail && (
                 <path
@@ -152,8 +159,8 @@ function MdpcGround({ zoom }: { zoom: number }) {
                   key={building.id}
                   points={building.points.map((point) => `${point.x},${point.y}`).join(" ")}
                   fill="#1222a0"
-                  fillOpacity={0.86}
-                  stroke="#667174"
+                  fillOpacity={0.88}
+                  stroke="#7c8788"
                   strokeWidth={0.05}
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
@@ -166,15 +173,15 @@ function MdpcGround({ zoom }: { zoom: number }) {
 
       {MDPC_RUNWAYS.map((runway) => (
         <g key={runway.id}>
-          <polyline points={points(runway)} fill="none" stroke="#111718" strokeWidth={0.42} strokeLinecap="butt" />
-          <polyline points={points(runway)} fill="none" stroke="#8e9697" strokeWidth={0.055} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
+          <polyline points={points(runway)} fill="none" stroke="#161b1c" strokeWidth={0.38} strokeLinecap="butt" />
+          <polyline points={points(runway)} fill="none" stroke="#969e9f" strokeWidth={0.055} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
           <polyline points={points(runway)} fill="none" stroke="#d9dddd" strokeWidth={0.025} strokeDasharray="0.18 0.16" vectorEffect="non-scaling-stroke" />
         </g>
       ))}
 
       {detail && MDPC_TAXIWAYS.map((taxiway) => (
         <g key={taxiway.id}>
-          <path d={taxiway.d} fill="none" stroke="#0d4c16" strokeWidth={0.24} strokeLinecap="round" strokeLinejoin="round" />
+          <path d={taxiway.d} fill="none" stroke="#303637" strokeWidth={0.16} strokeLinecap="round" strokeLinejoin="round" />
           <path d={taxiway.d} fill="none" stroke="#c79216" strokeWidth={0.058} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </g>
       ))}
@@ -192,28 +199,28 @@ function MdpcGround({ zoom }: { zoom: number }) {
 
       {detail && (
         <g data-map-layer="mdpc-runway-labels">
-          <ReadableText x={85.73} y={102.28} zoom={zoom} fontSize={0.38} fill="#b4bbba">08</ReadableText>
-          <ReadableText x={89.70} y={101.91} zoom={zoom} fontSize={0.38} fill="#b4bbba">26</ReadableText>
-          <ReadableText x={86.29} y={102.96} zoom={zoom} fontSize={0.38} fill="#b4bbba">09</ReadableText>
-          <ReadableText x={90.22} y={103.37} zoom={zoom} fontSize={0.38} fill="#b4bbba">27</ReadableText>
+          <ReadableText x={85.73} y={102.28} zoom={zoom} fontSize={0.50} fill="#c6cccc">08</ReadableText>
+          <ReadableText x={89.70} y={101.91} zoom={zoom} fontSize={0.50} fill="#c6cccc">26</ReadableText>
+          <ReadableText x={86.29} y={102.96} zoom={zoom} fontSize={0.50} fill="#c6cccc">09</ReadableText>
+          <ReadableText x={90.22} y={103.37} zoom={zoom} fontSize={0.50} fill="#c6cccc">27</ReadableText>
         </g>
       )}
 
-      {detail && zoom < 10 && (
-        <ReadableText x={87.28} y={102.42} zoom={zoom} fontSize={0.42} fill="#8a9092">MDPC</ReadableText>
+      {detail && zoom < 9 && (
+        <ReadableText x={87.28} y={102.42} zoom={zoom} fontSize={0.52} fill="#8a9092">MDPC</ReadableText>
       )}
 
-      {buildingDetail && zoom < 11 && (
+      {buildingDetail && zoom < 10 && (
         <g data-map-layer="mdpc-terminal-labels">
-          <ReadableText x={87.48} y={103.86} zoom={zoom} fontSize={0.30} fill="#aeb6b5">TERMINAL B</ReadableText>
-          <ReadableText x={88.38} y={104.03} zoom={zoom} fontSize={0.30} fill="#aeb6b5">TERMINAL A</ReadableText>
+          <ReadableText x={87.48} y={103.86} zoom={zoom} fontSize={0.36} fill="#c1c8c7">TERMINAL B</ReadableText>
+          <ReadableText x={88.38} y={104.03} zoom={zoom} fontSize={0.36} fill="#c1c8c7">TERMINAL A</ReadableText>
         </g>
       )}
 
       {standDetail && MDPC_STANDS.map((stand) => (
         <g key={stand.name} transform={readableScaleTransform(stand.x, stand.y, zoom)}>
-          <circle cx={stand.x} cy={stand.y} r={0.026} fill="#d6d3b1" />
-          <text x={stand.x + 0.045} y={stand.y + 0.026} fontSize={0.25} fill="#d3d6d4" fontFamily="monospace">
+          <circle cx={stand.x} cy={stand.y} r={0.028} fill="#d6d3b1" />
+          <text x={stand.x + 0.05} y={stand.y + 0.028} fontSize={0.28} fill="#e0e2df" fontFamily="monospace">
             {stand.name}
           </text>
         </g>
