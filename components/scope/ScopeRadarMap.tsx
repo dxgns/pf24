@@ -14,7 +14,6 @@ import {
 import {
   MDPC_BUILDINGS,
   MDPC_GROUND_REFERENCE_LINES,
-  MDPC_PAVEMENT_PIXEL_PATH,
   MDPC_TRACE_TRANSFORM,
 } from "@/lib/scope/mdpcGroundDetail";
 import { MDPC_SIMULATOR_MARKINGS } from "@/lib/scope/mdpcSimulatorDetail";
@@ -56,12 +55,14 @@ function pathStyle(tone: MapPath["tone"]) {
   return { stroke: "#777d7f", width: 0.075, dash: undefined };
 }
 
-function fixedScaleTransform(x: number, y: number, zoom: number) {
-  const inverse = 1 / Math.max(zoom, 0.01);
+// Labels should not explode with zoom, but fully screen-fixed labels became too tiny.
+// This uses a square-root response: geometry scales normally while text grows gently.
+function readableScaleTransform(x: number, y: number, zoom: number) {
+  const inverse = 1 / Math.sqrt(Math.max(zoom, 1));
   return `translate(${x} ${y}) scale(${inverse}) translate(${-x} ${-y})`;
 }
 
-function FixedText({
+function ReadableText({
   x,
   y,
   zoom,
@@ -79,7 +80,7 @@ function FixedText({
   anchor?: "start" | "middle" | "end";
 }) {
   return (
-    <g transform={fixedScaleTransform(x, y, zoom)}>
+    <g transform={readableScaleTransform(x, y, zoom)}>
       <text x={x} y={y} fontSize={fontSize} fill={fill} fontFamily="monospace" textAnchor={anchor}>
         {children}
       </text>
@@ -89,27 +90,19 @@ function FixedText({
 
 function Fix({ x, y, name, zoom, vor = false }: { x: number; y: number; name: string; zoom: number; vor?: boolean }) {
   return (
-    <g transform={fixedScaleTransform(x, y, zoom)}>
+    <g transform={readableScaleTransform(x, y, zoom)}>
       {vor ? (
-        <circle
-          cx={x}
-          cy={y}
-          r={0.16}
-          fill="none"
-          stroke="#8b9092"
-          strokeWidth={0.055}
-          vectorEffect="non-scaling-stroke"
-        />
+        <circle cx={x} cy={y} r={0.13} fill="none" stroke="#8b9092" strokeWidth={0.045} vectorEffect="non-scaling-stroke" />
       ) : (
         <path
-          d={`M ${x} ${y - 0.11} L ${x - 0.095} ${y + 0.07} L ${x + 0.095} ${y + 0.07} Z`}
+          d={`M ${x} ${y - 0.085} L ${x - 0.075} ${y + 0.055} L ${x + 0.075} ${y + 0.055} Z`}
           fill="none"
           stroke="#777d7f"
-          strokeWidth={0.045}
+          strokeWidth={0.04}
           vectorEffect="non-scaling-stroke"
         />
       )}
-      <text x={x + 0.18} y={y + 0.11} fontSize={0.48} fill="#73797b" fontFamily="monospace">
+      <text x={x + 0.14} y={y + 0.085} fontSize={0.40} fill="#73797b" fontFamily="monospace">
         {name}
       </text>
     </g>
@@ -119,42 +112,38 @@ function Fix({ x, y, name, zoom, vor = false }: { x: number; y: number; name: st
 function MdpcGround({ zoom }: { zoom: number }) {
   const surfaceDetail = zoom >= 2.35;
   const detail = zoom >= 3.0;
-  const buildingDetail = zoom >= 3.8;
-  const standDetail = zoom >= 6.5;
+  const buildingDetail = zoom >= 4.2;
+  const standDetail = zoom >= 7.5;
 
   return (
     <g data-map-layer="mdpc-ground">
       {surfaceDetail && (
-        <g data-map-layer="mdpc-traced-ground" transform={MDPC_TRACE_TRANSFORM}>
-          <path
-            d={MDPC_PAVEMENT_PIXEL_PATH}
-            fill="#22292a"
-            fillOpacity={0.74}
-            fillRule="evenodd"
-            clipRule="evenodd"
-            stroke="#5c6667"
-            strokeWidth={0.045}
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-
-          {detail && (
-            <g data-map-layer="mdpc-ground-reference-lines">
-              {MDPC_GROUND_REFERENCE_LINES.map((line) => (
+        <g data-map-layer="mdpc-chart-ground" transform={MDPC_TRACE_TRANSFORM}>
+          {/* Chart-style movement areas: clean corridors instead of the jagged satellite silhouette. */}
+          {MDPC_GROUND_REFERENCE_LINES.map((line) => (
+            <g key={line.id}>
+              <path
+                d={line.d}
+                fill="none"
+                stroke="#0d4c16"
+                strokeOpacity={0.92}
+                strokeWidth={3.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {detail && (
                 <path
-                  key={line.id}
                   d={line.d}
                   fill="none"
-                  stroke="#b7851d"
-                  strokeOpacity={0.9}
+                  stroke="#c79216"
                   strokeWidth={0.055}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
                 />
-              ))}
+              )}
             </g>
-          )}
+          ))}
 
           {buildingDetail && (
             <g data-map-layer="mdpc-buildings">
@@ -162,10 +151,10 @@ function MdpcGround({ zoom }: { zoom: number }) {
                 <polygon
                   key={building.id}
                   points={building.points.map((point) => `${point.x},${point.y}`).join(" ")}
-                  fill="#111f98"
-                  fillOpacity={0.88}
-                  stroke="#7a8586"
-                  strokeWidth={0.055}
+                  fill="#1222a0"
+                  fillOpacity={0.86}
+                  stroke="#667174"
+                  strokeWidth={0.05}
                   strokeLinejoin="round"
                   vectorEffect="non-scaling-stroke"
                 />
@@ -177,104 +166,58 @@ function MdpcGround({ zoom }: { zoom: number }) {
 
       {MDPC_RUNWAYS.map((runway) => (
         <g key={runway.id}>
-          <polyline
-            points={points(runway)}
-            fill="none"
-            stroke="#343a3b"
-            strokeWidth={0.31}
-            strokeLinecap="butt"
-            vectorEffect="non-scaling-stroke"
-          />
-          <polyline
-            points={points(runway)}
-            fill="none"
-            stroke="#d5dad9"
-            strokeWidth={0.055}
-            strokeLinecap="butt"
-            vectorEffect="non-scaling-stroke"
-          />
+          <polyline points={points(runway)} fill="none" stroke="#111718" strokeWidth={0.42} strokeLinecap="butt" />
+          <polyline points={points(runway)} fill="none" stroke="#8e9697" strokeWidth={0.055} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
+          <polyline points={points(runway)} fill="none" stroke="#d9dddd" strokeWidth={0.025} strokeDasharray="0.18 0.16" vectorEffect="non-scaling-stroke" />
         </g>
       ))}
 
-      {detail &&
-        MDPC_TAXIWAYS.map((taxiway) => (
-          <path
-            key={taxiway.id}
-            d={taxiway.d}
-            fill="none"
-            stroke="#c28a18"
-            strokeWidth={0.072}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
+      {detail && MDPC_TAXIWAYS.map((taxiway) => (
+        <g key={taxiway.id}>
+          <path d={taxiway.d} fill="none" stroke="#0d4c16" strokeWidth={0.24} strokeLinecap="round" strokeLinejoin="round" />
+          <path d={taxiway.d} fill="none" stroke="#c79216" strokeWidth={0.058} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        </g>
+      ))}
 
       {detail && (
         <g data-map-layer="mdpc-simulator-markings">
           {MDPC_SIMULATOR_MARKINGS.filter((marking) => marking.kind === "turn").map((marking) => (
-            <path
-              key={marking.id}
-              d={marking.d}
-              fill="none"
-              stroke="#c28a18"
-              strokeWidth={0.052}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
+            <path key={marking.id} d={marking.d} fill="none" stroke="#c79216" strokeWidth={0.05} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           ))}
           {MDPC_SIMULATOR_MARKINGS.filter((marking) => marking.kind === "hold").map((marking) => (
-            <path
-              key={marking.id}
-              d={marking.d}
-              fill="none"
-              stroke="#d3a62b"
-              strokeWidth={0.085}
-              strokeLinecap="butt"
-              vectorEffect="non-scaling-stroke"
-            />
+            <path key={marking.id} d={marking.d} fill="none" stroke="#d9ae35" strokeWidth={0.075} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
           ))}
         </g>
       )}
 
       {detail && (
         <g data-map-layer="mdpc-runway-labels">
-          <FixedText x={85.73} y={102.28} zoom={zoom} fontSize={0.48} fill="#b4bbba">08</FixedText>
-          <FixedText x={89.70} y={101.91} zoom={zoom} fontSize={0.48} fill="#b4bbba">26</FixedText>
-          <FixedText x={86.29} y={102.96} zoom={zoom} fontSize={0.48} fill="#b4bbba">09</FixedText>
-          <FixedText x={90.22} y={103.37} zoom={zoom} fontSize={0.48} fill="#b4bbba">27</FixedText>
+          <ReadableText x={85.73} y={102.28} zoom={zoom} fontSize={0.38} fill="#b4bbba">08</ReadableText>
+          <ReadableText x={89.70} y={101.91} zoom={zoom} fontSize={0.38} fill="#b4bbba">26</ReadableText>
+          <ReadableText x={86.29} y={102.96} zoom={zoom} fontSize={0.38} fill="#b4bbba">09</ReadableText>
+          <ReadableText x={90.22} y={103.37} zoom={zoom} fontSize={0.38} fill="#b4bbba">27</ReadableText>
         </g>
       )}
 
-      {detail && (
-        <FixedText x={87.28} y={102.42} zoom={zoom} fontSize={0.56} fill="#8a9092">
-          MDPC
-        </FixedText>
+      {detail && zoom < 10 && (
+        <ReadableText x={87.28} y={102.42} zoom={zoom} fontSize={0.42} fill="#8a9092">MDPC</ReadableText>
       )}
 
-      {buildingDetail && zoom < 12 && (
+      {buildingDetail && zoom < 11 && (
         <g data-map-layer="mdpc-terminal-labels">
-          <FixedText x={87.48} y={103.86} zoom={zoom} fontSize={0.44} fill="#aeb6b5">TERMINAL B</FixedText>
-          <FixedText x={88.38} y={104.03} zoom={zoom} fontSize={0.44} fill="#aeb6b5">TERMINAL A</FixedText>
+          <ReadableText x={87.48} y={103.86} zoom={zoom} fontSize={0.30} fill="#aeb6b5">TERMINAL B</ReadableText>
+          <ReadableText x={88.38} y={104.03} zoom={zoom} fontSize={0.30} fill="#aeb6b5">TERMINAL A</ReadableText>
         </g>
       )}
 
-      {standDetail &&
-        MDPC_STANDS.map((stand) => (
-          <g key={stand.name} transform={fixedScaleTransform(stand.x, stand.y, zoom)}>
-            <circle cx={stand.x} cy={stand.y} r={0.038} fill="#d6d3b1" />
-            <text
-              x={stand.x + 0.065}
-              y={stand.y + 0.035}
-              fontSize={0.38}
-              fill="#d3d6d4"
-              fontFamily="monospace"
-            >
-              {stand.name}
-            </text>
-          </g>
-        ))}
+      {standDetail && MDPC_STANDS.map((stand) => (
+        <g key={stand.name} transform={readableScaleTransform(stand.x, stand.y, zoom)}>
+          <circle cx={stand.x} cy={stand.y} r={0.026} fill="#d6d3b1" />
+          <text x={stand.x + 0.045} y={stand.y + 0.026} fontSize={0.25} fill="#d3d6d4" fontFamily="monospace">
+            {stand.name}
+          </text>
+        </g>
+      ))}
     </g>
   );
 }
@@ -318,19 +261,12 @@ export default function ScopeRadarMap() {
   if (!host) return null;
 
   return createPortal(
-    <div
-      data-pf24-vector-map="true"
-      className="pointer-events-none absolute inset-0 z-[6] overflow-hidden"
-      aria-hidden="true"
-    >
+    <div data-pf24-vector-map="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
       <svg
         className="absolute inset-0 block h-full w-full"
         viewBox={viewBox}
         preserveAspectRatio="xMidYMid meet"
-        style={{
-          transformOrigin: "0 0",
-          transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`,
-        }}
+        style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}
       >
         <g data-map-layer="airspace">
           {AIRSPACE_PATHS.map((airspace) => {
@@ -352,14 +288,7 @@ export default function ScopeRadarMap() {
 
         <g data-map-layer="fixes">
           {WAYPOINTS.map((waypoint) => (
-            <Fix
-              key={waypoint.name}
-              x={waypoint.x}
-              y={waypoint.y}
-              name={waypoint.name}
-              zoom={viewport.zoom}
-              vor={waypoint.kind === "vor"}
-            />
+            <Fix key={waypoint.name} x={waypoint.x} y={waypoint.y} name={waypoint.name} zoom={viewport.zoom} vor={waypoint.kind === "vor"} />
           ))}
         </g>
 
