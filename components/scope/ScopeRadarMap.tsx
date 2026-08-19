@@ -28,6 +28,13 @@ const MDPC_APRONS = [
   "M 88.12 103.34 L 88.59 103.38 L 88.62 103.54 L 88.18 103.51 Z",
 ];
 
+// Affine fit from the supplied 10-9 SVG to PFTracker map coordinates.
+// Anchors used: RWY 08, 26, 09 and 27 thresholds. This is intentionally a
+// temporary calibration layer so we can judge scale/alignment before replacing
+// the hand-built airport geometry with a clean custom SVG.
+const MDPC_TAXI_SVG_TRANSFORM =
+  "matrix(0.00614720864 0.0006722426 -0.000705743261 0.00610175683 85.3179989 100.796699)";
+
 function readViewport(): Viewport {
   try {
     const parsed = JSON.parse(localStorage.getItem(VIEWPORT_KEY) ?? "{}") as Partial<Viewport>;
@@ -117,6 +124,23 @@ function MdpcAirportBackground({ zoom }: { zoom: number }) {
   return (
     <g data-map-layer="mdpc-airport-background" transform={MDPC_TRACE_TRANSFORM}>
       <path d={MDPC_AIRPORT_GROUNDS_PATH} fill="#00520d" stroke="none" />
+    </g>
+  );
+}
+
+function MdpcSvgChartReference({ zoom }: { zoom: number }) {
+  if (zoom < 2.35) return null;
+  return (
+    <g data-map-layer="mdpc-svg-chart-reference" transform={MDPC_TAXI_SVG_TRANSFORM}>
+      <image
+        href="/scope/mdpc-taxi-reference.svg"
+        x={0}
+        y={0}
+        width={895}
+        height={502}
+        preserveAspectRatio="none"
+        opacity={0.96}
+      />
     </g>
   );
 }
@@ -280,7 +304,7 @@ export default function ScopeRadarMap() {
         style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}
       >
         <MdpcAirportBackground zoom={viewport.zoom} />
-        <MdpcPavement zoom={viewport.zoom} />
+        <MdpcSvgChartReference zoom={viewport.zoom} />
 
         <g data-map-layer="airspace">
           {AIRSPACE_PATHS.map((airspace) => {
@@ -305,8 +329,6 @@ export default function ScopeRadarMap() {
             <Fix key={waypoint.name} x={waypoint.x} y={waypoint.y} name={waypoint.name} zoom={viewport.zoom} vor={waypoint.kind === "vor"} />
           ))}
         </g>
-
-        <MdpcGround zoom={viewport.zoom} />
       </svg>
     </div>,
     host,
