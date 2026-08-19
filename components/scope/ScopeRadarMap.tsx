@@ -240,7 +240,7 @@ function MdpcLabels({ zoom }: { zoom: number }) {
               y={label.y}
               zoom={zoom}
               fontSize={0.34}
-              fill="#d0d900"
+              fill="#ffffff"
             >
               {label.name}
             </ReadableText>
