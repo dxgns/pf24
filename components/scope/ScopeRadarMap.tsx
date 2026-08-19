@@ -56,9 +56,40 @@ function pathStyle(tone: MapPath["tone"]) {
   return { stroke: "#777d7f", width: 0.075, dash: undefined };
 }
 
-function Fix({ x, y, name, vor = false }: { x: number; y: number; name: string; vor?: boolean }) {
+function fixedScaleTransform(x: number, y: number, zoom: number) {
+  const inverse = 1 / Math.max(zoom, 0.01);
+  return `translate(${x} ${y}) scale(${inverse}) translate(${-x} ${-y})`;
+}
+
+function FixedText({
+  x,
+  y,
+  zoom,
+  children,
+  fontSize = 0.52,
+  fill = "#8a9092",
+  anchor,
+}: {
+  x: number;
+  y: number;
+  zoom: number;
+  children: React.ReactNode;
+  fontSize?: number;
+  fill?: string;
+  anchor?: "start" | "middle" | "end";
+}) {
   return (
-    <g>
+    <g transform={fixedScaleTransform(x, y, zoom)}>
+      <text x={x} y={y} fontSize={fontSize} fill={fill} fontFamily="monospace" textAnchor={anchor}>
+        {children}
+      </text>
+    </g>
+  );
+}
+
+function Fix({ x, y, name, zoom, vor = false }: { x: number; y: number; name: string; zoom: number; vor?: boolean }) {
+  return (
+    <g transform={fixedScaleTransform(x, y, zoom)}>
       {vor ? (
         <circle
           cx={x}
@@ -78,7 +109,7 @@ function Fix({ x, y, name, vor = false }: { x: number; y: number; name: string; 
           vectorEffect="non-scaling-stroke"
         />
       )}
-      <text x={x + 0.18} y={y + 0.11} fontSize={0.55} fill="#73797b" fontFamily="monospace">
+      <text x={x + 0.18} y={y + 0.11} fontSize={0.48} fill="#73797b" fontFamily="monospace">
         {name}
       </text>
     </g>
@@ -89,7 +120,7 @@ function MdpcGround({ zoom }: { zoom: number }) {
   const surfaceDetail = zoom >= 2.35;
   const detail = zoom >= 3.0;
   const buildingDetail = zoom >= 3.8;
-  const standDetail = zoom >= 5.1;
+  const standDetail = zoom >= 6.5;
 
   return (
     <g data-map-layer="mdpc-ground">
@@ -208,35 +239,35 @@ function MdpcGround({ zoom }: { zoom: number }) {
       )}
 
       {detail && (
-        <g data-map-layer="mdpc-runway-labels" fontFamily="monospace" fill="#b4bbba">
-          <text x={85.73} y={102.28} fontSize={0.22}>08</text>
-          <text x={89.70} y={101.91} fontSize={0.22}>26</text>
-          <text x={86.29} y={102.96} fontSize={0.22}>09</text>
-          <text x={90.22} y={103.37} fontSize={0.22}>27</text>
+        <g data-map-layer="mdpc-runway-labels">
+          <FixedText x={85.73} y={102.28} zoom={zoom} fontSize={0.48} fill="#b4bbba">08</FixedText>
+          <FixedText x={89.70} y={101.91} zoom={zoom} fontSize={0.48} fill="#b4bbba">26</FixedText>
+          <FixedText x={86.29} y={102.96} zoom={zoom} fontSize={0.48} fill="#b4bbba">09</FixedText>
+          <FixedText x={90.22} y={103.37} zoom={zoom} fontSize={0.48} fill="#b4bbba">27</FixedText>
         </g>
       )}
 
       {detail && (
-        <text x={87.28} y={102.42} fontSize={0.42} fill="#8a9092" fontFamily="monospace">
+        <FixedText x={87.28} y={102.42} zoom={zoom} fontSize={0.56} fill="#8a9092">
           MDPC
-        </text>
+        </FixedText>
       )}
 
-      {buildingDetail && (
-        <g data-map-layer="mdpc-terminal-labels" fontFamily="monospace" fill="#aeb6b5">
-          <text x={87.48} y={103.86} fontSize={0.2}>TERMINAL B</text>
-          <text x={88.38} y={104.03} fontSize={0.2}>TERMINAL A</text>
+      {buildingDetail && zoom < 12 && (
+        <g data-map-layer="mdpc-terminal-labels">
+          <FixedText x={87.48} y={103.86} zoom={zoom} fontSize={0.44} fill="#aeb6b5">TERMINAL B</FixedText>
+          <FixedText x={88.38} y={104.03} zoom={zoom} fontSize={0.44} fill="#aeb6b5">TERMINAL A</FixedText>
         </g>
       )}
 
       {standDetail &&
         MDPC_STANDS.map((stand) => (
-          <g key={stand.name}>
-            <circle cx={stand.x} cy={stand.y} r={0.035} fill="#d6d3b1" />
+          <g key={stand.name} transform={fixedScaleTransform(stand.x, stand.y, zoom)}>
+            <circle cx={stand.x} cy={stand.y} r={0.038} fill="#d6d3b1" />
             <text
-              x={stand.x + 0.06}
-              y={stand.y + 0.03}
-              fontSize={0.25}
+              x={stand.x + 0.065}
+              y={stand.y + 0.035}
+              fontSize={0.38}
               fill="#d3d6d4"
               fontFamily="monospace"
             >
@@ -326,6 +357,7 @@ export default function ScopeRadarMap() {
               x={waypoint.x}
               y={waypoint.y}
               name={waypoint.name}
+              zoom={viewport.zoom}
               vor={waypoint.kind === "vor"}
             />
           ))}
