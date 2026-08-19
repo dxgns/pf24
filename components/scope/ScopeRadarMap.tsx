@@ -1,39 +1,58 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AIRSPACE_PATHS,
   MAP_BOUNDS,
-  MDPC_RUNWAYS,
   MDPC_STANDS,
   WAYPOINTS,
   type MapPath,
 } from "@/lib/scope/mapData";
-import { MDPC_BUILDINGS, MDPC_TRACE_TRANSFORM } from "@/lib/scope/mdpcGroundDetail";
-import { MDPC_CHART_TAXIWAYS } from "@/lib/scope/mdpcChartTaxiways";
-import { MDPC_SIMULATOR_MARKINGS } from "@/lib/scope/mdpcSimulatorDetail";
+import {
+  MDPC_SVG_BLACK,
+  MDPC_SVG_BLUE,
+  MDPC_SVG_GREEN,
+  MDPC_SVG_LAYER_TRANSLATE,
+} from "@/lib/scope/mdpcSvgBase";
+import { MDPC_SVG_WHITE_FILL, MDPC_SVG_WHITE_STROKE } from "@/lib/scope/mdpcSvgWhite";
+import {
+  MDPC_SVG_YELLOW_0204516,
+  MDPC_SVG_YELLOW_0246,
+  MDPC_SVG_YELLOW_0247355,
+  MDPC_SVG_YELLOW_0250474,
+  MDPC_SVG_YELLOW_0260986,
+} from "@/lib/scope/mdpcSvgYellow";
 
 type Viewport = { zoom: number; panX: number; panY: number };
 
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
-const MDPC_AIRPORT_GROUNDS_PATH =
-  "M 70 105 L 1600 70 L 1705 185 L 1690 680 L 1530 780 L 600 825 L 190 730 L 90 520 Z";
+// User-authored MDPC.svg -> PFTracker coordinates.
+// Calibrated against RWY 08, 26, 09 and 27 threshold coordinates.
+const MDPC_SVG_TRANSFORM =
+  "matrix(0.00602718270 0.000692389997 -0.0006984094 0.00603738534 85.6661924 101.218949)";
 
-const MDPC_APRONS = [
-  "M 86.93 103.28 L 87.67 103.31 L 87.71 103.67 L 87.52 103.73 L 87.16 103.72 L 86.96 103.63 Z",
-  "M 87.55 103.34 L 88.70 103.42 L 88.76 103.68 L 88.62 103.73 L 87.62 103.68 Z",
-  "M 88.12 103.34 L 88.59 103.38 L 88.62 103.54 L 88.18 103.51 Z",
-];
-
-// Affine fit from the supplied 10-9 SVG to PFTracker map coordinates.
-// Anchors used: RWY 08, 26, 09 and 27 thresholds. This is intentionally a
-// temporary calibration layer so we can judge scale/alignment before replacing
-// the hand-built airport geometry with a clean custom SVG.
-const MDPC_TAXI_SVG_TRANSFORM =
-  "matrix(0.00614720864 0.0006722426 -0.000705743261 0.00610175683 85.3179989 100.796699)";
+const MDPC_TAXI_LABELS = [
+  { name: "J", x: 85.99, y: 102.48 },
+  { name: "E", x: 86.78, y: 103.14 },
+  { name: "F", x: 86.56, y: 103.29 },
+  { name: "H", x: 87.67, y: 102.40 },
+  { name: "G", x: 87.78, y: 102.97 },
+  { name: "G", x: 87.74, y: 103.18 },
+  { name: "K", x: 88.45, y: 102.90 },
+  { name: "B", x: 88.19, y: 103.01 },
+  { name: "B", x: 88.17, y: 103.23 },
+  { name: "A", x: 89.07, y: 102.58 },
+  { name: "A", x: 89.06, y: 103.28 },
+  { name: "P", x: 89.58, y: 102.18 },
+  { name: "E2", x: 87.35, y: 103.32 },
+  { name: "E1", x: 87.69, y: 103.35 },
+  { name: "D", x: 87.86, y: 103.40 },
+  { name: "R1", x: 87.94, y: 103.31 },
+  { name: "R2", x: 88.06, y: 103.32 },
+] as const;
 
 function readViewport(): Viewport {
   try {
@@ -77,32 +96,61 @@ function ReadableText({
   y,
   zoom,
   children,
-  fontSize = 0.62,
-  fill = "#8a9092",
-  anchor,
+  fontSize = 0.34,
+  fill = "#dedfcb",
+  anchor = "middle",
 }: {
   x: number;
   y: number;
   zoom: number;
-  children: React.ReactNode;
+  children: ReactNode;
   fontSize?: number;
   fill?: string;
   anchor?: "start" | "middle" | "end";
 }) {
   return (
     <g transform={readableScaleTransform(x, y, zoom)}>
-      <text x={x} y={y} fontSize={fontSize} fill={fill} fontFamily="monospace" textAnchor={anchor}>
+      <text
+        x={x}
+        y={y}
+        fontSize={fontSize}
+        fill={fill}
+        fontFamily="monospace"
+        fontWeight={600}
+        textAnchor={anchor}
+        dominantBaseline="middle"
+      >
         {children}
       </text>
     </g>
   );
 }
 
-function Fix({ x, y, name, zoom, vor = false }: { x: number; y: number; name: string; zoom: number; vor?: boolean }) {
+function Fix({
+  x,
+  y,
+  name,
+  zoom,
+  vor = false,
+}: {
+  x: number;
+  y: number;
+  name: string;
+  zoom: number;
+  vor?: boolean;
+}) {
   return (
     <g transform={readableScaleTransform(x, y, zoom)}>
       {vor ? (
-        <circle cx={x} cy={y} r={0.15} fill="none" stroke="#8b9092" strokeWidth={0.045} vectorEffect="non-scaling-stroke" />
+        <circle
+          cx={x}
+          cy={y}
+          r={0.15}
+          fill="none"
+          stroke="#8b9092"
+          strokeWidth={0.045}
+          vectorEffect="non-scaling-stroke"
+        />
       ) : (
         <path
           d={`M ${x} ${y - 0.10} L ${x - 0.085} ${y + 0.065} L ${x + 0.085} ${y + 0.065} Z`}
@@ -119,141 +167,104 @@ function Fix({ x, y, name, zoom, vor = false }: { x: number; y: number; name: st
   );
 }
 
-function MdpcAirportBackground({ zoom }: { zoom: number }) {
-  if (zoom < 2.35) return null;
+function YellowPaths({
+  paths,
+  width,
+}: {
+  paths: readonly string[];
+  width: number;
+}) {
   return (
-    <g data-map-layer="mdpc-airport-background" transform={MDPC_TRACE_TRANSFORM}>
-      <path d={MDPC_AIRPORT_GROUNDS_PATH} fill="#00520d" stroke="none" />
-    </g>
-  );
-}
-
-function MdpcSvgChartReference({ zoom }: { zoom: number }) {
-  if (zoom < 2.35) return null;
-  return (
-    <g data-map-layer="mdpc-svg-chart-reference" transform={MDPC_TAXI_SVG_TRANSFORM}>
-      <image
-        href="/scope/mdpc-taxi-reference.svg"
-        x={0}
-        y={0}
-        width={895}
-        height={502}
-        preserveAspectRatio="none"
-        opacity={0.96}
-      />
-    </g>
-  );
-}
-
-function MdpcPavement({ zoom }: { zoom: number }) {
-  if (zoom < 2.35) return null;
-
-  return (
-    <g data-map-layer="mdpc-pavement">
-      {MDPC_CHART_TAXIWAYS.map((taxiway) => (
+    <>
+      {paths.map((d, index) => (
         <path
-          key={`pavement-${taxiway.id}`}
-          d={taxiway.d}
+          key={`${width}-${index}`}
+          d={d}
           fill="none"
-          stroke="#080a0a"
-          strokeWidth={0.050}
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          stroke="#d0d900"
+          strokeWidth={width}
+          strokeLinecap="butt"
+          strokeLinejoin="miter"
         />
       ))}
+    </>
+  );
+}
 
-      {MDPC_APRONS.map((d, index) => (
-        <path key={`mdpc-apron-${index}`} d={d} fill="#080a0a" stroke="none" />
-      ))}
+function MdpcSvgAirport({ zoom }: { zoom: number }) {
+  if (zoom < 2.35) return null;
+
+  return (
+    <g data-map-layer="mdpc-user-svg" transform={MDPC_SVG_TRANSFORM}>
+      <g transform={MDPC_SVG_LAYER_TRANSLATE}>
+        {MDPC_SVG_GREEN.map((d, index) => (
+          <path key={`green-${index}`} d={d} fill="#004000" />
+        ))}
+        {MDPC_SVG_BLACK.map((d, index) => (
+          <path key={`black-${index}`} d={d} fill="#000000" />
+        ))}
+        {MDPC_SVG_BLUE.map((d, index) => (
+          <path key={`blue-${index}`} d={d} fill="#00008d" />
+        ))}
+        {MDPC_SVG_WHITE_STROKE.map((d, index) => (
+          <path
+            key={`white-stroke-${index}`}
+            d={d}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth={0.246}
+          />
+        ))}
+        {MDPC_SVG_WHITE_FILL.map((d, index) => (
+          <path key={`white-fill-${index}`} d={d} fill="#ffffff" />
+        ))}
+        <YellowPaths paths={MDPC_SVG_YELLOW_0246} width={0.246} />
+        <YellowPaths paths={MDPC_SVG_YELLOW_0247355} width={0.247355} />
+        <YellowPaths paths={MDPC_SVG_YELLOW_0204516} width={0.204516} />
+        <YellowPaths paths={MDPC_SVG_YELLOW_0250474} width={0.250474} />
+        <YellowPaths paths={MDPC_SVG_YELLOW_0260986} width={0.260986} />
+      </g>
     </g>
   );
 }
 
-function MdpcGround({ zoom }: { zoom: number }) {
-  const detail = zoom >= 3.0;
-  const buildingDetail = zoom >= 4.2;
-  const standDetail = zoom >= 9.0;
-
+function MdpcLabels({ zoom }: { zoom: number }) {
   return (
-    <g data-map-layer="mdpc-ground">
-      {MDPC_RUNWAYS.map((runway) => (
-        <g key={runway.id}>
-          <polyline points={points(runway)} fill="none" stroke="#080a0a" strokeWidth={0.070} strokeLinecap="butt" />
-          <polyline points={points(runway)} fill="none" stroke="#d5d9d8" strokeWidth={0.009} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
-          <polyline points={points(runway)} fill="none" stroke="#d9dddd" strokeWidth={0.006} strokeDasharray="0.08 0.07" vectorEffect="non-scaling-stroke" />
-        </g>
-      ))}
-
-      {detail && MDPC_CHART_TAXIWAYS.map((taxiway) => (
-        <path
-          key={taxiway.id}
-          d={taxiway.d}
-          fill="none"
-          stroke="#c79216"
-          strokeWidth={0.014}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
-
-      {detail && (
-        <g data-map-layer="mdpc-simulator-markings">
-          {MDPC_SIMULATOR_MARKINGS.filter((marking) => marking.kind === "turn").map((marking) => (
-            <path key={marking.id} d={marking.d} fill="none" stroke="#c79216" strokeWidth={0.012} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-          ))}
-          {MDPC_SIMULATOR_MARKINGS.filter((marking) => marking.kind === "hold").map((marking) => (
-            <path key={marking.id} d={marking.d} fill="none" stroke="#d9ae35" strokeWidth={0.018} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
+    <>
+      {zoom >= 5.2 && (
+        <g data-map-layer="mdpc-taxiway-labels">
+          {MDPC_TAXI_LABELS.map((label, index) => (
+            <ReadableText
+              key={`${label.name}-${index}`}
+              x={label.x}
+              y={label.y}
+              zoom={zoom}
+              fontSize={0.34}
+              fill="#d0d900"
+            >
+              {label.name}
+            </ReadableText>
           ))}
         </g>
       )}
 
-      {buildingDetail && (
-        <g data-map-layer="mdpc-buildings" transform={MDPC_TRACE_TRANSFORM}>
-          {MDPC_BUILDINGS.map((building) => (
-            <polygon
-              key={building.id}
-              points={building.points.map((point) => `${point.x},${point.y}`).join(" ")}
-              fill="#1222a0"
-              fillOpacity={0.88}
-              stroke="#7c8788"
-              strokeWidth={0.05}
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
+      {zoom >= 8.5 && (
+        <g data-map-layer="mdpc-stand-labels">
+          {MDPC_STANDS.map((stand) => (
+            <ReadableText
+              key={stand.name}
+              x={stand.x}
+              y={stand.y + 0.045}
+              zoom={zoom}
+              fontSize={0.25}
+              fill="#f0efe0"
+            >
+              {stand.name}
+            </ReadableText>
           ))}
         </g>
       )}
-
-      {detail && (
-        <g data-map-layer="mdpc-runway-labels">
-          <ReadableText x={85.73} y={102.28} zoom={zoom} fontSize={0.50} fill="#c6cccc">08</ReadableText>
-          <ReadableText x={89.70} y={101.91} zoom={zoom} fontSize={0.50} fill="#c6cccc">26</ReadableText>
-          <ReadableText x={86.29} y={102.96} zoom={zoom} fontSize={0.50} fill="#c6cccc">09</ReadableText>
-          <ReadableText x={90.22} y={103.37} zoom={zoom} fontSize={0.50} fill="#c6cccc">27</ReadableText>
-        </g>
-      )}
-
-      {detail && zoom < 9 && (
-        <ReadableText x={87.28} y={102.42} zoom={zoom} fontSize={0.52} fill="#8a9092">MDPC</ReadableText>
-      )}
-
-      {buildingDetail && zoom < 10 && (
-        <g data-map-layer="mdpc-terminal-labels">
-          <ReadableText x={87.48} y={103.86} zoom={zoom} fontSize={0.36} fill="#c1c8c7">TERMINAL B</ReadableText>
-          <ReadableText x={88.38} y={104.03} zoom={zoom} fontSize={0.36} fill="#c1c8c7">TERMINAL A</ReadableText>
-        </g>
-      )}
-
-      {standDetail && MDPC_STANDS.map((stand) => (
-        <g key={stand.name} transform={readableScaleTransform(stand.x, stand.y, zoom)}>
-          <circle cx={stand.x} cy={stand.y} r={0.028} fill="#d6d3b1" />
-          <text x={stand.x + 0.05} y={stand.y + 0.028} fontSize={0.28} fill="#e0e2df" fontFamily="monospace">
-            {stand.name}
-          </text>
-        </g>
-      ))}
-    </g>
+    </>
   );
 }
 
@@ -296,16 +307,20 @@ export default function ScopeRadarMap() {
   if (!host) return null;
 
   return createPortal(
-    <div data-pf24-vector-map="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
+    <div
+      data-pf24-vector-map="true"
+      className="pointer-events-none absolute inset-0 z-[6] overflow-hidden"
+      aria-hidden="true"
+    >
       <svg
         className="absolute inset-0 block h-full w-full"
         viewBox={viewBox}
         preserveAspectRatio="xMidYMid meet"
-        style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}
+        style={{
+          transformOrigin: "0 0",
+          transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`,
+        }}
       >
-        <MdpcAirportBackground zoom={viewport.zoom} />
-        <MdpcSvgChartReference zoom={viewport.zoom} />
-
         <g data-map-layer="airspace">
           {AIRSPACE_PATHS.map((airspace) => {
             const style = pathStyle(airspace.tone);
@@ -324,11 +339,22 @@ export default function ScopeRadarMap() {
           })}
         </g>
 
+        <MdpcSvgAirport zoom={viewport.zoom} />
+
         <g data-map-layer="fixes">
           {WAYPOINTS.map((waypoint) => (
-            <Fix key={waypoint.name} x={waypoint.x} y={waypoint.y} name={waypoint.name} zoom={viewport.zoom} vor={waypoint.kind === "vor"} />
+            <Fix
+              key={waypoint.name}
+              x={waypoint.x}
+              y={waypoint.y}
+              name={waypoint.name}
+              zoom={viewport.zoom}
+              vor={waypoint.kind === "vor"}
+            />
           ))}
         </g>
+
+        <MdpcLabels zoom={viewport.zoom} />
       </svg>
     </div>,
     host,
