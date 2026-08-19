@@ -32,6 +32,7 @@ import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
 import ScopeUiConsistencyFixes from "@/components/scope/ScopeUiConsistencyFixes";
 import ScopeChromeAdditions from "@/components/scope/ScopeChromeAdditions";
+import ScopeInterfaceCorrections from "@/components/scope/ScopeInterfaceCorrections";
 import ScopeAtisDialogV2 from "@/components/scope/ScopeAtisDialogV2";
 import ScopeAtisJurisdictionGuard from "@/components/scope/ScopeAtisJurisdictionGuard";
 import ScopeConnectDialogPersistence from "@/components/scope/ScopeConnectDialogPersistence";
@@ -99,6 +100,7 @@ export default async function ScopePage() {
       <ScopeUiRefinements />
       <ScopeUiConsistencyFixes />
       <ScopeChromeAdditions />
+      <ScopeInterfaceCorrections />
       <ScopeAtisDialogV2 controllerName={controllerName} />
       <ScopeAtisJurisdictionGuard controllerName={controllerName} />
       <ScopeAtisDisconnectCleanup controllerName={controllerName} />
