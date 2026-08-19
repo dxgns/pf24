@@ -11,11 +11,7 @@ import {
   WAYPOINTS,
   type MapPath,
 } from "@/lib/scope/mapData";
-import {
-  MDPC_BUILDINGS,
-  MDPC_GROUND_REFERENCE_LINES,
-  MDPC_TRACE_TRANSFORM,
-} from "@/lib/scope/mdpcGroundDetail";
+import { MDPC_BUILDINGS, MDPC_TRACE_TRANSFORM } from "@/lib/scope/mdpcGroundDetail";
 import { MDPC_SIMULATOR_MARKINGS } from "@/lib/scope/mdpcSimulatorDetail";
 
 type Viewport = { zoom: number; panX: number; panY: number };
@@ -23,13 +19,9 @@ type Viewport = { zoom: number; panX: number; panY: number };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
-// Airport property/background outline traced in the same PFTracker reference pixel space
-// as the MDPC ground detail. This is deliberately a fill-only layer: no gray border.
 const MDPC_AIRPORT_GROUNDS_PATH =
   "M 70 105 L 1600 70 L 1705 185 L 1690 680 L 1530 780 L 600 825 L 190 730 L 90 520 Z";
 
-// Clean apron masses. These are intentionally simple chart-style shapes; the old
-// satellite-derived pavement silhouette was too jagged and created false bays/spikes.
 const MDPC_APRONS = [
   "M 86.93 103.28 L 87.67 103.31 L 87.71 103.67 L 87.52 103.73 L 87.16 103.72 L 86.96 103.63 Z",
   "M 87.55 103.34 L 88.70 103.42 L 88.76 103.68 L 88.62 103.73 L 87.62 103.68 Z",
@@ -68,7 +60,6 @@ function pathStyle(tone: MapPath["tone"]) {
   return { stroke: "#777d7f", width: 0.075, dash: undefined };
 }
 
-// Keep labels readable without letting them grow at the same rate as airport geometry.
 function readableScaleTransform(x: number, y: number, zoom: number) {
   const inverse = 1 / Math.pow(Math.max(zoom, 1), 0.38);
   return `translate(${x} ${y}) scale(${inverse}) translate(${-x} ${-y})`;
@@ -123,7 +114,6 @@ function Fix({ x, y, name, zoom, vor = false }: { x: number; y: number; name: st
 
 function MdpcAirportBackground({ zoom }: { zoom: number }) {
   if (zoom < 2.35) return null;
-
   return (
     <g data-map-layer="mdpc-airport-background" transform={MDPC_TRACE_TRANSFORM}>
       <path d={MDPC_AIRPORT_GROUNDS_PATH} fill="#00520d" stroke="none" />
@@ -136,35 +126,21 @@ function MdpcPavement({ zoom }: { zoom: number }) {
 
   return (
     <g data-map-layer="mdpc-pavement">
-      {/* Smooth pavement corridors from the airport trace centerlines. */}
-      <g transform={MDPC_TRACE_TRANSFORM}>
-        {MDPC_GROUND_REFERENCE_LINES.map((line) => (
-          <path
-            key={`pavement-${line.id}`}
-            d={line.d}
-            fill="none"
-            stroke="#080a0a"
-            strokeWidth={18}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ))}
-      </g>
-
-      {/* Confirmed taxiways in PFTracker coordinates. */}
+      {/* Only PF-coordinate movement lines are allowed to create taxiway pavement.
+          The old pixel trace is intentionally excluded: it was producing false streets
+          and the wrong scale. */}
       {MDPC_TAXIWAYS.map((taxiway) => (
         <path
           key={`pavement-${taxiway.id}`}
           d={taxiway.d}
           fill="none"
           stroke="#080a0a"
-          strokeWidth={0.20}
+          strokeWidth={0.050}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
       ))}
 
-      {/* Main apron surfaces are clean chart-style masses instead of the noisy trace. */}
       {MDPC_APRONS.map((d, index) => (
         <path key={`mdpc-apron-${index}`} d={d} fill="#080a0a" stroke="none" />
       ))}
@@ -173,55 +149,19 @@ function MdpcPavement({ zoom }: { zoom: number }) {
 }
 
 function MdpcGround({ zoom }: { zoom: number }) {
-  const surfaceDetail = zoom >= 2.35;
   const detail = zoom >= 3.0;
   const buildingDetail = zoom >= 4.2;
   const standDetail = zoom >= 9.0;
 
   return (
     <g data-map-layer="mdpc-ground">
-      {surfaceDetail && (
-        <g data-map-layer="mdpc-chart-ground" transform={MDPC_TRACE_TRANSFORM}>
-          {MDPC_GROUND_REFERENCE_LINES.map((line) => (
-            <g key={line.id}>
-              {detail && (
-                <path
-                  d={line.d}
-                  fill="none"
-                  stroke="#c79216"
-                  strokeWidth={0.055}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              )}
-            </g>
-          ))}
-
-          {buildingDetail && (
-            <g data-map-layer="mdpc-buildings">
-              {MDPC_BUILDINGS.map((building) => (
-                <polygon
-                  key={building.id}
-                  points={building.points.map((point) => `${point.x},${point.y}`).join(" ")}
-                  fill="#1222a0"
-                  fillOpacity={0.88}
-                  stroke="#7c8788"
-                  strokeWidth={0.05}
-                  strokeLinejoin="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))}
-            </g>
-          )}
-        </g>
-      )}
-
       {MDPC_RUNWAYS.map((runway) => (
         <g key={runway.id}>
-          <polyline points={points(runway)} fill="none" stroke="#161b1c" strokeWidth={0.38} strokeLinecap="butt" />
-          <polyline points={points(runway)} fill="none" stroke="#969e9f" strokeWidth={0.055} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
-          <polyline points={points(runway)} fill="none" stroke="#d9dddd" strokeWidth={0.025} strokeDasharray="0.18 0.16" vectorEffect="non-scaling-stroke" />
+          {/* MDPC runway proportions are kept close to physical scale instead of the
+              exaggerated chart stroke used by the first prototype. */}
+          <polyline points={points(runway)} fill="none" stroke="#080a0a" strokeWidth={0.070} strokeLinecap="butt" />
+          <polyline points={points(runway)} fill="none" stroke="#d5d9d8" strokeWidth={0.009} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
+          <polyline points={points(runway)} fill="none" stroke="#d9dddd" strokeWidth={0.006} strokeDasharray="0.08 0.07" vectorEffect="non-scaling-stroke" />
         </g>
       ))}
 
@@ -231,7 +171,7 @@ function MdpcGround({ zoom }: { zoom: number }) {
           d={taxiway.d}
           fill="none"
           stroke="#c79216"
-          strokeWidth={0.058}
+          strokeWidth={0.014}
           strokeLinecap="round"
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
@@ -241,10 +181,27 @@ function MdpcGround({ zoom }: { zoom: number }) {
       {detail && (
         <g data-map-layer="mdpc-simulator-markings">
           {MDPC_SIMULATOR_MARKINGS.filter((marking) => marking.kind === "turn").map((marking) => (
-            <path key={marking.id} d={marking.d} fill="none" stroke="#c79216" strokeWidth={0.05} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            <path key={marking.id} d={marking.d} fill="none" stroke="#c79216" strokeWidth={0.012} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           ))}
           {MDPC_SIMULATOR_MARKINGS.filter((marking) => marking.kind === "hold").map((marking) => (
-            <path key={marking.id} d={marking.d} fill="none" stroke="#d9ae35" strokeWidth={0.075} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
+            <path key={marking.id} d={marking.d} fill="none" stroke="#d9ae35" strokeWidth={0.018} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
+          ))}
+        </g>
+      )}
+
+      {buildingDetail && (
+        <g data-map-layer="mdpc-buildings" transform={MDPC_TRACE_TRANSFORM}>
+          {MDPC_BUILDINGS.map((building) => (
+            <polygon
+              key={building.id}
+              points={building.points.map((point) => `${point.x},${point.y}`).join(" ")}
+              fill="#1222a0"
+              fillOpacity={0.88}
+              stroke="#7c8788"
+              strokeWidth={0.05}
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
           ))}
         </g>
       )}
@@ -327,10 +284,7 @@ export default function ScopeRadarMap() {
         preserveAspectRatio="xMidYMid meet"
         style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}
       >
-        {/* Layer 1: airport grounds / infield. */}
         <MdpcAirportBackground zoom={viewport.zoom} />
-
-        {/* Layer 2: clean paved surfaces, directly above the green infield. */}
         <MdpcPavement zoom={viewport.zoom} />
 
         <g data-map-layer="airspace">
