@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { supabase } from "@/lib/supabase";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
+import { MAP_BOUNDS } from "@/lib/scope/mapData";
 import { getGameCallsignFromNotes } from "@/lib/flightPlanGameCallsign";
 import {
   AIRLINE_CALLSIGNS,
@@ -152,17 +153,34 @@ function defaultControl(): ControlState {
   };
 }
 
+// Convert Project Flight world coordinates into the exact same coordinate system
+// used by ScopeRadarMap (MAP_BOUNDS), rather than an independent 0..100 grid.
 function radarCoordinates(worldX: number, worldZ: number): Point {
+  const normalizedX = clamp((worldX - MIN_X) / (MAX_X - MIN_X), 0, 1);
+  const normalizedY = clamp((worldZ - MIN_Z) / (MAX_Z - MIN_Z), 0, 1);
   return {
-    x: clamp(((worldX - MIN_X) / (MAX_X - MIN_X)) * 100, 0, 100),
-    y: clamp(((worldZ - MIN_Z) / (MAX_Z - MIN_Z)) * 100, 0, 100),
+    x: MAP_BOUNDS.minX + normalizedX * (MAP_BOUNDS.maxX - MAP_BOUNDS.minX),
+    y: MAP_BOUNDS.minY + normalizedY * (MAP_BOUNDS.maxY - MAP_BOUNDS.minY),
   };
 }
 
+// ScopeRadarMap uses an SVG viewBox with preserveAspectRatio="xMidYMid meet".
+// Reproduce that projection before applying the shared pan/zoom so traffic,
+// trails and interaction targets land on the same pixels as the vector map.
 function screenPoint(size: Point, x: number, y: number, viewport: Viewport): Point {
+  const mapWidth = MAP_BOUNDS.maxX - MAP_BOUNDS.minX;
+  const mapHeight = MAP_BOUNDS.maxY - MAP_BOUNDS.minY;
+  const fitScale = Math.min(size.x / mapWidth, size.y / mapHeight);
+  const renderedWidth = mapWidth * fitScale;
+  const renderedHeight = mapHeight * fitScale;
+  const offsetX = (size.x - renderedWidth) / 2;
+  const offsetY = (size.y - renderedHeight) / 2;
+  const baseX = offsetX + (x - MAP_BOUNDS.minX) * fitScale;
+  const baseY = offsetY + (y - MAP_BOUNDS.minY) * fitScale;
+
   return {
-    x: size.x * (x / 100) * viewport.zoom + viewport.panX,
-    y: size.y * (y / 100) * viewport.zoom + viewport.panY,
+    x: baseX * viewport.zoom + viewport.panX,
+    y: baseY * viewport.zoom + viewport.panY,
   };
 }
 
@@ -952,11 +970,7 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
           <div className="border-b border-[#f2f2f2] px-2 text-center text-[11px] leading-[20px] text-[#22e000]">
             {displayCallsign}
           </div>
-          {[
-            "Callsign",
-            "Assume",
-            "FPL",
-          ].map((label) => <button
+          {["Callsign", "Assume", "FPL"].map((label) => <button
             key={label}
             type="button"
             onClick={(event) => event.stopPropagation()}
