@@ -233,11 +233,12 @@ function MdpcSvgAirport({ zoom }: { zoom: number }) {
   return (
     <g data-map-layer="mdpc-user-svg" transform={MDPC_SVG_TRANSFORM}>
       <g transform={MDPC_SVG_LAYER_TRANSLATE}>
-        {MDPC_SVG_GREEN.map((d, index) => (
-          <path key={`green-${index}`} d={d} fill="#004000" />
-        ))}
+        {MDPC_SVG_GREEN[0] && <path d={MDPC_SVG_GREEN[0]} fill="#004000" />}
         {MDPC_SVG_BLACK.map((d, index) => (
           <path key={`black-${index}`} d={d} fill="#000000" />
+        ))}
+        {MDPC_SVG_GREEN.slice(1).map((d, index) => (
+          <path key={`green-overlay-${index}`} d={d} fill="#004000" />
         ))}
         {MDPC_SVG_BLUE.map((d, index) => (
           <path key={`blue-${index}`} d={d} fill="#00008d" />
