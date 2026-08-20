@@ -1,19 +1,18 @@
 const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
 
-// Wide-area Project Flight -> Scope calibration from six measured anchors spread
-// across the map. Unlike the previous MDPC-only samples, these points are far
-// apart and make the real relationship obvious: Project Flight X maps almost
-// directly to Scope X, Project Flight Z maps almost directly to Scope Y, both at
-// ~0.00072 scale, with only negligible cross-axis terms.
+// Wide-area Project Flight -> Scope calibration using all ten measured anchors
+// currently available: six points spread across the full map plus four MDST
+// runway/stand checks. The relationship is essentially axis-aligned at ~0.00072
+// Scope units per Project Flight world unit; the cross-axis terms are tiny.
 //
-// Least-squares fit over the six supplied anchors. Maximum residual is below
-// ~0.005 Scope units, so do not reintroduce the previous apron-only calibration.
-const MAP_XX = 0.0007200156519174086;
-const MAP_XZ = 5.388941309750032e-8;
-const MAP_X_OFFSET = 119.9981365628254;
-const MAP_YX = -5.53022992363797e-8;
-const MAP_YZ = 0.000720028458982184;
-const MAP_Y_OFFSET = 67.50311086266628;
+// Keeping all ten points in the least-squares fit reduces the MDST residual from
+// ~0.015 to below ~0.009 Scope units without sacrificing the wide-area fit.
+const MAP_XX = 0.0007199679402183645;
+const MAP_XZ = 5.208285458837593e-8;
+const MAP_X_OFFSET = 119.9995254587802;
+const MAP_YX = -1.173930619021416e-8;
+const MAP_YZ = 0.0007200273787600041;
+const MAP_Y_OFFSET = 67.50174811414595;
 
 // ProjectFlightTrafficV6 still consumes the legacy -180000..180000 world range
 // and maps it to PFTracker X 15..210 / Y 37..120. Convert calibrated map points
