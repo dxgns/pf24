@@ -1,19 +1,22 @@
 const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
 
-// Project Flight world X/Z and the PFTracker-style Scope map are not related by
-// a pure rotation + uniform scale. The map itself has different scale along its
-// two axes, so the previous similarity transform over-travelled aircraft in the
-// runway/taxiway direction even though the parking-row anchors looked close.
+// The airport drawing is already calibrated correctly against all four MDPC
+// runway thresholds. The traffic drift came from solving the Project Flight
+// world->Scope transform only from B30, stand 1 and stand 11: those anchors sit
+// on the same narrow apron row, so tiny stand-position errors get magnified when
+// extrapolating north toward the runways.
 //
-// Use the full 2D affine transform solved from the three measured MDPC anchors:
-// B30, stand 1 and stand 11. Unlike the previous similarity fit, this allows
-// independent axis scale plus the small cross-axis terms required by the map.
-const MAP_XX = 0.00071179018198274128;
-const MAP_XZ = 3.2260615169544271e-05;
-const MAP_X_OFFSET = 118.02339473100434;
-const MAP_YX = 4.2439987137476501e-05;
-const MAP_YZ = 0.00046301184192852146;
-const MAP_Y_OFFSET = 82.234783320953397;
+// Refit the full 2D affine transform using those three measured stand anchors
+// plus a fourth off-apron anchor at RWY 08. The RWY 08 raw point is recovered
+// from the live screenshot through the previous transform and the already
+// calibrated runway geometry. Least-squares keeps the stand residual below
+// ~0.08 Scope units while pinning the runway anchor to within ~0.004 units.
+const MAP_XX = 0.0004958495663542954;
+const MAP_XZ = 0.0010314940123471793;
+const MAP_X_OFFSET = 58.36623225306775;
+const MAP_YX = 1.3975888778991583e-05;
+const MAP_YZ = 0.0005947252638577364;
+const MAP_Y_OFFSET = 74.37110597846733;
 
 // ProjectFlightTrafficV6 still consumes the legacy -180000..180000 world range
 // and maps it to PFTracker X 15..210 / Y 37..120. Convert calibrated map points
