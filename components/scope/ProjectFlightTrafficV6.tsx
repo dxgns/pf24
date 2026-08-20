@@ -85,6 +85,11 @@ const MAX_X = 180000;
 const MIN_Z = -180000;
 const MAX_Z = 180000;
 
+// Project Flight traffic was originally calibrated against the PFTracker map
+// before the render viewBox was extended south to y=0 for EFKT. Keep that
+// calibration basis independent from the current render bounds.
+const TRAFFIC_MAP_BOUNDS = { minX: 15, maxX: 210, minY: 37, maxY: 120 } as const;
+
 const ALTITUDE_OPTIONS = Array.from({ length: 41 }, (_, index) => String(index * 5).padStart(3, "0"));
 const SPEED_OPTIONS = Array.from({ length: 21 }, (_, index) => 50 + index * 10);
 const AIRLINE_ICAO_CODES = Array.from(new Set(AIRLINE_CALLSIGNS.map((airline) => airline.icao)))
@@ -153,20 +158,17 @@ function defaultControl(): ControlState {
   };
 }
 
-// Convert Project Flight world coordinates into the exact same coordinate system
-// used by ScopeRadarMap (MAP_BOUNDS), rather than an independent 0..100 grid.
 function radarCoordinates(worldX: number, worldZ: number): Point {
   const normalizedX = clamp((worldX - MIN_X) / (MAX_X - MIN_X), 0, 1);
   const normalizedY = clamp((worldZ - MIN_Z) / (MAX_Z - MIN_Z), 0, 1);
   return {
-    x: MAP_BOUNDS.minX + normalizedX * (MAP_BOUNDS.maxX - MAP_BOUNDS.minX),
-    y: MAP_BOUNDS.minY + normalizedY * (MAP_BOUNDS.maxY - MAP_BOUNDS.minY),
+    x: TRAFFIC_MAP_BOUNDS.minX + normalizedX * (TRAFFIC_MAP_BOUNDS.maxX - TRAFFIC_MAP_BOUNDS.minX),
+    y: TRAFFIC_MAP_BOUNDS.minY + normalizedY * (TRAFFIC_MAP_BOUNDS.maxY - TRAFFIC_MAP_BOUNDS.minY),
   };
 }
 
-// ScopeRadarMap uses an SVG viewBox with preserveAspectRatio="xMidYMid meet".
-// Reproduce that projection before applying the shared pan/zoom so traffic,
-// trails and interaction targets land on the same pixels as the vector map.
+// ScopeRadarMap uses the CURRENT expanded SVG viewBox. Traffic coordinates are
+// calibrated above, then projected through these render bounds so EFKT remains visible.
 function screenPoint(size: Point, x: number, y: number, viewport: Viewport): Point {
   const mapWidth = MAP_BOUNDS.maxX - MAP_BOUNDS.minX;
   const mapHeight = MAP_BOUNDS.maxY - MAP_BOUNDS.minY;
