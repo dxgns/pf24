@@ -6,11 +6,6 @@ import { MAP_BOUNDS } from "@/lib/scope/mapData";
 
 type Viewport = { zoom: number; panX: number; panY: number };
 type MdstLabel = { text: string; x: number; y: number; transform: string; fill: string };
-type MdstVerifiedStand = {
-  name: string;
-  source: { x: number; y: number };
-  target: { x: number; y: number };
-};
 
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
@@ -21,9 +16,15 @@ const MDST_RUNWAY_11 = { x: 67.19, y: 92.42 } as const;
 const MDST_RUNWAY_29 = { x: 69.56, y: 93.45 } as const;
 
 // IMPORTANT: the MDST source SVG is internally self-consistent. Do not shear or
-// stretch the whole airport to force individual parking spots to fit. The runway
-// is the stable airport-wide reference; local stand discrepancies are corrected
-// below at the stand endpoints instead of distorting the entire field.
+// stretch it to force individual parking spots to fit. Previous versions used a
+// free affine transform based on a misidentified B1 geometry anchor, which
+// distorted the apron even though the runway still looked plausible.
+//
+// This is the unique similarity transform (uniform scale + rotation +
+// translation) that maps the SVG runway centreline endpoints
+//   (31.152344, 31.58984) -> RWY 11
+//   (770.6162, 33.14573) -> RWY 29
+// after the SVG's own translate(-3.5 -283.5) has been applied.
 const MDST_IMAGE_MATRIX = {
   a: 0.0032079413749857145,
   b: 0.0013861513146006619,
@@ -38,6 +39,8 @@ const MDST_IMAGE_TRANSFORM = `matrix(${MDST_IMAGE_MATRIX.a} ${MDST_IMAGE_MATRIX.
 // Text anchors below are stored in the original Inkscape coordinate frame,
 // before the source layer's translate(-3.5 -283.5). Derive their translation
 // from the image matrix instead of maintaining a second hand-tuned matrix.
+// Keeping a single source of truth prevents labels and pavement from drifting
+// apart when the airport calibration changes.
 const MDST_SOURCE_LAYER_OFFSET = { x: -3.5, y: -283.5 } as const;
 const MDST_MAP_MATRIX = {
   a: MDST_IMAGE_MATRIX.a,
@@ -54,26 +57,6 @@ const MDST_MAP_MATRIX = {
     MDST_IMAGE_MATRIX.d * MDST_SOURCE_LAYER_OFFSET.y,
 } as const;
 const MDST_MAP_SCALE = Math.hypot(MDST_MAP_MATRIX.a, MDST_MAP_MATRIX.b);
-
-// These two stand endpoints were measured directly against live Project Flight
-// traffic after the wide-area RAW->Scope calibration was established. Their RAW
-// samples land within ~0.008 Scope units of the supplied coordinates, proving the
-// remaining visible offset is local to the MDST SVG drawing rather than traffic.
-// `source` is the actual endpoint of the corresponding yellow SVG stand lead-in
-// in original Inkscape coordinates. We extend only that local line to the verified
-// simulator position instead of warping the complete airport.
-const MDST_VERIFIED_STANDS: readonly MdstVerifiedStand[] = [
-  {
-    name: "B6",
-    source: { x: 483.63013, y: 414.17636 },
-    target: { x: 68.47, y: 93.37 },
-  },
-  {
-    name: "C1",
-    source: { x: 613.6875, y: 407.0 },
-    target: { x: 68.96, y: 93.52 },
-  },
-] as const;
 
 // Every label is rendered outside the rotated source SVG so letters and gate
 // numbers stay upright relative to the Scope while retaining their SVG anchor.
@@ -114,15 +97,6 @@ function readViewport(): Viewport {
 
 function findRadar() {
   return document.querySelector<HTMLElement>("main.fixed > section");
-}
-
-function sourcePointToMap(point: { x: number; y: number }) {
-  const localX = point.x + MDST_SOURCE_LAYER_OFFSET.x;
-  const localY = point.y + MDST_SOURCE_LAYER_OFFSET.y;
-  return {
-    x: MDST_IMAGE_MATRIX.a * localX + MDST_IMAGE_MATRIX.c * localY + MDST_IMAGE_MATRIX.e,
-    y: MDST_IMAGE_MATRIX.b * localX + MDST_IMAGE_MATRIX.d * localY + MDST_IMAGE_MATRIX.f,
-  };
 }
 
 function labelPlacement(label: MdstLabel) {
@@ -245,23 +219,6 @@ export default function MdstSvgAirport() {
               transform={MDST_IMAGE_TRANSFORM}
               preserveAspectRatio="none"
             />
-            <g data-map-layer="mdst-verified-stand-endpoints">
-              {MDST_VERIFIED_STANDS.map((stand) => {
-                const source = sourcePointToMap(stand.source);
-                return (
-                  <line
-                    key={stand.name}
-                    x1={source.x}
-                    y1={source.y}
-                    x2={stand.target.x}
-                    y2={stand.target.y}
-                    stroke="#d2db00"
-                    strokeWidth={0.00115}
-                    strokeLinecap="round"
-                  />
-                );
-              })}
-            </g>
             <g data-map-layer="mdst-svg-labels-upright">
               {MDST_LABELS.map((label, index) => {
                 const placement = labelPlacement(label);
