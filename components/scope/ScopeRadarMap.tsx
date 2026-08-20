@@ -26,6 +26,7 @@ import {
   MDPC_SVG_GRAY_STROKES,
   MDPC_SVG_LABELS,
   MDPC_SVG_RED_STROKES,
+  type MdpcSvgLabel,
 } from "@/lib/scope/mdpcSvgAnnotations";
 
 type Viewport = { zoom: number; panX: number; panY: number };
@@ -37,6 +38,20 @@ const VIEWPORT_EVENT = "pf24-radar-viewport";
 // Calibrated against RWY 08, 26, 09 and 27 threshold coordinates.
 const MDPC_SVG_TRANSFORM =
   "matrix(0.00602718270 0.000692389997 -0.0006984094 0.00603738534 85.6661924 101.218949)";
+
+const MDPC_MAP_MATRIX = {
+  a: 0.00602718270,
+  b: 0.000692389997,
+  c: -0.0006984094,
+  d: 0.00603738534,
+  e: 85.6661924,
+  f: 101.218949,
+} as const;
+const MDPC_LAYER_OFFSET = { x: -50.204581, y: -68.619965 } as const;
+const MDPC_MAP_SCALE = (
+  Math.hypot(MDPC_MAP_MATRIX.a, MDPC_MAP_MATRIX.b) +
+  Math.hypot(MDPC_MAP_MATRIX.c, MDPC_MAP_MATRIX.d)
+) / 2;
 
 function readViewport(): Viewport {
   try {
@@ -134,80 +149,120 @@ function YellowPaths({ paths, width }: { paths: readonly string[]; width: number
   );
 }
 
+function mdpcSvgLabelPlacement(label: MdpcSvgLabel) {
+  let localX = label.x;
+  let localY = label.y;
+  let localScale = 1;
+
+  const matrixMatch = label.transform.match(/^matrix\(([^)]+)\)$/);
+  const translateMatch = label.transform.match(/^translate\(([^)]+)\)$/);
+
+  if (matrixMatch) {
+    const values = matrixMatch[1].split(/[ ,]+/).map(Number);
+    if (values.length === 6 && values.every(Number.isFinite)) {
+      const [a, b, c, d, e, f] = values;
+      const x = a * label.x + c * label.y + e;
+      const y = b * label.x + d * label.y + f;
+      localX = x;
+      localY = y;
+      localScale = (Math.hypot(a, b) + Math.hypot(c, d)) / 2;
+    }
+  } else if (translateMatch) {
+    const values = translateMatch[1].split(/[ ,]+/).map(Number);
+    if (values.length >= 1 && values.every(Number.isFinite)) {
+      localX += values[0] ?? 0;
+      localY += values[1] ?? 0;
+    }
+  }
+
+  localX += MDPC_LAYER_OFFSET.x;
+  localY += MDPC_LAYER_OFFSET.y;
+
+  return {
+    x: MDPC_MAP_MATRIX.a * localX + MDPC_MAP_MATRIX.c * localY + MDPC_MAP_MATRIX.e,
+    y: MDPC_MAP_MATRIX.b * localX + MDPC_MAP_MATRIX.d * localY + MDPC_MAP_MATRIX.f,
+    fontSize: 16 * localScale * MDPC_MAP_SCALE,
+  };
+}
+
 function MdpcSvgAirport({ zoom }: { zoom: number }) {
   if (zoom < 2.35) return null;
 
   return (
-    <g data-map-layer="mdpc-user-svg" transform={MDPC_SVG_TRANSFORM}>
-      <g transform={MDPC_SVG_LAYER_TRANSLATE}>
-        {MDPC_SVG_GREEN[0] && <path d={MDPC_SVG_GREEN[0]} fill="#004000" />}
+    <>
+      <g data-map-layer="mdpc-user-svg" transform={MDPC_SVG_TRANSFORM}>
+        <g transform={MDPC_SVG_LAYER_TRANSLATE}>
+          {MDPC_SVG_GREEN[0] && <path d={MDPC_SVG_GREEN[0]} fill="#004000" />}
 
-        {MDPC_SVG_BLACK.map((d, index) => (
-          <path key={`black-${index}`} d={d} fill="#000000" />
-        ))}
+          {MDPC_SVG_BLACK.map((d, index) => (
+            <path key={`black-${index}`} d={d} fill="#000000" />
+          ))}
 
-        {MDPC_SVG_GREEN.slice(1).map((d, index) => (
-          <path key={`green-overlay-${index}`} d={d} fill="#004000" />
-        ))}
+          {MDPC_SVG_GREEN.slice(1).map((d, index) => (
+            <path key={`green-overlay-${index}`} d={d} fill="#004000" />
+          ))}
 
-        {MDPC_SVG_BLUE.map((d, index) => (
-          <path key={`blue-${index}`} d={d} fill="#00008d" />
-        ))}
+          {MDPC_SVG_BLUE.map((d, index) => (
+            <path key={`blue-${index}`} d={d} fill="#00008d" />
+          ))}
 
-        {MDPC_SVG_WHITE_STROKE.map((d, index) => (
-          <path key={`white-stroke-${index}`} d={d} fill="none" stroke="#ffffff" strokeWidth={0.246} />
-        ))}
+          {MDPC_SVG_WHITE_STROKE.map((d, index) => (
+            <path key={`white-stroke-${index}`} d={d} fill="none" stroke="#ffffff" strokeWidth={0.246} />
+          ))}
 
-        {MDPC_SVG_WHITE_FILL.map((d, index) => (
-          <path key={`white-fill-${index}`} d={d} fill="#ffffff" />
-        ))}
+          {MDPC_SVG_WHITE_FILL.map((d, index) => (
+            <path key={`white-fill-${index}`} d={d} fill="#ffffff" />
+          ))}
 
-        <YellowPaths paths={MDPC_SVG_YELLOW_0246} width={0.246} />
-        <YellowPaths paths={MDPC_SVG_YELLOW_0247355} width={0.247355} />
-        <YellowPaths paths={MDPC_SVG_YELLOW_0204516} width={0.204516} />
-        <YellowPaths paths={MDPC_SVG_YELLOW_0250474} width={0.250474} />
-        <YellowPaths paths={MDPC_SVG_YELLOW_0260986} width={0.260986} />
+          <YellowPaths paths={MDPC_SVG_YELLOW_0246} width={0.246} />
+          <YellowPaths paths={MDPC_SVG_YELLOW_0247355} width={0.247355} />
+          <YellowPaths paths={MDPC_SVG_YELLOW_0204516} width={0.204516} />
+          <YellowPaths paths={MDPC_SVG_YELLOW_0250474} width={0.250474} />
+          <YellowPaths paths={MDPC_SVG_YELLOW_0260986} width={0.260986} />
 
-        {MDPC_SVG_GRAY_STROKES.map((d, index) => (
-          <path
-            key={`gray-detail-${index}`}
-            d={d}
-            fill="none"
-            stroke="#c9c9c9"
-            strokeWidth={0.246}
-          />
-        ))}
+          {MDPC_SVG_GRAY_STROKES.map((d, index) => (
+            <path
+              key={`gray-detail-${index}`}
+              d={d}
+              fill="none"
+              stroke="#c9c9c9"
+              strokeWidth={0.246}
+            />
+          ))}
 
-        {/* Labels now come directly from the user's SVG. They intentionally scale
-            with the airport as radar zoom changes; R1/R2 are not added separately. */}
-        <g data-map-layer="mdpc-svg-labels">
-          {MDPC_SVG_LABELS.map((label, index) => (
+          {MDPC_SVG_RED_STROKES.map((d, index) => (
+            <path
+              key={`red-detail-${index}`}
+              d={d}
+              fill="none"
+              stroke="#7e0000"
+              strokeWidth={0.246}
+            />
+          ))}
+        </g>
+      </g>
+
+      {/* Keep all MDPC annotations horizontal in map coordinates. Their anchor
+          positions still come from the original SVG; only SVG rotation/shear is removed. */}
+      <g data-map-layer="mdpc-svg-labels-upright">
+        {MDPC_SVG_LABELS.map((label, index) => {
+          const placement = mdpcSvgLabelPlacement(label);
+          return (
             <text
               key={`${label.text}-${index}`}
-              x={label.x}
-              y={label.y}
-              transform={label.transform}
+              x={placement.x}
+              y={placement.y}
               fill={label.fill}
               fontFamily="'B612 Mono', monospace"
-              fontSize={16}
+              fontSize={placement.fontSize}
               fontWeight={400}
             >
               {label.text}
             </text>
-          ))}
-        </g>
-
-        {MDPC_SVG_RED_STROKES.map((d, index) => (
-          <path
-            key={`red-detail-${index}`}
-            d={d}
-            fill="none"
-            stroke="#7e0000"
-            strokeWidth={0.246}
-          />
-        ))}
+          );
+        })}
       </g>
-    </g>
+    </>
   );
 }
 
