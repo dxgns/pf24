@@ -10,21 +10,20 @@ type MdstLabel = { text: string; x: number; y: number; transform: string; fill: 
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
-// Refined from four measured Project Flight anchors spread across MDST:
-// RWY11 67.19/92.42, A1 68.29/93.23, B1 68.70/93.42 and RWY29 69.56/93.45.
-// Traffic itself now matches the global RAW->Scope calibration to within ~0.015
-// Scope units at these samples, so this correction belongs to the airport SVG,
-// not to the global traffic transform.
+// Calibrated against the actual MDST SVG geometry, not the text anchors.
+// Anchors: both runway thresholds plus the A1 stand centerline and the B1
+// curved stand lead-in. The traffic RAW->Scope transform is already correct;
+// this matrix only aligns the airport drawing to those measured map points.
 const MDST_IMAGE_TRANSFORM =
-  "matrix(0.00318423555 0.00138049700 -0.000973277787 0.00412920115 67.1293369 92.2478207)";
+  "matrix(0.00321204403 0.00139983452 -0.00119593179 0.00342202732 67.1170656 92.2683632)";
 
 const MDST_MAP_MATRIX = {
-  a: 0.00318423555,
-  b: 0.00138049700,
-  c: -0.000973277787,
-  d: 0.00412920115,
-  e: 67.3941164,
-  f: 91.0723604,
+  a: 0.00321204403,
+  b: 0.00139983452,
+  c: -0.00119593179,
+  d: 0.00342202732,
+  e: 67.4448701,
+  f: 91.2933190,
 } as const;
 const MDST_MAP_SCALE = (
   Math.hypot(MDST_MAP_MATRIX.a, MDST_MAP_MATRIX.b) +
