@@ -30,10 +30,9 @@ export type SecondaryAirport = {
   uncontrolled?: boolean;
 };
 
-// MDST now has a dedicated SVG renderer. Keep its validated reference points
-// exported for calibration/operations, but do not include MDST in
-// SECONDARY_AIRPORTS: rendering the old schematic and the SVG simultaneously
-// produced two different apron/runway coordinate frames on top of each other.
+// Dedicated SVG airports keep their reference coordinates here but are not
+// included in SECONDARY_AIRPORTS. Rendering their old schematic geometry at the
+// same time as the SVG created overlapping, slightly different coordinate frames.
 export const MDST_REFERENCE_RUNWAY: SecondaryRunway = {
   id: "MDST_11_29",
   endA: { x: 67.19, y: 92.42, label: "11" },
@@ -58,60 +57,17 @@ export const MDST_REFERENCE_STANDS: SecondaryStand[] = [
   { name: "C4", x: 68.80, y: 93.45 },
 ];
 
+export const MDAB_REFERENCE_RUNWAY: SecondaryRunway = {
+  id: "MDAB_11_29",
+  endA: { x: 80.58, y: 95.40, label: "11" },
+  endB: { x: 82.31, y: 95.71, label: "29" },
+};
+
 /**
- * Runway ends, taxiway reference points and stands are PFTracker measurements
- * supplied during the Scope tracing pass. Apron/building outlines are schematic
- * vectors refined against the supplied Project Flight 10-9 charts and Tracker
- * screenshots. Dedicated SVG airports are intentionally excluded from this
- * legacy schematic collection.
+ * Runway ends and schematic ground geometry for airports that do not yet have
+ * a dedicated SVG renderer.
  */
 export const SECONDARY_AIRPORTS: SecondaryAirport[] = [
-  {
-    id: "MDAB",
-    label: { x: 81.16, y: 94.91 },
-    runways: [
-      {
-        // The 10-9 chart identifies this runway as 11/29.
-        id: "MDAB_11_29",
-        endA: { x: 80.58, y: 95.40, label: "11" },
-        endB: { x: 82.31, y: 95.71, label: "29" },
-      },
-    ],
-    aprons: [
-      {
-        id: "MDAB_MAIN_APRON",
-        points: [
-          { x: 81.0084, y: 95.0501 },
-          { x: 81.2285, y: 95.0692 },
-          { x: 81.3487, y: 95.1923 },
-          { x: 81.3240, y: 95.3301 },
-          { x: 81.2034, y: 95.3796 },
-          { x: 81.0459, y: 95.3514 },
-          { x: 80.9320, y: 95.2497 },
-        ],
-      },
-    ],
-    taxiways: [
-      {
-        id: "MDAB_TX_A",
-        label: "A",
-        labelAt: { x: 81.13, y: 95.37 },
-        d: "M 81.16 95.23 Q 81.13 95.36 81.1124 95.4954",
-      },
-    ],
-    buildings: [
-      {
-        id: "MDAB_PASSENGER_TERMINAL",
-        label: "PAX",
-        points: [
-          { x: 81.0879, y: 95.0034 },
-          { x: 81.2651, y: 95.0351 },
-          { x: 81.2545, y: 95.0942 },
-          { x: 81.0773, y: 95.0624 },
-        ],
-      },
-    ],
-  },
   {
     id: "MDCR",
     label: { x: 56.80, y: 108.77 },
