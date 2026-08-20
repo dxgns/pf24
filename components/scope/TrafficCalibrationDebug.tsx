@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { normalizeAirlineCallsign } from "@/lib/scope/airlines";
 
 type DebugPoint = {
   callsign: string;
@@ -22,6 +23,10 @@ const TRAFFIC_MAP_BOUNDS = { minX: 15, maxX: 210, minY: 37, maxY: 120 } as const
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function normalizeCallsign(value: string) {
+  return normalizeAirlineCallsign(value.trim().toUpperCase());
 }
 
 function radarCoordinates(worldX: number, worldZ: number) {
@@ -121,7 +126,8 @@ function recordsFromMessage(bytes: Uint8Array) {
 function decodeBinary(bytes: Uint8Array): DebugPoint[] {
   return recordsFromMessage(bytes).flatMap((record) => {
     const fields = parseFields(record);
-    const callsign = textOf(fields.find((field) => field.field === 2 && field.wire === 2)).toUpperCase();
+    const rawCallsign = textOf(fields.find((field) => field.field === 2 && field.wire === 2));
+    const callsign = normalizeCallsign(rawCallsign);
     const worldX = doubleOf(fields.find((field) => field.field === 4 && field.wire === 1));
     const worldZ = doubleOf(fields.find((field) => field.field === 5 && field.wire === 1));
     if (!callsign || !Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
@@ -137,7 +143,7 @@ function decodeJson(value: unknown): DebugPoint[] {
   return rows.flatMap((row) => {
     if (!row || typeof row !== "object") return [];
     const item = row as Record<string, unknown>;
-    const callsign = String(item.callsign ?? item.callSign ?? "").trim().toUpperCase();
+    const callsign = normalizeCallsign(String(item.callsign ?? item.callSign ?? ""));
     const worldX = Number(item.x ?? item.worldX ?? item.positionX);
     const worldZ = Number(item.z ?? item.worldZ ?? item.positionZ ?? item.y);
     if (!callsign || !Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
@@ -184,7 +190,7 @@ export default function TrafficCalibrationDebug({ serverId }: { serverId: string
     return () => { disposed = true; if (retry !== null) window.clearTimeout(retry); socket?.close(); };
   }, [serverId]);
 
-  const normalizedTarget = targetCallsign.trim().toUpperCase();
+  const normalizedTarget = normalizeCallsign(targetCallsign);
   const point = points[normalizedTarget];
 
   return (
