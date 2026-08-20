@@ -1,22 +1,24 @@
 const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
 
-// Project Flight world X/Z is a rotated 2D plane relative to the PFTracker map.
-// The previous calibration scaled X and Z independently, which made the three
-// MDPC stand samples fit but distorted positions away from that almost-collinear
-// row of stands (especially runway/taxiway crossings).
+// Project Flight world X/Z and the PFTracker-style Scope map are not related by
+// a pure rotation + uniform scale. The map itself has different scale along its
+// two axes, so the previous similarity transform over-travelled aircraft in the
+// runway/taxiway direction even though the parking-row anchors looked close.
 //
-// Fit a single similarity transform (uniform scale + rotation + translation)
-// from the three measured MDPC anchors: B30, stand 1 and stand 11.
-// This preserves local geometry instead of stretching one axis independently.
-const MAP_A = 0.0007150469340970037;
-const MAP_B = -0.00001214886321321273;
-const MAP_TX = 119.1755181924599;
-const MAP_TY = 67.18240754944205;
+// Use the full 2D affine transform solved from the three measured MDPC anchors:
+// B30, stand 1 and stand 11. Unlike the previous similarity fit, this allows
+// independent axis scale plus the small cross-axis terms required by the map.
+const MAP_XX = 0.00071179018198274128;
+const MAP_XZ = 3.2260615169544271e-05;
+const MAP_X_OFFSET = 118.02339473100434;
+const MAP_YX = 4.2439987137476501e-05;
+const MAP_YZ = 0.00046301184192852146;
+const MAP_Y_OFFSET = 82.234783320953397;
 
 // ProjectFlightTrafficV6 still consumes the legacy -180000..180000 world range
-// and maps it to PFTracker X 15..210 / Y 37..120. Convert the similarity-map
-// coordinates back into equivalent legacy X/Z values so the existing renderer
-// receives the corrected 2D position without changing its traffic decoder.
+// and maps it to PFTracker X 15..210 / Y 37..120. Convert calibrated map points
+// back into equivalent legacy X/Z values so the existing decoder/render code can
+// remain untouched for now.
 const LEGACY_MAP_BOUNDS = { minX: 15, maxX: 210, minY: 37, maxY: 120 } as const;
 const LEGACY_WORLD_MIN = -180000;
 const LEGACY_WORLD_MAX = 180000;
@@ -32,8 +34,8 @@ declare global {
 
 function calibratedMapPoint(worldX: number, worldZ: number) {
   return {
-    x: MAP_A * worldX - MAP_B * worldZ + MAP_TX,
-    y: MAP_B * worldX + MAP_A * worldZ + MAP_TY,
+    x: MAP_XX * worldX + MAP_XZ * worldZ + MAP_X_OFFSET,
+    y: MAP_YX * worldX + MAP_YZ * worldZ + MAP_Y_OFFSET,
   };
 }
 
