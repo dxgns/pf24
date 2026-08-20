@@ -25,6 +25,7 @@ import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
 import ScopeRadarMap from "@/components/scope/ScopeRadarMap";
 import SecondaryAirportGround from "@/components/scope/SecondaryAirportGround";
+import MdstSvgAirport from "@/components/scope/MdstSvgAirport";
 import MdcrSimulatorDetail from "@/components/scope/MdcrSimulatorDetail";
 import MtcaSimulatorDetail from "@/components/scope/MtcaSimulatorDetail";
 import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
@@ -79,6 +80,7 @@ export default async function ScopePage() {
       <WeatherPanelV2 />
       <ScopeRadarMap />
       <SecondaryAirportGround />
+      <MdstSvgAirport />
       <MdcrSimulatorDetail />
       <MtcaSimulatorDetail />
       <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
