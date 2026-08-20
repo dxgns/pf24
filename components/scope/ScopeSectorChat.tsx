@@ -28,6 +28,11 @@ const FREQUENCY_RE = /^\d{3}\.\d{3}$/;
 const CALLSIGN_RE = /^[A-Z0-9]+(?:_[A-Z0-9]+)+$/;
 
 const CONSOLE_CHAT: ChatRef = { position: CONSOLE_CHAT_KEY, frequency: "Console", kind: "console", fixed: true };
+const HELP_LINES = [
+  ".metar [ICAO]: mostrara el metar completo del aeropuerto solicitado.",
+  ".atis [ICAO]: mostrara todo el atis activo de ese aeropuerto, en el caso de que no haya atis, poner \"Sin ATIS activo\"",
+  ".chat [ICAO/CALLSIGN]: servira para abrir un nuevo chat, puede ser tanto a un atc (por ejemplo .chat 119.360) o a un transito (por ejemplo .chat LAN447)",
+];
 
 function normalize(value?: string | null) {
   return value?.trim().toUpperCase() ?? "";
@@ -198,7 +203,24 @@ export default function ScopeSectorChat() {
     const chat = stateRef.current.chats.find((item) => item.position === chatId);
     if (!text || !chat) return false;
 
-    if (chat.kind === "console") return false;
+    if (chat.kind === "console") {
+      const command = text.toLowerCase();
+      const replies = command === ".ayuda"
+        ? HELP_LINES
+        : ["Comando no reconocido. Ejecuta .ayuda para ver la lista de comandos"];
+      updateState((current) => ({
+        ...current,
+        history: {
+          ...current.history,
+          [CONSOLE_CHAT_KEY]: [
+            ...(current.history[CONSOLE_CHAT_KEY] ?? []),
+            ...replies.map(systemMessage),
+          ].slice(-MAX_MESSAGES),
+        },
+      }));
+      return true;
+    }
+
     const me = positionRef.current;
     if (!me) return false;
     const message: ChatMessage = { id: messageId(), from: me, to: chat.position, text, sentAt: Date.now() };
@@ -217,7 +239,8 @@ export default function ScopeSectorChat() {
 
     const onConnection = (event: Event) => {
       const detail = (event as CustomEvent<{ connected?: boolean; callsign?: string }>).detail;
-      saveState(positionRef.current, stateRef.current);
+      const previous = positionRef.current;
+      saveState(previous, stateRef.current);
       const next = detail?.connected ? normalize(detail.callsign) || readPosition() : "";
       positionRef.current = next;
       pendingRef.current = [];
@@ -226,6 +249,12 @@ export default function ScopeSectorChat() {
         loadedNext.history[CONSOLE_CHAT_KEY] = [
           ...loadedNext.history[CONSOLE_CHAT_KEY],
           systemMessage(`Te haz conectado en ${next}.`),
+        ].slice(-MAX_MESSAGES);
+        loadedNext.active = CONSOLE_CHAT_KEY;
+      } else if (previous) {
+        loadedNext.history[CONSOLE_CHAT_KEY] = [
+          ...loadedNext.history[CONSOLE_CHAT_KEY],
+          systemMessage("Te haz desconectado"),
         ].slice(-MAX_MESSAGES);
         loadedNext.active = CONSOLE_CHAT_KEY;
       }
