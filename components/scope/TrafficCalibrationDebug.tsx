@@ -14,7 +14,6 @@ type WireField = { field: number; wire: number; bytes?: Uint8Array; number?: num
 
 const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
 const DEFAULT_SERVER_ID = "2ykygVZiX5";
-const TARGET_CALLSIGN = "ACA6143";
 const MIN_X = -180000;
 const MAX_X = 180000;
 const MIN_Z = -180000;
@@ -56,7 +55,6 @@ function parseFields(bytes: Uint8Array): WireField[] {
     const field = Math.floor(tag.value / 8);
     const wire = tag.value % 8;
     if (field <= 0) break;
-
     if (wire === 0) {
       const value = readVarint(bytes, offset);
       offset = value.offset;
@@ -91,11 +89,8 @@ function parseFields(bytes: Uint8Array): WireField[] {
 
 function textOf(field?: WireField) {
   if (!field?.bytes) return "";
-  try {
-    return new TextDecoder().decode(field.bytes).replace(/\0/g, "").trim();
-  } catch {
-    return "";
-  }
+  try { return new TextDecoder().decode(field.bytes).replace(/\0/g, "").trim(); }
+  catch { return ""; }
 }
 
 function doubleOf(field?: WireField) {
@@ -111,9 +106,7 @@ function isTrafficRecord(bytes: Uint8Array) {
     const worldX = doubleOf(fields.find((field) => field.field === 4 && field.wire === 1));
     const worldZ = doubleOf(fields.find((field) => field.field === 5 && field.wire === 1));
     return Boolean(callsign && Number.isFinite(worldX) && Number.isFinite(worldZ));
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 function recordsFromMessage(bytes: Uint8Array) {
@@ -122,101 +115,93 @@ function recordsFromMessage(bytes: Uint8Array) {
     return parseFields(bytes)
       .filter((field) => field.wire === 2 && field.bytes && isTrafficRecord(field.bytes))
       .map((field) => field.bytes as Uint8Array);
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-function decodeBinary(bytes: Uint8Array): DebugPoint | null {
-  for (const record of recordsFromMessage(bytes)) {
+function decodeBinary(bytes: Uint8Array): DebugPoint[] {
+  return recordsFromMessage(bytes).flatMap((record) => {
     const fields = parseFields(record);
     const callsign = textOf(fields.find((field) => field.field === 2 && field.wire === 2)).toUpperCase();
-    if (callsign !== TARGET_CALLSIGN) continue;
     const worldX = doubleOf(fields.find((field) => field.field === 4 && field.wire === 1));
     const worldZ = doubleOf(fields.find((field) => field.field === 5 && field.wire === 1));
-    if (!Number.isFinite(worldX) || !Number.isFinite(worldZ)) continue;
+    if (!callsign || !Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
     const map = radarCoordinates(worldX, worldZ);
-    return { callsign, worldX, worldZ, mapX: map.x, mapY: map.y };
-  }
-  return null;
+    return [{ callsign, worldX, worldZ, mapX: map.x, mapY: map.y }];
+  });
 }
 
-function decodeJson(value: unknown): DebugPoint | null {
-  if (!value || typeof value !== "object") return null;
+function decodeJson(value: unknown): DebugPoint[] {
+  if (!value || typeof value !== "object") return [];
   const root = value as Record<string, unknown>;
-  const rows: unknown[] = Array.isArray(value)
-    ? value
-    : Array.isArray(root.traffic)
-      ? root.traffic
-      : Array.isArray(root.aircraft)
-        ? root.aircraft
-        : [value];
-
-  for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
+  const rows: unknown[] = Array.isArray(value) ? value : Array.isArray(root.traffic) ? root.traffic : Array.isArray(root.aircraft) ? root.aircraft : [value];
+  return rows.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
     const item = row as Record<string, unknown>;
     const callsign = String(item.callsign ?? item.callSign ?? "").trim().toUpperCase();
-    if (callsign !== TARGET_CALLSIGN) continue;
     const worldX = Number(item.x ?? item.worldX ?? item.positionX);
     const worldZ = Number(item.z ?? item.worldZ ?? item.positionZ ?? item.y);
-    if (!Number.isFinite(worldX) || !Number.isFinite(worldZ)) continue;
+    if (!callsign || !Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
     const map = radarCoordinates(worldX, worldZ);
-    return { callsign, worldX, worldZ, mapX: map.x, mapY: map.y };
-  }
-  return null;
+    return [{ callsign, worldX, worldZ, mapX: map.x, mapY: map.y }];
+  });
 }
 
 export default function TrafficCalibrationDebug({ serverId }: { serverId: string }) {
-  const [point, setPoint] = useState<DebugPoint | null>(null);
+  const [points, setPoints] = useState<Record<string, DebugPoint>>({});
+  const [targetCallsign, setTargetCallsign] = useState("AAL4412");
 
   useEffect(() => {
     let disposed = false;
     let retry: number | null = null;
     let socket: WebSocket | null = null;
     const id = serverId.trim() || DEFAULT_SERVER_ID;
-
+    const publish = (decoded: DebugPoint[]) => {
+      if (disposed || decoded.length === 0) return;
+      setPoints((current) => {
+        const next = { ...current };
+        for (const point of decoded) next[point.callsign] = point;
+        return next;
+      });
+    };
     const open = () => {
       if (disposed) return;
       socket = new WebSocket(`${PROJECT_FLIGHT_WS_PREFIX}${id}`);
       socket.binaryType = "arraybuffer";
-
       socket.onmessage = (event) => {
         void (async () => {
-          let decoded: DebugPoint | null = null;
+          let decoded: DebugPoint[] = [];
           if (typeof event.data === "string") {
-            try { decoded = decodeJson(JSON.parse(event.data)); } catch { decoded = null; }
-          } else if (event.data instanceof ArrayBuffer) {
-            decoded = decodeBinary(new Uint8Array(event.data));
-          } else if (event.data instanceof Blob) {
-            decoded = decodeBinary(new Uint8Array(await event.data.arrayBuffer()));
-          }
-          if (!disposed && decoded) setPoint(decoded);
+            try { decoded = decodeJson(JSON.parse(event.data)); } catch { decoded = []; }
+          } else if (event.data instanceof ArrayBuffer) decoded = decodeBinary(new Uint8Array(event.data));
+          else if (event.data instanceof Blob) decoded = decodeBinary(new Uint8Array(await event.data.arrayBuffer()));
+          publish(decoded);
         })();
       };
-
-      socket.onclose = () => {
-        socket = null;
-        if (!disposed) retry = window.setTimeout(open, 2000);
-      };
+      socket.onclose = () => { socket = null; if (!disposed) retry = window.setTimeout(open, 2000); };
       socket.onerror = () => socket?.close();
     };
-
     open();
-    return () => {
-      disposed = true;
-      if (retry !== null) window.clearTimeout(retry);
-      socket?.close();
-    };
+    return () => { disposed = true; if (retry !== null) window.clearTimeout(retry); socket?.close(); };
   }, [serverId]);
 
+  const normalizedTarget = targetCallsign.trim().toUpperCase();
+  const point = points[normalizedTarget];
+
   return (
-    <div className="pointer-events-none fixed bottom-10 left-2 z-[9999] border border-[#00e000] bg-[#101010]/95 px-2 py-1 font-mono text-[11px] leading-[14px] text-[#00ff00]">
-      <div>CAL {TARGET_CALLSIGN}</div>
+    <div className="fixed bottom-10 left-2 z-[9999] border border-[#00e000] bg-[#101010]/95 px-2 py-1 font-mono text-[11px] leading-[14px] text-[#00ff00]">
+      <div className="flex items-center gap-1">
+        <span>CAL</span>
+        <input
+          value={targetCallsign}
+          onChange={(event) => setTargetCallsign(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12))}
+          className="w-[82px] border border-[#00a000] bg-black px-1 font-mono text-[11px] text-[#00ff00] outline-none"
+          aria-label="Callsign de calibracion"
+        />
+      </div>
       {point ? <>
         <div>RAW X {point.worldX.toFixed(3)} Z {point.worldZ.toFixed(3)}</div>
         <div>MAP X {point.mapX.toFixed(3)} Y {point.mapY.toFixed(3)}</div>
-        <div>REAL B30 X 87.220 Y 103.370</div>
-      </> : <div>esperando trafico...</div>}
+      </> : <div>esperando {normalizedTarget || "callsign"}...</div>}
     </div>
   );
 }
