@@ -50,7 +50,6 @@ const MDPC_MAP_SCALE = (
   Math.hypot(MDPC_MAP_MATRIX.a, MDPC_MAP_MATRIX.b) +
   Math.hypot(MDPC_MAP_MATRIX.c, MDPC_MAP_MATRIX.d)
 ) / 2;
-const MDPC_MAP_ANGLE_DEG = Math.atan2(MDPC_MAP_MATRIX.b, MDPC_MAP_MATRIX.a) * 180 / Math.PI;
 
 function readViewport(): Viewport {
   try {
@@ -168,7 +167,6 @@ function MdpcSvgAirport({ zoom }: { zoom: number }) {
               key={`${label.text}-${index}`}
               x={placement.x}
               y={placement.y}
-              transform={`rotate(${-MDPC_MAP_ANGLE_DEG} ${placement.x} ${placement.y})`}
               fill={label.fill}
               fontFamily="'B612 Mono', monospace"
               fontSize={placement.fontSize}
