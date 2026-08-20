@@ -7,25 +7,12 @@ type DebugPoint = {
   callsign: string;
   worldX: number;
   worldZ: number;
-  mapX: number;
-  mapY: number;
 };
 
 type WireField = { field: number; wire: number; bytes?: Uint8Array; number?: number };
 
 const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
 const DEFAULT_SERVER_ID = "2ykygVZiX5";
-const MAP_X_SCALE = 0.000718736319;
-const MAP_X_OFFSET = 119.9482663;
-const MAP_Y_SCALE = 0.000642556515;
-const MAP_Y_OFFSET = 71.3533942;
-
-function radarCoordinates(worldX: number, worldZ: number) {
-  return {
-    x: worldX * MAP_X_SCALE + MAP_X_OFFSET,
-    y: worldZ * MAP_Y_SCALE + MAP_Y_OFFSET,
-  };
-}
 
 function readVarint(bytes: Uint8Array, start: number) {
   let value = 0;
@@ -124,15 +111,21 @@ function decodeBinary(bytes: Uint8Array): DebugPoint[] {
     const worldX = doubleOf(fields.find((field) => field.field === 4 && field.wire === 1));
     const worldZ = doubleOf(fields.find((field) => field.field === 5 && field.wire === 1));
     if (!callsign || !Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
-    const map = radarCoordinates(worldX, worldZ);
-    return [{ callsign, worldX, worldZ, mapX: map.x, mapY: map.y }];
+    return [{ callsign, worldX, worldZ }];
   });
 }
 
 function decodeJson(value: unknown): DebugPoint[] {
   if (!value || typeof value !== "object") return [];
   const root = value as Record<string, unknown>;
-  const rows: unknown[] = Array.isArray(value) ? value : Array.isArray(root.traffic) ? root.traffic : Array.isArray(root.aircraft) ? root.aircraft : [value];
+  const rows: unknown[] = Array.isArray(value)
+    ? value
+    : Array.isArray(root.traffic)
+      ? root.traffic
+      : Array.isArray(root.aircraft)
+        ? root.aircraft
+        : [value];
+
   return rows.flatMap((row) => {
     if (!row || typeof row !== "object") return [];
     const item = row as Record<string, unknown>;
@@ -140,20 +133,20 @@ function decodeJson(value: unknown): DebugPoint[] {
     const worldX = Number(item.x ?? item.worldX ?? item.positionX);
     const worldZ = Number(item.z ?? item.worldZ ?? item.positionZ ?? item.y);
     if (!callsign || !Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
-    const map = radarCoordinates(worldX, worldZ);
-    return [{ callsign, worldX, worldZ, mapX: map.x, mapY: map.y }];
+    return [{ callsign, worldX, worldZ }];
   });
 }
 
 export default function TrafficCalibrationDebug({ serverId }: { serverId: string }) {
   const [points, setPoints] = useState<Record<string, DebugPoint>>({});
-  const [targetCallsign, setTargetCallsign] = useState("AAL4412");
+  const [targetCallsign, setTargetCallsign] = useState("");
 
   useEffect(() => {
     let disposed = false;
     let retry: number | null = null;
     let socket: WebSocket | null = null;
     const id = serverId.trim() || DEFAULT_SERVER_ID;
+
     const publish = (decoded: DebugPoint[]) => {
       if (disposed || decoded.length === 0) return;
       setPoints((current) => {
@@ -162,8 +155,11 @@ export default function TrafficCalibrationDebug({ serverId }: { serverId: string
         return next;
       });
     };
+
     const open = () => {
       if (disposed) return;
+      // Always bypass the calibration shim so these are the true Project Flight
+      // world coordinates used for the new wide-area triangulation.
       const SocketCtor = window.__PF24_NATIVE_WEBSOCKET__ ?? window.WebSocket;
       socket = new SocketCtor(`${PROJECT_FLIGHT_WS_PREFIX}${id}`);
       socket.binaryType = "arraybuffer";
@@ -172,16 +168,27 @@ export default function TrafficCalibrationDebug({ serverId }: { serverId: string
           let decoded: DebugPoint[] = [];
           if (typeof event.data === "string") {
             try { decoded = decodeJson(JSON.parse(event.data)); } catch { decoded = []; }
-          } else if (event.data instanceof ArrayBuffer) decoded = decodeBinary(new Uint8Array(event.data));
-          else if (event.data instanceof Blob) decoded = decodeBinary(new Uint8Array(await event.data.arrayBuffer()));
+          } else if (event.data instanceof ArrayBuffer) {
+            decoded = decodeBinary(new Uint8Array(event.data));
+          } else if (event.data instanceof Blob) {
+            decoded = decodeBinary(new Uint8Array(await event.data.arrayBuffer()));
+          }
           publish(decoded);
         })();
       };
-      socket.onclose = () => { socket = null; if (!disposed) retry = window.setTimeout(open, 2000); };
+      socket.onclose = () => {
+        socket = null;
+        if (!disposed) retry = window.setTimeout(open, 2000);
+      };
       socket.onerror = () => socket?.close();
     };
+
     open();
-    return () => { disposed = true; if (retry !== null) window.clearTimeout(retry); socket?.close(); };
+    return () => {
+      disposed = true;
+      if (retry !== null) window.clearTimeout(retry);
+      socket?.close();
+    };
   }, [serverId]);
 
   const normalizedTarget = normalizeCallsign(targetCallsign.trim());
@@ -190,18 +197,24 @@ export default function TrafficCalibrationDebug({ serverId }: { serverId: string
   return (
     <div className="fixed bottom-10 left-2 z-[9999] border border-[#00e000] bg-[#101010]/95 px-2 py-1 font-mono text-[11px] leading-[14px] text-[#00ff00]">
       <div className="flex items-center gap-1">
-        <span>CAL</span>
+        <span>TRI</span>
         <input
           value={targetCallsign}
           onChange={(event) => setTargetCallsign(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12))}
-          className="w-[82px] border border-[#00a000] bg-black px-1 font-mono text-[11px] text-[#00ff00] outline-none"
-          aria-label="Callsign de calibracion"
+          placeholder="CALLSIGN"
+          className="w-[88px] border border-[#00a000] bg-black px-1 font-mono text-[11px] text-[#00ff00] outline-none placeholder:text-[#007000]"
+          aria-label="Callsign para triangulacion"
         />
       </div>
-      {point ? <>
-        <div>RAW X {point.worldX.toFixed(3)} Z {point.worldZ.toFixed(3)}</div>
-        <div>MAP X {point.mapX.toFixed(3)} Y {point.mapY.toFixed(3)}</div>
-      </> : <div>esperando {normalizedTarget || "callsign"}...</div>}
+      {normalizedTarget ? (
+        point ? (
+          <div>RAW X {point.worldX.toFixed(3)} Z {point.worldZ.toFixed(3)}</div>
+        ) : (
+          <div>esperando {normalizedTarget}...</div>
+        )
+      ) : (
+        <div>ingresa un callsign</div>
+      )}
     </div>
   );
 }
