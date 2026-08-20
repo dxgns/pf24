@@ -349,7 +349,7 @@ export default function ScopeSectorChat() {
   const activeChat = state.chats.find((chat) => chat.position === state.active) ?? CONSOLE_CHAT;
   const messages = state.history[activeChat.position] ?? [];
   const ownFrequency = positionRef.current ? ATC_FREQUENCIES[positionRef.current] ?? "---.---" : "---.---";
-  const activeFrequency = activeChat.kind === "console" ? "---.---" : activeChat.frequency;
+  const activeFrequency = activeChat.kind === "console" ? "Console" : activeChat.frequency;
 
   return createPortal(
     <>
@@ -369,14 +369,14 @@ export default function ScopeSectorChat() {
         {state.chats.map((chat) => {
           const selected = state.active === chat.position;
           const unread = (state.unread[chat.position] ?? 0) > 0;
-          const label = chat.kind === "console" ? "Console" : chat.kind === "public" ? chat.frequency : `${chat.position}  ${chat.frequency}`;
+          const label = chat.kind === "console" ? "Console" : chat.frequency;
           return <button
             key={chat.position}
             type="button"
             onClick={() => { updateState((current) => ({ ...current, active: chat.position, unread: { ...current.unread, [chat.position]: 0 } })); }}
             onDoubleClick={(event) => { event.preventDefault(); removeChat(chat.position); }}
             onContextMenu={(event) => { event.preventDefault(); markRead(chat.position); }}
-            className={`block h-[14px] w-full truncate text-left ${unread ? "text-[#00efff]" : selected ? "text-white underline" : "text-[#d8d8d8]"}`}
+            className={`block h-[14px] w-full truncate text-left ${unread ? "text-[#00efff]" : selected ? "text-white" : "text-[#d8d8d8]"}`}
           >{label}</button>;
         })}
       </div>
