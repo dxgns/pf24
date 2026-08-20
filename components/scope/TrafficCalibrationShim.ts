@@ -1,12 +1,7 @@
 const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
 
-// Wide-area Project Flight -> Scope calibration using all ten measured anchors
-// currently available: six points spread across the full map plus four MDST
-// runway/stand checks. The relationship is essentially axis-aligned at ~0.00072
-// Scope units per Project Flight world unit; the cross-axis terms are tiny.
-//
-// Keeping all ten points in the least-squares fit reduces the MDST residual from
-// ~0.015 to below ~0.009 Scope units without sacrificing the wide-area fit.
+// Wide-area Project Flight -> Scope calibration using the measured anchors
+// spread across the full map. This remains the global coordinate frame.
 const MAP_XX = 0.0007199679402183645;
 const MAP_XZ = 5.208285458837593e-8;
 const MAP_X_OFFSET = 119.9995254587802;
@@ -22,6 +17,49 @@ const LEGACY_MAP_BOUNDS = { minX: 15, maxX: 210, minY: 37, maxY: 120 } as const;
 const LEGACY_WORLD_MIN = -180000;
 const LEGACY_WORLD_MAX = 180000;
 
+type MapPoint = { x: number; y: number };
+type LocalAnchor = { source: MapPoint; target: MapPoint };
+
+// At extreme ground zoom even a 0.005-0.008 Scope-unit global-fit residual is
+// visibly several pixels. These six MDST samples are direct Project Flight
+// measurements supplied during the triangulation pass. We correct only the local
+// residual field; the SVG itself is left untouched.
+//
+// Four zero-correction outer anchors make the piecewise transform fade smoothly
+// back into the global map instead of introducing a jump at the airport edge.
+const MDST_LOCAL_ANCHORS: readonly LocalAnchor[] = [
+  { source: { x: 67.18638579108024, y: 92.41396460312409 }, target: { x: 67.19, y: 92.42 } }, // RWY11
+  { source: { x: 68.70524802906547, y: 93.41745567707395 }, target: { x: 68.70, y: 93.42 } }, // B1
+  { source: { x: 69.55586493910535, y: 93.45708291487915 }, target: { x: 69.56, y: 93.45 } }, // RWY29
+  { source: { x: 68.28650597230555, y: 93.23743045893573 }, target: { x: 68.29, y: 93.23 } }, // A1
+  { source: { x: 68.46812190075686, y: 93.37256727642699 }, target: { x: 68.47, y: 93.37 } }, // B6
+  { source: { x: 68.95795896689052, y: 93.52736517609387 }, target: { x: 68.96, y: 93.52 } }, // C1
+  { source: { x: 66.0, y: 91.5 }, target: { x: 66.0, y: 91.5 } },
+  { source: { x: 70.5, y: 91.5 }, target: { x: 70.5, y: 91.5 } },
+  { source: { x: 70.5, y: 94.5 }, target: { x: 70.5, y: 94.5 } },
+  { source: { x: 66.0, y: 94.5 }, target: { x: 66.0, y: 94.5 } },
+] as const;
+
+// Delaunay triangulation of the source points above. Inside each triangle the
+// residual is interpolated barycentrically, so all verified anchors are exact
+// and the correction is continuous across triangle borders.
+const MDST_LOCAL_TRIANGLES: readonly (readonly [number, number, number])[] = [
+  [8, 2, 7],
+  [0, 9, 6],
+  [0, 3, 9],
+  [7, 0, 6],
+  [3, 0, 7],
+  [5, 2, 8],
+  [9, 5, 8],
+  [5, 1, 2],
+  [1, 3, 7],
+  [2, 1, 7],
+  [4, 5, 9],
+  [4, 1, 5],
+  [3, 4, 9],
+  [1, 4, 3],
+] as const;
+
 type NativeWebSocketCtor = typeof WebSocket;
 
 declare global {
@@ -31,11 +69,47 @@ declare global {
   }
 }
 
-function calibratedMapPoint(worldX: number, worldZ: number) {
+function globalMapPoint(worldX: number, worldZ: number): MapPoint {
   return {
     x: MAP_XX * worldX + MAP_XZ * worldZ + MAP_X_OFFSET,
     y: MAP_YX * worldX + MAP_YZ * worldZ + MAP_Y_OFFSET,
   };
+}
+
+function barycentric(point: MapPoint, a: MapPoint, b: MapPoint, c: MapPoint) {
+  const denominator = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+  if (Math.abs(denominator) < 1e-12) return null;
+
+  const wa = ((b.y - c.y) * (point.x - c.x) + (c.x - b.x) * (point.y - c.y)) / denominator;
+  const wb = ((c.y - a.y) * (point.x - c.x) + (a.x - c.x) * (point.y - c.y)) / denominator;
+  const wc = 1 - wa - wb;
+  return [wa, wb, wc] as const;
+}
+
+function applyMdstLocalTriangulation(point: MapPoint): MapPoint {
+  const epsilon = 1e-9;
+
+  for (const [ia, ib, ic] of MDST_LOCAL_TRIANGLES) {
+    const a = MDST_LOCAL_ANCHORS[ia];
+    const b = MDST_LOCAL_ANCHORS[ib];
+    const c = MDST_LOCAL_ANCHORS[ic];
+    const weights = barycentric(point, a.source, b.source, c.source);
+    if (!weights) continue;
+
+    const [wa, wb, wc] = weights;
+    if (wa < -epsilon || wb < -epsilon || wc < -epsilon) continue;
+
+    return {
+      x: wa * a.target.x + wb * b.target.x + wc * c.target.x,
+      y: wa * a.target.y + wb * b.target.y + wc * c.target.y,
+    };
+  }
+
+  return point;
+}
+
+function calibratedMapPoint(worldX: number, worldZ: number) {
+  return applyMdstLocalTriangulation(globalMapPoint(worldX, worldZ));
 }
 
 function mapToLegacyWorld(mapX: number, mapY: number) {
