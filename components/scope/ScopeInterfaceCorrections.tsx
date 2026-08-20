@@ -6,6 +6,19 @@ function findConfigDialog(button: HTMLButtonElement) {
   return button.closest<HTMLElement>("div.absolute");
 }
 
+function syncChatTabLabels() {
+  const tabs = document.querySelector<HTMLElement>("[data-pf24-chat-tabs='true']");
+  if (!tabs) return;
+
+  for (const child of Array.from(tabs.children)) {
+    if (!(child instanceof HTMLButtonElement)) continue;
+    const label = child.textContent?.trim() ?? "";
+    if (label === "Console") continue;
+    const frequency = label.match(/\b\d{3}\.\d{3}\b/)?.[0];
+    if (frequency && label !== frequency) child.textContent = frequency;
+  }
+}
+
 export default function ScopeInterfaceCorrections() {
   useEffect(() => {
     const style = document.createElement("style");
@@ -24,6 +37,9 @@ export default function ScopeInterfaceCorrections() {
         width: 0 !important;
         height: 0 !important;
         display: none !important;
+      }
+      [data-pf24-chat-tabs='true'] button {
+        text-decoration: none !important;
       }
     `;
     document.head.appendChild(style);
@@ -50,9 +66,13 @@ export default function ScopeInterfaceCorrections() {
       event.stopImmediatePropagation();
     };
 
+    syncChatTabLabels();
+    const timer = window.setInterval(syncChatTabLabels, 180);
+
     document.addEventListener("click", onClickCapture, true);
     document.addEventListener("wheel", onWheelCapture, { capture: true, passive: false });
     return () => {
+      window.clearInterval(timer);
       document.removeEventListener("click", onClickCapture, true);
       document.removeEventListener("wheel", onWheelCapture, true);
       style.remove();
