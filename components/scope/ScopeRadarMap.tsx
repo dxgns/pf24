@@ -8,26 +8,7 @@ import {
   WAYPOINTS,
   type MapPath,
 } from "@/lib/scope/mapData";
-import {
-  MDPC_SVG_BLACK,
-  MDPC_SVG_BLUE,
-  MDPC_SVG_GREEN,
-  MDPC_SVG_LAYER_TRANSLATE,
-} from "@/lib/scope/mdpcSvgBase";
-import { MDPC_SVG_WHITE_FILL, MDPC_SVG_WHITE_STROKE } from "@/lib/scope/mdpcSvgWhite";
-import {
-  MDPC_SVG_YELLOW_0204516,
-  MDPC_SVG_YELLOW_0246,
-  MDPC_SVG_YELLOW_0247355,
-  MDPC_SVG_YELLOW_0250474,
-  MDPC_SVG_YELLOW_0260986,
-} from "@/lib/scope/mdpcSvgYellow";
-import {
-  MDPC_SVG_GRAY_STROKES,
-  MDPC_SVG_LABELS,
-  MDPC_SVG_RED_STROKES,
-  type MdpcSvgLabel,
-} from "@/lib/scope/mdpcSvgAnnotations";
+import { MDPC_SVG_LABELS, type MdpcSvgLabel } from "@/lib/scope/mdpcSvgAnnotations";
 
 type Viewport = { zoom: number; panX: number; panY: number };
 
@@ -50,6 +31,7 @@ const MDPC_MAP_SCALE = (
   Math.hypot(MDPC_MAP_MATRIX.a, MDPC_MAP_MATRIX.b) +
   Math.hypot(MDPC_MAP_MATRIX.c, MDPC_MAP_MATRIX.d)
 ) / 2;
+const MDPC_SVG_PARTS = [1, 2, 3, 4] as const;
 
 function readViewport(): Viewport {
   try {
@@ -101,10 +83,6 @@ function Fix({ x, y, name, zoom, vor = false }: { x: number; y: number; name: st
   );
 }
 
-function YellowPaths({ paths, width }: { paths: readonly string[]; width: number }) {
-  return <>{paths.map((d, index) => <path key={`${width}-${index}`} d={d} fill="none" stroke="#d0d900" strokeWidth={width} strokeLinecap="butt" strokeLinejoin="miter" />)}</>;
-}
-
 function mdpcSvgLabelPlacement(label: MdpcSvgLabel) {
   let localX = label.x;
   let localY = label.y;
@@ -141,22 +119,19 @@ function MdpcSvgAirport({ zoom }: { zoom: number }) {
   if (zoom < 2.35) return null;
   return (
     <>
-      <g data-map-layer="mdpc-user-svg" transform={MDPC_SVG_TRANSFORM}>
-        <g transform={MDPC_SVG_LAYER_TRANSLATE}>
-          {MDPC_SVG_GREEN[0] && <path d={MDPC_SVG_GREEN[0]} fill="#004000" />}
-          {MDPC_SVG_BLACK.map((d, index) => <path key={`black-${index}`} d={d} fill="#000000" />)}
-          {MDPC_SVG_GREEN.slice(1).map((d, index) => <path key={`green-overlay-${index}`} d={d} fill="#004000" />)}
-          {MDPC_SVG_BLUE.map((d, index) => <path key={`blue-${index}`} d={d} fill="#00008d" />)}
-          {MDPC_SVG_WHITE_STROKE.map((d, index) => <path key={`white-stroke-${index}`} d={d} fill="none" stroke="#ffffff" strokeWidth={0.246} />)}
-          {MDPC_SVG_WHITE_FILL.map((d, index) => <path key={`white-fill-${index}`} d={d} fill="#ffffff" />)}
-          <YellowPaths paths={MDPC_SVG_YELLOW_0246} width={0.246} />
-          <YellowPaths paths={MDPC_SVG_YELLOW_0247355} width={0.247355} />
-          <YellowPaths paths={MDPC_SVG_YELLOW_0204516} width={0.204516} />
-          <YellowPaths paths={MDPC_SVG_YELLOW_0250474} width={0.250474} />
-          <YellowPaths paths={MDPC_SVG_YELLOW_0260986} width={0.260986} />
-          {MDPC_SVG_GRAY_STROKES.map((d, index) => <path key={`gray-detail-${index}`} d={d} fill="none" stroke="#c9c9c9" strokeWidth={0.246} />)}
-          {MDPC_SVG_RED_STROKES.map((d, index) => <path key={`red-detail-${index}`} d={d} fill="none" stroke="#7e0000" strokeWidth={0.246} />)}
-        </g>
+      <g data-map-layer="mdpc-corrected-svg">
+        {MDPC_SVG_PARTS.map((part) => (
+          <image
+            key={part}
+            href={`/scope/mdpc-ground-${part}.svg`}
+            x={0}
+            y={0}
+            width={803.79541}
+            height={396.38004}
+            transform={MDPC_SVG_TRANSFORM}
+            preserveAspectRatio="none"
+          />
+        ))}
       </g>
 
       <g data-map-layer="mdpc-svg-labels-upright">
