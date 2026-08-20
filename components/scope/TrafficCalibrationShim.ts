@@ -1,16 +1,25 @@
 const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
 
-// Least-squares calibration from three known MDPC stands:
-// B30, stand 1 and stand 11. Project Flight raw world coordinates are
-// converted to the PFTracker/map coordinate system used by the scope.
+// Project Flight world X/Z is a rotated 2D plane relative to the PFTracker map.
+// The previous calibration scaled X and Z independently, which made the three
+// MDPC stand samples fit but distorted positions away from that almost-collinear
+// row of stands (especially runway/taxiway crossings).
 //
-// The existing traffic renderer still performs its legacy normalization, so
-// this shim converts raw Project Flight coordinates into equivalent legacy
-// raw coordinates that produce the calibrated map position.
-const RAW_X_SCALE = 1.3268978198850463;
-const RAW_X_OFFSET = 13750.64550675433;
-const RAW_Z_SCALE = 2.7869921152199466;
-const RAW_Z_OFFSET = -30997.326394190197;
+// Fit a single similarity transform (uniform scale + rotation + translation)
+// from the three measured MDPC anchors: B30, stand 1 and stand 11.
+// This preserves local geometry instead of stretching one axis independently.
+const MAP_A = 0.0007150469340970037;
+const MAP_B = -0.00001214886321321273;
+const MAP_TX = 119.1755181924599;
+const MAP_TY = 67.18240754944205;
+
+// ProjectFlightTrafficV6 still consumes the legacy -180000..180000 world range
+// and maps it to PFTracker X 15..210 / Y 37..120. Convert the similarity-map
+// coordinates back into equivalent legacy X/Z values so the existing renderer
+// receives the corrected 2D position without changing its traffic decoder.
+const LEGACY_MAP_BOUNDS = { minX: 15, maxX: 210, minY: 37, maxY: 120 } as const;
+const LEGACY_WORLD_MIN = -180000;
+const LEGACY_WORLD_MAX = 180000;
 
 type NativeWebSocketCtor = typeof WebSocket;
 
@@ -21,12 +30,28 @@ declare global {
   }
 }
 
-function calibratedX(value: number) {
-  return value * RAW_X_SCALE + RAW_X_OFFSET;
+function calibratedMapPoint(worldX: number, worldZ: number) {
+  return {
+    x: MAP_A * worldX - MAP_B * worldZ + MAP_TX,
+    y: MAP_B * worldX + MAP_A * worldZ + MAP_TY,
+  };
 }
 
-function calibratedZ(value: number) {
-  return value * RAW_Z_SCALE + RAW_Z_OFFSET;
+function mapToLegacyWorld(mapX: number, mapY: number) {
+  const worldSpan = LEGACY_WORLD_MAX - LEGACY_WORLD_MIN;
+  return {
+    x:
+      LEGACY_WORLD_MIN +
+      ((mapX - LEGACY_MAP_BOUNDS.minX) / (LEGACY_MAP_BOUNDS.maxX - LEGACY_MAP_BOUNDS.minX)) * worldSpan,
+    z:
+      LEGACY_WORLD_MIN +
+      ((mapY - LEGACY_MAP_BOUNDS.minY) / (LEGACY_MAP_BOUNDS.maxY - LEGACY_MAP_BOUNDS.minY)) * worldSpan,
+  };
+}
+
+function calibratedLegacyPoint(worldX: number, worldZ: number) {
+  const map = calibratedMapPoint(worldX, worldZ);
+  return mapToLegacyWorld(map.x, map.y);
 }
 
 function readVarint(bytes: Uint8Array, start: number, end: number) {
@@ -112,8 +137,9 @@ function transformTrafficRecord(bytes: Uint8Array, start: number, end: number): 
     const x = view.getFloat64(xField.dataStart, true);
     const z = view.getFloat64(zField.dataStart, true);
     if (Number.isFinite(x) && Number.isFinite(z)) {
-      view.setFloat64(xField.dataStart, calibratedX(x), true);
-      view.setFloat64(zField.dataStart, calibratedZ(z), true);
+      const calibrated = calibratedLegacyPoint(x, z);
+      view.setFloat64(xField.dataStart, calibrated.x, true);
+      view.setFloat64(zField.dataStart, calibrated.z, true);
       return true;
     }
   }
@@ -143,8 +169,9 @@ function transformJson(value: unknown): unknown {
   const hasCallsign = typeof item.callsign === "string" || typeof item.callSign === "string";
 
   if (hasCallsign && xKey && zKey) {
-    item[xKey] = calibratedX(Number(item[xKey]));
-    item[zKey] = calibratedZ(Number(item[zKey]));
+    const calibrated = calibratedLegacyPoint(Number(item[xKey]), Number(item[zKey]));
+    item[xKey] = calibrated.x;
+    item[zKey] = calibrated.z;
   }
 
   for (const [key, child] of Object.entries(item)) {
