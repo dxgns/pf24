@@ -15,26 +15,15 @@ type WireField = { field: number; wire: number; bytes?: Uint8Array; number?: num
 
 const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
 const DEFAULT_SERVER_ID = "2ykygVZiX5";
-const MIN_X = -180000;
-const MAX_X = 180000;
-const MIN_Z = -180000;
-const MAX_Z = 180000;
-const TRAFFIC_MAP_BOUNDS = { minX: 15, maxX: 210, minY: 37, maxY: 120 } as const;
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function normalizeCallsign(value: string) {
-  return normalizeAirlineCallsign(value.trim().toUpperCase());
-}
+const MAP_X_SCALE = 0.000718736319;
+const MAP_X_OFFSET = 119.9482663;
+const MAP_Y_SCALE = 0.000642556515;
+const MAP_Y_OFFSET = 71.3533942;
 
 function radarCoordinates(worldX: number, worldZ: number) {
-  const normalizedX = clamp((worldX - MIN_X) / (MAX_X - MIN_X), 0, 1);
-  const normalizedY = clamp((worldZ - MIN_Z) / (MAX_Z - MIN_Z), 0, 1);
   return {
-    x: TRAFFIC_MAP_BOUNDS.minX + normalizedX * (TRAFFIC_MAP_BOUNDS.maxX - TRAFFIC_MAP_BOUNDS.minX),
-    y: TRAFFIC_MAP_BOUNDS.minY + normalizedY * (TRAFFIC_MAP_BOUNDS.maxY - TRAFFIC_MAP_BOUNDS.minY),
+    x: worldX * MAP_X_SCALE + MAP_X_OFFSET,
+    y: worldZ * MAP_Y_SCALE + MAP_Y_OFFSET,
   };
 }
 
@@ -104,6 +93,10 @@ function doubleOf(field?: WireField) {
   return new DataView(copy.buffer).getFloat64(0, true);
 }
 
+function normalizeCallsign(raw: string) {
+  return normalizeAirlineCallsign(raw).toUpperCase();
+}
+
 function isTrafficRecord(bytes: Uint8Array) {
   try {
     const fields = parseFields(bytes);
@@ -143,7 +136,7 @@ function decodeJson(value: unknown): DebugPoint[] {
   return rows.flatMap((row) => {
     if (!row || typeof row !== "object") return [];
     const item = row as Record<string, unknown>;
-    const callsign = normalizeCallsign(String(item.callsign ?? item.callSign ?? ""));
+    const callsign = normalizeCallsign(String(item.callsign ?? item.callSign ?? "").trim());
     const worldX = Number(item.x ?? item.worldX ?? item.positionX);
     const worldZ = Number(item.z ?? item.worldZ ?? item.positionZ ?? item.y);
     if (!callsign || !Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
@@ -171,7 +164,8 @@ export default function TrafficCalibrationDebug({ serverId }: { serverId: string
     };
     const open = () => {
       if (disposed) return;
-      socket = new WebSocket(`${PROJECT_FLIGHT_WS_PREFIX}${id}`);
+      const SocketCtor = window.__PF24_NATIVE_WEBSOCKET__ ?? window.WebSocket;
+      socket = new SocketCtor(`${PROJECT_FLIGHT_WS_PREFIX}${id}`);
       socket.binaryType = "arraybuffer";
       socket.onmessage = (event) => {
         void (async () => {
@@ -190,7 +184,7 @@ export default function TrafficCalibrationDebug({ serverId }: { serverId: string
     return () => { disposed = true; if (retry !== null) window.clearTimeout(retry); socket?.close(); };
   }, [serverId]);
 
-  const normalizedTarget = normalizeCallsign(targetCallsign);
+  const normalizedTarget = normalizeCallsign(targetCallsign.trim());
   const point = points[normalizedTarget];
 
   return (
