@@ -10,16 +10,9 @@ type MdstLabel = { text: string; x: number; y: number; transform: string; fill: 
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
-// Calibrated from the MDST SVG runway centreline endpoints to the confirmed
-// PFTracker RWY 11 (67.14, 92.39) and RWY 29 (69.63, 93.49) coordinates.
-// The external SVG already contains its original layer translate, so the image
-// matrix operates on the final 0..814.5 / 0..167 SVG viewport coordinates.
 const MDST_IMAGE_TRANSFORM =
   "matrix(0.003370419571334019 0.0014804726275805306 -0.0014804726275805306 0.003370419571334019 67.08177142351913 92.23740879243172)";
 
-// Text anchors are recovered from the original un-translated Inkscape label
-// coordinates, then mapped directly into the Scope. Rendering the text outside
-// the rotated SVG keeps every taxiway/runway/stand label upright on the map.
 const MDST_MAP_MATRIX = {
   a: 0.003370419571334019,
   b: 0.0014804726275805306,
@@ -33,11 +26,17 @@ const MDST_MAP_SCALE = (
   Math.hypot(MDST_MAP_MATRIX.c, MDST_MAP_MATRIX.d)
 ) / 2;
 
+// Anchors come from the user SVG, but every label is rendered outside the
+// rotated airport image so taxiway/runway/stand text stays upright on the Scope.
 const MDST_LABELS: readonly MdstLabel[] = [
   { text: "A", x: -295.375, y: 258.03086, transform: "translate(733.12233,88.08914)", fill: "#c9c9c9" },
   { text: "B", x: -295.375, y: 258.03086, transform: "translate(865.47178,88.432936)", fill: "#c9c9c9" },
   { text: "11", x: -295.375, y: 258.03086, transform: "matrix(0.07291631,0,0,0.07660707,63.429095,295.68029)", fill: "#f1f1f1" },
   { text: "29", x: -295.375, y: 258.03086, transform: "matrix(0.07291631,0,0,0.07660707,787.30827,297.18948)", fill: "#f1f1f1" },
+  { text: "A1", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,482.42326,358.05635)", fill: "#c9c9c9" },
+  { text: "A2", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,475.06838,357.99242)", fill: "#c9c9c9" },
+  { text: "A3", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,467.69338,357.92992)", fill: "#c9c9c9" },
+  { text: "A4", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,461.08577,357.87186)", fill: "#c9c9c9" },
   { text: "B6", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,548.20367,365.00449)", fill: "#c9c9c9" },
   { text: "B5", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,556.48493,362.47325)", fill: "#c9c9c9" },
   { text: "B4", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,565.51617,355.24622)", fill: "#c9c9c9" },
@@ -45,6 +44,10 @@ const MDST_LABELS: readonly MdstLabel[] = [
   { text: "B2R", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,593.04539,346.20784)", fill: "#c9c9c9" },
   { text: "B2", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,589.87555,349.14512)", fill: "#c9c9c9" },
   { text: "B1", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,599.4068,355.42637)", fill: "#c9c9c9" },
+  { text: "C4", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,642.23503,356.35821)", fill: "#c9c9c9" },
+  { text: "C3", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,649.38088,358.17992)", fill: "#c9c9c9" },
+  { text: "C2", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,663.03713,358.27367)", fill: "#c9c9c9" },
+  { text: "C1", x: -295.375, y: 258.03086, transform: "matrix(0.21715218,0,0,0.19713917,676.28713,358.46117)", fill: "#c9c9c9" },
 ] as const;
 
 function readViewport(): Viewport {
@@ -133,11 +136,7 @@ export default function MdstSvgAirport() {
   if (!host || viewport.zoom < 2.35) return null;
 
   return createPortal(
-    <div
-      data-pf24-mdst-svg="true"
-      className="pointer-events-none absolute inset-0 z-[6] overflow-hidden"
-      aria-hidden="true"
-    >
+    <div data-pf24-mdst-svg="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
       <svg
         className="absolute inset-0 block h-full w-full"
         viewBox={viewBox}
@@ -156,7 +155,6 @@ export default function MdstSvgAirport() {
           transform={MDST_IMAGE_TRANSFORM}
           preserveAspectRatio="none"
         />
-
         <g data-map-layer="mdst-svg-labels-upright">
           {MDST_LABELS.map((label, index) => {
             const placement = labelPlacement(label);
