@@ -180,8 +180,7 @@ export function installTrafficCalibrationShim() {
     private pf24OnMessage: ((this: WebSocket, ev: MessageEvent) => unknown) | null = null;
 
     constructor(url: string | URL, protocols?: string | string[]) {
-      if (protocols === undefined) super(url);
-      else super(url, protocols);
+      super(url, protocols);
 
       const shouldCalibrate = String(url).startsWith(PROJECT_FLIGHT_WS_PREFIX);
       if (!shouldCalibrate) return;
