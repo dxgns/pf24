@@ -87,7 +87,7 @@ function points(path: MapPath) {
 function pathStyle(tone: MapPath["tone"]) {
   if (tone === "fir") return { stroke: "#087153", width: 0.16, dash: undefined };
   if (tone === "app") return { stroke: "#176997", width: 0.13, dash: "0.55 0.38" };
-  if (tone === "tower") return { stroke: "#2384aa", width: 0.11, dash: "0.38 0.28" };
+  if (tone === "tower") return { stroke: "#176997", width: 0.11, dash: "0.38 0.28" };
   if (tone === "runway") return { stroke: "#82898b", width: 0.2, dash: undefined };
   return { stroke: "#777d7f", width: 0.075, dash: undefined };
 }
@@ -242,7 +242,7 @@ export default function ScopeRadarMap() {
             }
             return <polyline key={airspace.id} points={points(airspace)} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
           })}
-          <path data-map-layer="mdpc-twr" d={MDPC_TWR_PATH} fill="none" stroke="#2384aa" strokeWidth={0.11} strokeDasharray="0.38 0.28" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          <path data-map-layer="mdpc-twr" d={MDPC_TWR_PATH} fill="none" stroke="#176997" strokeWidth={0.11} strokeDasharray="0.38 0.28" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </g>
         <MdpcSvgAirport zoom={viewport.zoom} />
         <g data-map-layer="fixes">
