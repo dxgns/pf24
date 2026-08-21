@@ -15,10 +15,10 @@ type Viewport = { zoom: number; panX: number; panY: number };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
-// Georeferenced from the supplied Hispaniola outline using the real ARP positions
-// of MDPC, MDST and MDCR as anchors in the calibrated PF24 Scope coordinate frame.
+// Calibrated against the supplied PF map reference so the coastline matches
+// the existing fixes and airport placements in the PF24 Scope coordinate frame.
 const HISPANIOLA_SVG_TRANSFORM =
-  "matrix(0.162168460566 0.001387314616 -0.013798007379 0.204920556588 33.758483990 84.860643725)";
+  "matrix(0.19083778 0.00039669 0.00187641 0.18849282 26.88185468 84.46004555)";
 const HISPANIOLA_SVG_WIDTH = 344.39517;
 const HISPANIOLA_SVG_HEIGHT = 141.20445;
 
