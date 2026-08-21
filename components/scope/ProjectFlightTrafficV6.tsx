@@ -74,9 +74,9 @@ const SIMPLE_HEIGHT = 30;
 const DETAIL_WIDTH = 108;
 const DETAIL_HEIGHT = 45;
 const VECTOR_PIXELS_PER_NM = 28;
+const GROUND_VECTOR_PIXELS = 10;
+const GROUND_ALTITUDE_FT = 100;
 const TRAIL_SAMPLE_MS = 1200;
-const TRAIL_MIN_DISTANCE = 0.35;
-const TRAIL_FIRST_POINT_DISTANCE = 0.002;
 const STALE_TRAFFIC_MS = 15000;
 const STALE_SWEEP_MS = 3000;
 
@@ -97,6 +97,15 @@ const AIRLINE_ICAO_CODES = Array.from(new Set(AIRLINE_CALLSIGNS.map((airline) =>
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function isGroundTraffic(item: Pick<Traffic, "altitude">) {
+  return item.altitude <= GROUND_ALTITUDE_FT;
+}
+
+function groundTrafficScale(zoom: number) {
+  const safeZoom = Math.max(1, zoom);
+  return clamp(0.72 / Math.pow(safeZoom, 0.16), 0.42, 0.72);
 }
 
 function findRadar() {
@@ -688,17 +697,10 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
             if (oldLive) {
               const lastSample = lastTrailSampleRef.current.get(item.id) ?? 0;
               const history = trailsRef.current.get(item.id) ?? [];
-              const lastPoint = history[history.length - 1];
-              const aircraftMoved = Math.hypot(item.x - oldLive.x, item.y - oldLive.y);
-              const distanceFromLast = lastPoint
-                ? Math.hypot(oldLive.x - lastPoint.x, oldLive.y - lastPoint.y)
-                : Number.POSITIVE_INFINITY;
 
-              if (
-                now - lastSample >= TRAIL_SAMPLE_MS &&
-                aircraftMoved >= TRAIL_FIRST_POINT_DISTANCE &&
-                (history.length === 0 || distanceFromLast >= TRAIL_MIN_DISTANCE)
-              ) {
+              // Trail dots are radar-style time samples. They advance on a fixed
+              // clock cadence regardless of how far (or whether) the aircraft moved.
+              if (now - lastSample >= TRAIL_SAMPLE_MS) {
                 trailsRef.current.set(
                   item.id,
                   [...history, { x: oldLive.x, y: oldLive.y, time: now }].slice(-5),
@@ -865,13 +867,18 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
         {traffic.map((item) => {
           const marker = screenPoint(hostSize, item.x, item.y, viewport);
           const unit = headingUnit(item.heading);
+          const ground = isGroundTraffic(item);
+          const groundScale = groundTrafficScale(viewport.zoom);
+          const active = item.id === selectedId;
+          const labelScale = ground && !active ? groundScale : 1;
           const offset = labelOffsets[item.id] ?? { x: 16, y: 14 };
           const label = { x: marker.x + offset.x, y: marker.y + offset.y };
-          const active = item.id === selectedId;
-          const width = active ? DETAIL_WIDTH : SIMPLE_WIDTH;
-          const height = active ? DETAIL_HEIGHT : SIMPLE_HEIGHT;
+          const width = (active ? DETAIL_WIDTH : SIMPLE_WIDTH) * labelScale;
+          const height = (active ? DETAIL_HEIGHT : SIMPLE_HEIGHT) * labelScale;
           const end = connectorEnd(marker, label, width, height);
-          const vectorLength = VECTOR_PIXELS_PER_NM * settings.vectorMiles * viewport.zoom;
+          const vectorLength = ground
+            ? GROUND_VECTOR_PIXELS
+            : VECTOR_PIXELS_PER_NM * settings.vectorMiles * viewport.zoom;
           const history = (trailsRef.current.get(item.id) ?? []).slice(-settings.trailCount);
 
           return <g key={item.id}>
@@ -884,7 +891,7 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
                 key={`${item.id}-trail-${trailPoint.time}`}
                 cx={point.x}
                 cy={point.y}
-                r="3"
+                r={ground ? 3 * groundScale : 3}
                 fill="#00ff00"
                 opacity={opacity}
               />;
@@ -895,7 +902,7 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
               x2={marker.x + unit.x * vectorLength}
               y2={marker.y + unit.y * vectorLength}
               stroke="#00e000"
-              strokeWidth="1.5"
+              strokeWidth={ground ? "1" : "1.5"}
               vectorEffect="non-scaling-stroke"
             />}
             <line
@@ -904,7 +911,7 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
               x2={end.x}
               y2={end.y}
               stroke="#00e000"
-              strokeWidth="1.2"
+              strokeWidth={ground ? "0.8" : "1.2"}
               vectorEffect="non-scaling-stroke"
             />
           </g>;
@@ -913,6 +920,9 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
 
       {traffic.map((item) => {
         const active = item.id === selectedId;
+        const ground = isGroundTraffic(item);
+        const groundScale = groundTrafficScale(viewport.zoom);
+        const labelScale = ground && !active ? groundScale : 1;
         const marker = screenPoint(hostSize, item.x, item.y, viewport);
         const offset = labelOffsets[item.id] ?? { x: 16, y: 14 };
         const labelPoint = { x: marker.x + offset.x, y: marker.y + offset.y };
@@ -1016,7 +1026,12 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
               setPopup(null);
             }}
             className="pointer-events-auto absolute z-[10] -translate-x-1/2 -translate-y-1/2"
-            style={{ left: marker.x, top: marker.y, width: TARGET_SIZE, height: TARGET_SIZE }}
+            style={{
+              left: marker.x,
+              top: marker.y,
+              width: ground ? TARGET_SIZE * groundScale : TARGET_SIZE,
+              height: ground ? TARGET_SIZE * groundScale : TARGET_SIZE,
+            }}
             aria-label={`Seleccionar ${displayCallsign}`}
           >
             <span className={`absolute inset-0 rotate-45 border ${active ? "border-[#00ff00]" : "border-[#00d800]"}`} />
@@ -1028,7 +1043,12 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
             onMouseDown={startLabelDrag}
             onClick={activateLabel}
             className="pointer-events-auto absolute z-[9] w-[66px] cursor-move whitespace-nowrap text-left font-mono text-[9px] leading-[8px] text-[#00e000]"
-            style={{ left: labelPoint.x, top: labelPoint.y }}
+            style={{
+              left: labelPoint.x,
+              top: labelPoint.y,
+              transform: `scale(${labelScale})`,
+              transformOrigin: "0 0",
+            }}
           >
             <DragEdges onMouseDown={startLabelDrag} />
             <span className="block h-[7px] text-[8px] leading-[7px]">I</span>
