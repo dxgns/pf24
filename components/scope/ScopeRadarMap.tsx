@@ -35,11 +35,12 @@ const MDST_APP_PATH =
 const MDPC_APP_PATH =
   "M 73.93 85.06 L 83.72 84.96 L 100.56 96.22 L 99.61 103.25 C 99.23 106.06 94.10 110.25 87.36 110.25 C 79.10 110.25 71.19 106.00 71.20 102.55 L 71.24 94.06 Z";
 
-// MDPC TWR boundary. Straight sections preserve the supplied union coordinates while
-// the lower and upper rounded sections pass exactly through the supplied 2 NM references
-// at CIRCULO 1 (87.44,107.00) and CIRCULO 2 (87.47,98.23).
+// MDPC TWR boundary. The straight corridor sections end at UNION 3/4/7/8 and the
+// circular portions begin there with their own direction; the joins are intentionally
+// not tangent-smoothed. Both rounded portions still pass exactly through the supplied
+// 2 NM references CIRCULO 1 (87.44,107.00) and CIRCULO 2 (87.47,98.23).
 const MDPC_TWR_PATH =
-  "M 73.97 101.54 L 74.11 103.24 L 83.05 103.45 C 84.55 103.45 85.85 107.00 87.44 107.00 C 89.15 107.00 90.30 103.38 91.80 103.38 L 93.15 103.40 L 93.16 101.87 L 91.83 101.83 C 90.30 101.83 89.15 98.23 87.47 98.23 C 85.75 98.23 84.35 101.72 82.86 101.72 L 73.97 101.54 Z";
+  "M 73.97 101.54 L 74.11 103.24 L 83.05 103.45 C 83.55 105.35 85.20 107.00 87.44 107.00 C 89.65 107.00 91.30 105.25 91.80 103.38 L 93.15 103.40 L 93.16 101.87 L 91.83 101.83 C 91.25 99.90 89.65 98.23 87.47 98.23 C 85.25 98.23 83.45 99.85 82.86 101.72 L 73.97 101.54 Z";
 
 const MDPC_SVG_TRANSFORM =
   "matrix(0.00602718270 0.000692389997 -0.0006984094 0.00603738534 85.6661924 101.218949)";
@@ -216,8 +217,6 @@ export default function ScopeRadarMap() {
   }, []);
 
   if (!host) return null;
-  const towerStyle = pathStyle("tower");
-
   return createPortal(
     <div data-pf24-vector-map="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
       <svg className="absolute inset-0 block h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}>
@@ -243,15 +242,7 @@ export default function ScopeRadarMap() {
             }
             return <polyline key={airspace.id} points={points(airspace)} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
           })}
-          <path
-            d={MDPC_TWR_PATH}
-            fill="none"
-            stroke={towerStyle.stroke}
-            strokeWidth={towerStyle.width}
-            strokeDasharray={towerStyle.dash}
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
+          <path data-map-layer="mdpc-twr" d={MDPC_TWR_PATH} fill="none" stroke="#2384aa" strokeWidth={0.11} strokeDasharray="0.38 0.28" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </g>
         <MdpcSvgAirport zoom={viewport.zoom} />
         <g data-map-layer="fixes">
