@@ -8,12 +8,7 @@ type Viewport = { zoom: number; panX: number; panY: number };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
-// MDCR SVG runway centreline endpoints -> verified Scope RWY12/RWY30.
 const MDCR_TRANSFORM = "matrix(0.002654293298 0.001479223615 -0.001479223615 0.002654293298 56.73970455 108.85993827)";
-
-// MTCA uses the user's actual SVG runway, with its green background removed.
-// The transform maps the SVG runway centreline endpoints exactly to the
-// verified Scope coordinates: RWY08 34.54/103.47 and RWY26 33.20/103.61.
 const MTCA_TRANSFORM = "matrix(-0.007001493198 0.000731483017 -0.000731483017 -0.007001493198 34.638800837 103.513989923)";
 
 function readViewport(): Viewport {
@@ -70,27 +65,22 @@ export default function MdcrMtcaSvgAirport() {
 
   return createPortal(
     <div className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
-      <svg
-        className="absolute inset-0 block h-full w-full"
-        viewBox={viewBox}
-        preserveAspectRatio="xMidYMid meet"
-        style={{
-          transformOrigin: "0 0",
-          transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`,
-        }}
-      >
+      <svg className="absolute inset-0 block h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}>
         {viewport.zoom >= 2.35 && (
-          <image
-            href="/scope/mdcr-ground.svg"
-            x={0}
-            y={0}
-            width={851.24261}
-            height={85.69931}
-            transform={MDCR_TRANSFORM}
-            preserveAspectRatio="none"
-          />
+          <image href="/scope/mdcr-ground.svg" x={0} y={0} width={851.24261} height={85.69931} transform={MDCR_TRANSFORM} preserveAspectRatio="none" />
         )}
 
+        {/* MTCA airport terrain. Kept behind the supplied runway artwork. */}
+        <rect
+          data-airport="MTCA"
+          data-map-layer="mtca-ground-background"
+          x={32.85}
+          y={103.12}
+          width={2.05}
+          height={0.84}
+          rx={0.08}
+          fill="#004000"
+        />
         <image
           data-airport="MTCA"
           data-map-layer="mtca-runway-user-svg"
