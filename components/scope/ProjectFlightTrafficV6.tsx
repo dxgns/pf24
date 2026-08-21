@@ -105,7 +105,7 @@ function isGroundTraffic(item: Pick<Traffic, "altitude">) {
 
 function groundTrafficScale(zoom: number) {
   const safeZoom = Math.max(1, zoom);
-  return clamp(0.72 / Math.pow(safeZoom, 0.16), 0.42, 0.72);
+  return clamp(0.55 * Math.pow(safeZoom, 0.18), 0.55, 1);
 }
 
 function findRadar() {
