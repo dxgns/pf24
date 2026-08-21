@@ -18,7 +18,7 @@ const VIEWPORT_EVENT = "pf24-radar-viewport";
 // Calibrated against the supplied PF map reference so the coastline matches
 // the existing fixes and airport placements in the PF24 Scope coordinate frame.
 const HISPANIOLA_SVG_TRANSFORM =
-  "matrix(0.19083778 0.00039669 0.00187641 0.18849282 26.53185468 84.46004555)";
+  "matrix(0.19083778 0.00039669 0.00187641 0.18849282 26.38185468 84.46004555)";
 const HISPANIOLA_SVG_WIDTH = 344.39517;
 const HISPANIOLA_SVG_HEIGHT = 141.20445;
 
