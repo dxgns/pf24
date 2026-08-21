@@ -22,7 +22,7 @@ const OWNERS_EVENT = "pf24-unplanned-ownership-sync";
 const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
 const OWNERSHIP_HINT_EVENT = "pf24-traffic-ownership-hint";
 const HANDOVER_APPLY_EVENT = "pf24-unplanned-handover-apply";
-const PRESENCE_CHANNEL = "scope-unplanned-ownership-v6";
+const PRESENCE_CHANNEL = "scope-unplanned-ownership-v5";
 const HANDOVER_PROTECTION_MS = 3500;
 const RELEASE_SUPPRESSION_MS = 5000;
 
