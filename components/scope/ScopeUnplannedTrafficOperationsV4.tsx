@@ -10,10 +10,11 @@ type Props = { initialPlans: ScopeFlightPlan[] };
 type StoredConnection = { callsign?: string };
 type ClaimTimes = Record<string, number>;
 type Owners = Record<string, string>;
-type PresencePayload = { position?: string; sessionId?: string; claims?: ClaimTimes; onlineAt?: number };
+type ReleasedOwner = { owner: string; releasedAt: number; expiresAt: number };
+type ReleaseState = Record<string, ReleasedOwner>;
+type PresencePayload = { position?: string; sessionId?: string; claims?: ClaimTimes; releases?: ReleaseState; onlineAt?: number };
 type Winner = { owner: string; claimedAt: number; sessionId: string };
 type HandoverDetail = { refId?: string; key?: string; from?: string; to?: string };
-type ReleasedOwner = { owner: string; releasedAt: number; expiresAt: number };
 type OwnershipControl = { kind: "release"; key: string; owner: string; releasedAt: number };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
@@ -111,12 +112,17 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
   const trackPresence = useCallback(async () => {
     const channel = channelRef.current;
     if (!channel || !subscribedRef.current) return;
+    const now = Date.now();
+    const releases = Object.fromEntries(
+      Array.from(releasedOwnersRef.current.entries()).filter(([, release]) => release.expiresAt > now),
+    ) as ReleaseState;
     try {
       await channel.track({
         position: positionRef.current,
         sessionId: sessionIdRef.current,
         claims: claimsRef.current,
-        onlineAt: Date.now(),
+        releases,
+        onlineAt: now,
       } satisfies PresencePayload);
     } catch (error) {
       console.error("PF24 Scope unplanned presence track failed:", error);
@@ -135,14 +141,15 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
   }, []);
 
   const suppressReleasedOwner = useCallback((key: string, owner: string, releasedAt = Date.now()) => {
-    if (!key || !owner || !Number.isFinite(releasedAt)) return;
+    if (!key || !owner || !Number.isFinite(releasedAt)) return false;
     const existing = releasedOwnersRef.current.get(key);
-    if (existing && existing.releasedAt > releasedAt) return;
+    if (existing && existing.releasedAt >= releasedAt) return false;
     releasedOwnersRef.current.set(key, {
       owner,
       releasedAt,
       expiresAt: releasedAt + RELEASE_SUPPRESSION_MS,
     });
+    return true;
   }, []);
 
   const broadcastRelease = useCallback((key: string, owner: string, releasedAt: number) => {
@@ -212,16 +219,24 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       const key = norm(payload?.key ?? "");
       const owner = payload?.owner?.trim().toUpperCase() ?? "";
       const releasedAt = Number(payload?.releasedAt);
-      if (payload?.kind !== "release" || !key || !owner || !Number.isFinite(releasedAt)) return;
+      const now = Date.now();
+      if (
+        payload?.kind !== "release" ||
+        !key ||
+        !owner ||
+        !Number.isFinite(releasedAt) ||
+        releasedAt + RELEASE_SUPPRESSION_MS <= now
+      ) return;
 
-      suppressReleasedOwner(key, owner, releasedAt);
-
+      const changedRelease = suppressReleasedOwner(key, owner, releasedAt);
       const localClaimAt = Number(claimsRef.current[key]);
       const localNewerClaim = positionRef.current === owner && Number.isFinite(localClaimAt) && localClaimAt > releasedAt;
       if (positionRef.current === owner && Number.isFinite(localClaimAt) && localClaimAt <= releasedAt) {
         const next = { ...claimsRef.current };
         delete next[key];
         setLocalClaims(next);
+      } else if (changedRelease) {
+        void trackPresence();
       }
 
       if (!localNewerClaim) {
@@ -236,9 +251,26 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       const state = channel.presenceState() as unknown as Record<string, PresencePayload[]>;
       const winners: Record<string, Winner> = {};
       const now = Date.now();
+      let releaseStateChanged = false;
 
       for (const [key, released] of releasedOwnersRef.current) {
-        if (released.expiresAt <= now) releasedOwnersRef.current.delete(key);
+        if (released.expiresAt <= now) {
+          releasedOwnersRef.current.delete(key);
+          releaseStateChanged = true;
+        }
+      }
+
+      for (const entries of Object.values(state)) {
+        for (const entry of entries) {
+          for (const [rawKey, rawRelease] of Object.entries(entry.releases ?? {})) {
+            const key = norm(rawKey);
+            const owner = rawRelease?.owner?.trim().toUpperCase() ?? "";
+            const releasedAt = Number(rawRelease?.releasedAt);
+            const expiresAt = Number(rawRelease?.expiresAt);
+            if (!key || !owner || !Number.isFinite(releasedAt) || !Number.isFinite(expiresAt) || expiresAt <= now) continue;
+            if (suppressReleasedOwner(key, owner, releasedAt)) releaseStateChanged = true;
+          }
+        }
       }
 
       for (const entries of Object.values(state)) {
@@ -270,6 +302,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
         const winner = winners[key];
         if (winner && winner.owner === released.owner && winner.claimedAt > released.releasedAt) {
           releasedOwnersRef.current.delete(key);
+          releaseStateChanged = true;
         }
       }
 
@@ -282,7 +315,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       }
 
       const local = { ...claimsRef.current };
-      let changed = false;
+      let claimsChanged = false;
       for (const key of Object.keys(local)) {
         const released = releasedOwnersRef.current.get(key);
         const localClaimAt = Number(local[key]);
@@ -294,17 +327,18 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
           localClaimAt <= released.releasedAt
         ) {
           delete local[key];
-          changed = true;
+          claimsChanged = true;
           continue;
         }
         const winner = winners[key];
         const protectedUntil = protectedClaimsRef.current.get(key) ?? 0;
         if (winner && winner.sessionId !== sessionIdRef.current && protectedUntil <= now) {
           delete local[key];
-          changed = true;
+          claimsChanged = true;
         }
       }
-      if (changed) setLocalClaims(local);
+      if (claimsChanged) setLocalClaims(local);
+      else if (releaseStateChanged) void trackPresence();
     };
 
     channel
