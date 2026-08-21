@@ -67,7 +67,7 @@ export default async function ScopePage() {
 
   const controllerName = session.user?.name ?? "ATC";
   const plans = (data ?? []) as ScopeFlightPlan[];
-  const projectFlightServerId = (process.env.PROJECT_FLIGHT_SERVER_ID ?? "2ykygVZiX5").trim();
+  const projectFlightServerId = (process.env.PROJECT_FLIGHT_SERVER_ID ?? "2yizNhwqCj").trim();
 
   return (
     <>
