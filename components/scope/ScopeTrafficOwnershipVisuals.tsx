@@ -10,7 +10,7 @@ type StoredConnection = { callsign?: string };
 type UnplannedOwners = Record<string, string>;
 type PlannedMeta = { owner: string | null; transponder: string };
 type HandoverState = Record<string, { kind: "incoming-transfer" | "incoming-request"; from: string; to: string }>;
-type OptimisticOwner = { owner: string | null; previousOwner: string | null; expiresAt: number };
+type OptimisticOwner = { owner: string | null; previousOwner: string | null; expiresAt: number; releaseConfirmed?: boolean };
 type OwnershipHintDetail = { key?: string; owner?: string | null; previousOwner?: string | null };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
@@ -95,6 +95,7 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
   const [handoverStates, setHandoverStates] = useState<HandoverState>({});
   const [optimisticOwners, setOptimisticOwners] = useState<Record<string, OptimisticOwner>>({});
   const refreshTimerRef = useRef<number | null>(null);
+  const loadSequenceRef = useRef(0);
 
   const plannedMeta = useMemo(() => {
     const map = new Map<string, PlannedMeta>();
@@ -106,7 +107,9 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
   }, [plans]);
 
   const loadPlans = useCallback(async () => {
+    const sequence = ++loadSequenceRef.current;
     const { data, error } = await supabase.from("flight_plans").select("*").neq("status", "FINISHED");
+    if (sequence !== loadSequenceRef.current) return;
     if (error) { console.error("PF24 Scope ownership refresh failed:", error); return; }
     setPlans((data ?? []) as ScopeFlightPlan[]);
   }, []);
@@ -142,7 +145,12 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
         }
         return {
           ...current,
-          [key]: { owner, previousOwner, expiresAt: Date.now() + OPTIMISTIC_TTL_MS },
+          [key]: {
+            owner,
+            previousOwner,
+            expiresAt: Date.now() + OPTIMISTIC_TTL_MS,
+            releaseConfirmed: false,
+          },
         };
       });
       scheduleRefresh(120);
@@ -186,9 +194,24 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
         }
 
         if (optimistic.owner === null) {
-          // A release is intentionally kept optimistic through the whole grace period.
-          // Presence and postgres changes can briefly replay the previous owner after FREE.
-          // Only a genuinely different new owner is allowed to override the release early.
+          if (meta) {
+            if (actual === null) {
+              if (!optimistic.releaseConfirmed) {
+                next[key] = { ...optimistic, releaseConfirmed: true };
+                changed = true;
+              }
+              continue;
+            }
+            if (actual !== optimistic.previousOwner || optimistic.releaseConfirmed) {
+              delete next[key];
+              changed = true;
+            }
+            continue;
+          }
+
+          // Unplanned ownership can replay stale Presence snapshots after FREE.
+          // The unplanned ownership layer carries timestamped release tombstones,
+          // while this visual guard keeps the label white during convergence.
           if (actual && actual !== optimistic.previousOwner) {
             delete next[key];
             changed = true;
