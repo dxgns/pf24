@@ -7,6 +7,7 @@ import { MAP_BOUNDS } from "@/lib/scope/mapData";
 type Viewport = { zoom: number; panX: number; panY: number };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
+const AIRPORT_DETAIL_MIN_ZOOM = 2.35;
 
 const MDCR_TRANSFORM = "matrix(0.002654293298 0.001479223615 -0.001479223615 0.002654293298 56.73970455 108.85993827)";
 
@@ -67,6 +68,8 @@ export default function MdcrMtcaSvgAirport() {
 
   if (!host) return null;
 
+  const showAirportDetail = viewport.zoom >= AIRPORT_DETAIL_MIN_ZOOM;
+
   return createPortal(
     <div className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
       <svg
@@ -78,7 +81,7 @@ export default function MdcrMtcaSvgAirport() {
           transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`,
         }}
       >
-        {viewport.zoom >= 2.35 && (
+        {showAirportDetail && (
           <image
             href="/scope/mdcr-ground.svg"
             x={0}
@@ -90,15 +93,17 @@ export default function MdcrMtcaSvgAirport() {
           />
         )}
 
-        <image
-          href="/scope/mtca-ground.svg"
-          x={0}
-          y={0}
-          width={217.87869}
-          height={15.99907}
-          transform={MTCA_TRANSFORM}
-          preserveAspectRatio="none"
-        />
+        {showAirportDetail && (
+          <image
+            href="/scope/mtca-ground.svg"
+            x={0}
+            y={0}
+            width={217.87869}
+            height={15.99907}
+            transform={MTCA_TRANSFORM}
+            preserveAspectRatio="none"
+          />
+        )}
       </svg>
     </div>,
     host,
