@@ -19,6 +19,7 @@ const CLAIMS_STORAGE_KEY = "pf24_scope_unplanned_claims_v4";
 const SESSION_STORAGE_KEY = "pf24_scope_unplanned_presence_session_v4";
 const OWNERS_EVENT = "pf24-unplanned-ownership-sync";
 const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
+const OWNERSHIP_HINT_EVENT = "pf24-traffic-ownership-hint";
 const HANDOVER_APPLY_EVENT = "pf24-unplanned-handover-apply";
 const PRESENCE_CHANNEL = "scope-unplanned-ownership-v5";
 const HANDOVER_PROTECTION_MS = 3500;
@@ -69,6 +70,9 @@ function planKeys(plan: ScopeFlightPlan) {
 }
 function publishOwners(owners: Owners) {
   window.dispatchEvent(new CustomEvent(OWNERS_EVENT, { detail: { owners } }));
+}
+function hintOwnership(key: string, owner: string | null) {
+  window.dispatchEvent(new CustomEvent(OWNERSHIP_HINT_EVENT, { detail: { key, owner } }));
 }
 
 export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Props) {
@@ -267,6 +271,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
         const optimistic = { ...ownersRef.current };
         delete optimistic[key];
         applyOwners(optimistic);
+        hintOwnership(key, null);
       }
 
       if (here === to) {
@@ -275,6 +280,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
         const next = { ...claimsRef.current, [key]: now };
         setLocalClaims(next);
         applyOwners({ ...ownersRef.current, [key]: to });
+        hintOwnership(key, to);
 
         // Retrack while the previous owner is leaving Presence. Protection prevents
         // the normal collision resolver from deleting the incoming claim too early.
@@ -319,30 +325,43 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       }
 
       if (action === "ASSUME") {
-        if (!position) {
+        const here = positionRef.current || position;
+        if (!here) {
           alert("Debes estar conectado a un sector activo antes de asumir tráfico.");
           return;
         }
         const currentOwner = ownersRef.current[key];
-        if (currentOwner && currentOwner !== position) return;
+        if (currentOwner && currentOwner !== here) return;
         const next = { ...claimsRef.current, [key]: Date.now() };
         setLocalClaims(next);
-        applyOwners({ ...ownersRef.current, [key]: position });
+        applyOwners({ ...ownersRef.current, [key]: here });
+        hintOwnership(key, here);
         return;
       }
 
       if (action === "FREE") {
-        if (!position || ownersRef.current[key] !== position || !(key in claimsRef.current)) {
+        const here = positionRef.current || position;
+        const currentOwner = ownersRef.current[key];
+        const hasLocalClaim = key in claimsRef.current;
+        if (!here || (currentOwner && currentOwner !== here) || (!currentOwner && !hasLocalClaim)) {
           alert("Solo puedes liberar tráfico asumido por tu mismo sector.");
           return;
         }
+
         protectedClaimsRef.current.delete(key);
         const next = { ...claimsRef.current };
         delete next[key];
         setLocalClaims(next);
+
         const optimistic = { ...ownersRef.current };
         delete optimistic[key];
         applyOwners(optimistic);
+        hintOwnership(key, null);
+
+        // Presence can briefly report the old claim while track() propagates.
+        // Re-track to make sure the released traffic stays free across clients.
+        window.setTimeout(() => void trackPresence(), 120);
+        window.setTimeout(() => void trackPresence(), 500);
         return;
       }
 
@@ -353,7 +372,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
 
     window.addEventListener("click", onMenuClick, true);
     return () => window.removeEventListener("click", onMenuClick, true);
-  }, [applyOwners, plannedKeys, position, setLocalClaims]);
+  }, [applyOwners, plannedKeys, position, setLocalClaims, trackPresence]);
 
   const fplPortal = radarHost && blankFplOpen ? createPortal(
     <div className="absolute left-1/2 top-1/2 z-[130] w-[900px] max-w-[calc(100%-40px)] -translate-x-1/2 -translate-y-1/2 border border-[#888] bg-[#cecece] p-[10px] font-mono text-[#111] shadow-xl">
