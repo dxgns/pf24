@@ -27,8 +27,7 @@ import ScopeRadarMap from "@/components/scope/ScopeRadarMap";
 import SecondaryAirportGround from "@/components/scope/SecondaryAirportGround";
 import MdstSvgAirport from "@/components/scope/MdstSvgAirport";
 import MdabSvgAirport from "@/components/scope/MdabSvgAirport";
-import MdcrSimulatorDetail from "@/components/scope/MdcrSimulatorDetail";
-import MtcaSimulatorDetail from "@/components/scope/MtcaSimulatorDetail";
+import MdcrMtcaSvgAirport from "@/components/scope/MdcrMtcaSvgAirport";
 import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
 import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
@@ -46,73 +45,31 @@ import ScopeConnectionPersistence from "@/components/scope/ScopeConnectionPersis
 import ScopeAtisDisconnectCleanup from "@/components/scope/ScopeAtisDisconnectCleanup";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
-export const metadata: Metadata = {
-  title: "PF24 Scope | PF24",
-  description: "Entorno operativo ATC de PF24.",
-};
+export const metadata: Metadata = { title: "PF24 Scope | PF24", description: "Entorno operativo ATC de PF24." };
 
 export default async function ScopePage() {
   const session = await auth();
-
   if (!session) redirect("/login");
   if (!session.user?.permissions?.canAccessATC) redirect("/access-denied");
-
-  const { data, error } = await supabase
-    .from("flight_plans")
-    .select("*")
-    .neq("status", "FINISHED")
-    .order("created_at", { ascending: false });
-
+  const { data, error } = await supabase.from("flight_plans").select("*").neq("status", "FINISHED").order("created_at", { ascending: false });
   if (error) console.error("PF24 Scope flight plan load error:", error);
-
   const controllerName = session.user?.name ?? "ATC";
   const plans = (data ?? []) as ScopeFlightPlan[];
   const projectFlightServerId = (process.env.PROJECT_FLIGHT_SERVER_ID ?? "2ykygVZiX5").trim();
 
-  return (
-    <>
-      <ScopeNativeListCss />
-      <PF24Scope initialPlans={plans} controllerName={controllerName} />
-      <ScopeConnectionPersistence />
-      <ScopeConnectDialogPersistence />
-      <ScopeOwnedTrafficLifecycle />
-      <ScopeTrafficAutoRelease />
-      <ScopeLayoutGuards />
-      <WeatherPanelV2 />
-      <ScopeRadarMap />
-      <SecondaryAirportGround />
-      <MdstSvgAirport />
-      <MdabSvgAirport />
-      <MdcrSimulatorDetail />
-      <MtcaSimulatorDetail />
-      <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
-      <ScopeTrafficSettings />
-      <ScopeTrafficLabelUX />
-      <ScopeTrafficMappState />
-      <ScopeTrafficHandover initialPlans={plans} />
-      <ScopeUnplannedHold initialPlans={plans} />
-      <ScopeUnplannedTrafficOperationsV4 initialPlans={plans} />
-      <ScopeSharedHoldSync />
-      <ScopeTrafficOperations initialPlans={plans} />
-      <ScopeHoldTelemetry />
-      <ScopeTrafficOwnershipVisuals initialPlans={plans} />
-      <ScopeTrafficFooterPlacement />
-      <ScopePersonalization />
-      <RadarViewport />
-      <ScopeFunctionalExtras />
-      <ScopeRatingAccess roles={session.user?.discordRoles ?? []} />
-      <ScopeUiRefinements />
-      <ScopeUiConsistencyFixes />
-      <ScopeChromeAdditions />
-      <ScopeInterfaceCorrections />
-      <ScopeAtisDialogV2 controllerName={controllerName} />
-      <ScopeAtisJurisdictionGuard controllerName={controllerName} />
-      <ScopeAtisDisconnectCleanup controllerName={controllerName} />
-      <ScopeAtcPresence controllerName={controllerName} />
-      <ScopeOperationalSyncV2 />
-      <ScopeSectorChat />
-      <ScopeSectorListRules initialPlans={plans} />
-      <ScopeNativeListBodyGuard />
-    </>
-  );
+  return <>
+    <ScopeNativeListCss /><PF24Scope initialPlans={plans} controllerName={controllerName} />
+    <ScopeConnectionPersistence /><ScopeConnectDialogPersistence /><ScopeOwnedTrafficLifecycle /><ScopeTrafficAutoRelease />
+    <ScopeLayoutGuards /><WeatherPanelV2 /><ScopeRadarMap /><SecondaryAirportGround /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport />
+    <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
+    <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} />
+    <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
+    <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} />
+    <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras />
+    <ScopeRatingAccess roles={session.user?.discordRoles ?? []} /><ScopeUiRefinements /><ScopeUiConsistencyFixes />
+    <ScopeChromeAdditions /><ScopeInterfaceCorrections /><ScopeAtisDialogV2 controllerName={controllerName} />
+    <ScopeAtisJurisdictionGuard controllerName={controllerName} /><ScopeAtisDisconnectCleanup controllerName={controllerName} />
+    <ScopeAtcPresence controllerName={controllerName} /><ScopeOperationalSyncV2 /><ScopeSectorChat />
+    <ScopeSectorListRules initialPlans={plans} /><ScopeNativeListBodyGuard />
+  </>;
 }
