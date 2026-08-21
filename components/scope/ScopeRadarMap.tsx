@@ -15,6 +15,13 @@ type Viewport = { zoom: number; panX: number; panY: number };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
+// Georeferenced from the supplied Hispaniola outline using the real ARP positions
+// of MDPC, MDST and MDCR as anchors in the calibrated PF24 Scope coordinate frame.
+const HISPANIOLA_SVG_TRANSFORM =
+  "matrix(0.162168460566 0.001387314616 -0.013798007379 0.204920556588 33.758483990 84.860643725)";
+const HISPANIOLA_SVG_WIDTH = 344.39517;
+const HISPANIOLA_SVG_HEIGHT = 141.20445;
+
 const MDPC_SVG_TRANSFORM =
   "matrix(0.00602718270 0.000692389997 -0.0006984094 0.00603738534 85.6661924 101.218949)";
 
@@ -193,6 +200,17 @@ export default function ScopeRadarMap() {
   return createPortal(
     <div data-pf24-vector-map="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
       <svg className="absolute inset-0 block h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}>
+        <g data-map-layer="hispaniola-coastline">
+          <image
+            href="/scope/hispaniola.svg"
+            x={0}
+            y={0}
+            width={HISPANIOLA_SVG_WIDTH}
+            height={HISPANIOLA_SVG_HEIGHT}
+            transform={HISPANIOLA_SVG_TRANSFORM}
+            preserveAspectRatio="none"
+          />
+        </g>
         <g data-map-layer="airspace">
           {AIRSPACE_PATHS.map((airspace) => {
             const style = pathStyle(airspace.tone);
