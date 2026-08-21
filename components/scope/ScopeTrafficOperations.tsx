@@ -71,9 +71,9 @@ function planKeys(plan: ScopeFlightPlan) {
   return keys;
 }
 
-function announceOwnerHint(plan: ScopeFlightPlan, owner: string | null) {
+function announceOwnerHint(plan: ScopeFlightPlan, owner: string | null, previousOwner?: string | null) {
   for (const key of planKeys(plan)) {
-    window.dispatchEvent(new CustomEvent("pf24-traffic-ownership-hint", { detail: { key, owner } }));
+    window.dispatchEvent(new CustomEvent("pf24-traffic-ownership-hint", { detail: { key, owner, previousOwner } }));
   }
 }
 
@@ -170,7 +170,7 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-traffic-operations-flight-plans-v2")
+      .channel("scope-traffic-operations-flight-plans-v3")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => {
@@ -244,28 +244,30 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
   };
 
   const assume = async (plan: ScopeFlightPlan) => {
-    if (!position) {
+    const here = position || readPosition();
+    if (!here) {
       alert("Debes estar conectado a un sector activo antes de asumir tráfico.");
       return;
     }
     const owner = plan.assumed_by?.trim().toUpperCase() || "";
-    if (owner === position) return;
-    if (owner && owner !== position) return;
+    if (owner === here) return;
+    if (owner && owner !== here) return;
 
-    announceOwnerHint(plan, position);
-    setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: position } : item));
+    announceOwnerHint(plan, here, owner || null);
+    setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: here } : item));
     announceOwnershipChange();
 
     const { data, error } = await supabase
       .from("flight_plans")
-      .update({ assumed_by: position, updated_at: new Date().toISOString() })
+      .update({ assumed_by: here, updated_at: new Date().toISOString() })
       .eq("id", plan.id)
       .is("assumed_by", null)
       .select("id,assumed_by")
       .maybeSingle();
 
-    if (error || !data || String(data.assumed_by ?? "").trim().toUpperCase() !== position) {
+    if (error || !data || String(data.assumed_by ?? "").trim().toUpperCase() !== here) {
       console.error("PF24 Scope assume failed:", error);
+      announceOwnerHint(plan, owner || null, here);
       await loadPlans();
       alert("No se pudo asumir el tráfico. Puede que otro sector lo haya asumido primero.");
       return;
@@ -274,13 +276,14 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
   };
 
   const free = async (plan: ScopeFlightPlan) => {
+    const here = position || readPosition();
     const owner = plan.assumed_by?.trim().toUpperCase() || "";
-    if (!position || owner !== position) {
+    if (!here || owner !== here) {
       alert("Solo puedes liberar tráfico asumido por tu mismo sector.");
       return;
     }
 
-    announceOwnerHint(plan, null);
+    announceOwnerHint(plan, null, owner);
     setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: null } : item));
     announceOwnershipChange();
 
@@ -288,12 +291,13 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       .from("flight_plans")
       .update({ assumed_by: null, updated_at: new Date().toISOString() })
       .eq("id", plan.id)
-      .eq("assumed_by", position)
+      .eq("assumed_by", here)
       .select("id,assumed_by")
       .maybeSingle();
 
     if (error || !data || data.assumed_by !== null) {
       console.error("PF24 Scope free traffic failed:", error);
+      announceOwnerHint(plan, owner, null);
       await loadPlans();
       alert("No se pudo liberar el tráfico.");
       return;
@@ -302,8 +306,9 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
   };
 
   const contactMe = async (plan: ScopeFlightPlan) => {
+    const here = position || readPosition();
     const owner = plan.assumed_by?.trim().toUpperCase() || "";
-    if (!position || owner !== position) {
+    if (!here || owner !== here) {
       alert("Debes asumir este tráfico antes de enviar Contact Me.");
       return;
     }
@@ -311,17 +316,17 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       alert("Este plan no tiene un piloto asociado para recibir Contact Me.");
       return;
     }
-    const frequency = ATC_FREQUENCIES[position];
+    const frequency = ATC_FREQUENCIES[here];
     if (!frequency) {
-      alert(`No hay frecuencia configurada para ${position}.`);
+      alert(`No hay frecuencia configurada para ${here}.`);
       return;
     }
-    const message = `Contacte ${position} en ${frequency}`;
+    const message = `Contacte ${here} en ${frequency}`;
     const { error } = await supabase.from("contact_messages").insert({
       flight_plan_id: plan.id,
       callsign: plan.callsign,
       pilot_id: plan.created_by,
-      controller_position: position,
+      controller_position: here,
       frequency,
       message,
     });
