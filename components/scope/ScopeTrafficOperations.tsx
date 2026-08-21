@@ -15,6 +15,8 @@ type StoredConnection = {
   callsign?: string;
 };
 
+type OwnerLookup = { ok: boolean; owner: string | null };
+
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const HOLD_STORAGE_KEY = "pf24_scope_hold_traffic_v1";
 const GREEN = "#00e000";
@@ -23,6 +25,10 @@ const HANDOVER_ACTIONS = new Set(["TRANSFER", "REQ ON FREQ", "ACCEPT", "DECLINE"
 
 function normalized(value: string) {
   return normalizeGameCallsign(value);
+}
+
+function normalizeOwner(value: string | null | undefined) {
+  return value?.trim().toUpperCase() || null;
 }
 
 function readPosition() {
@@ -41,6 +47,19 @@ function readHeldIds() {
   } catch {
     return [];
   }
+}
+
+async function authoritativeOwner(planId: string): Promise<OwnerLookup> {
+  const { data, error } = await supabase
+    .from("flight_plans")
+    .select("assumed_by")
+    .eq("id", planId)
+    .maybeSingle();
+  if (error) {
+    console.error("PF24 Scope ownership verification failed:", error);
+    return { ok: false, owner: null };
+  }
+  return { ok: true, owner: normalizeOwner(data?.assumed_by) };
 }
 
 function findScopeWindow(title: string) {
@@ -249,11 +268,22 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       alert("Debes estar conectado a un sector activo antes de asumir tráfico.");
       return;
     }
-    const owner = plan.assumed_by?.trim().toUpperCase() || "";
-    if (owner === here) return;
-    if (owner && owner !== here) return;
 
-    announceOwnerHint(plan, here, owner || null);
+    let owner = normalizeOwner(plan.assumed_by);
+    if (owner === here) return;
+    if (owner && owner !== here) {
+      const verified = await authoritativeOwner(plan.id);
+      if (!verified.ok) return;
+      owner = verified.owner;
+      if (owner === here) {
+        setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: here } : item));
+        announceOwnerHint(plan, here, normalizeOwner(plan.assumed_by));
+        return;
+      }
+      if (owner) return;
+    }
+
+    announceOwnerHint(plan, here, owner);
     setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: here } : item));
     announceOwnershipChange();
 
@@ -265,9 +295,12 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       .select("id,assumed_by")
       .maybeSingle();
 
-    if (error || !data || String(data.assumed_by ?? "").trim().toUpperCase() !== here) {
+    if (error || !data || normalizeOwner(data.assumed_by) !== here) {
       console.error("PF24 Scope assume failed:", error);
-      announceOwnerHint(plan, owner || null, here);
+      const verified = await authoritativeOwner(plan.id);
+      const rollbackOwner = verified.ok ? verified.owner : owner;
+      announceOwnerHint(plan, rollbackOwner, here);
+      setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: rollbackOwner } : item));
       await loadPlans();
       alert("No se pudo asumir el tráfico. Puede que otro sector lo haya asumido primero.");
       return;
@@ -277,10 +310,19 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
 
   const free = async (plan: ScopeFlightPlan) => {
     const here = position || readPosition();
-    const owner = plan.assumed_by?.trim().toUpperCase() || "";
-    if (!here || owner !== here) {
+    if (!here) {
       alert("Solo puedes liberar tráfico asumido por tu mismo sector.");
       return;
+    }
+
+    let owner = normalizeOwner(plan.assumed_by);
+    if (owner !== here) {
+      const verified = await authoritativeOwner(plan.id);
+      if (!verified.ok || verified.owner !== here) {
+        alert("Solo puedes liberar tráfico asumido por tu mismo sector.");
+        return;
+      }
+      owner = verified.owner;
     }
 
     announceOwnerHint(plan, null, owner);
@@ -297,7 +339,10 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
 
     if (error || !data || data.assumed_by !== null) {
       console.error("PF24 Scope free traffic failed:", error);
-      announceOwnerHint(plan, owner, null);
+      const verified = await authoritativeOwner(plan.id);
+      const rollbackOwner = verified.ok ? verified.owner : owner;
+      announceOwnerHint(plan, rollbackOwner, null);
+      setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: rollbackOwner } : item));
       await loadPlans();
       alert("No se pudo liberar el tráfico.");
       return;
@@ -307,11 +352,22 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
 
   const contactMe = async (plan: ScopeFlightPlan) => {
     const here = position || readPosition();
-    const owner = plan.assumed_by?.trim().toUpperCase() || "";
-    if (!here || owner !== here) {
+    if (!here) {
       alert("Debes asumir este tráfico antes de enviar Contact Me.");
       return;
     }
+
+    let owner = normalizeOwner(plan.assumed_by);
+    if (owner !== here) {
+      const verified = await authoritativeOwner(plan.id);
+      if (!verified.ok || verified.owner !== here) {
+        alert("Debes asumir este tráfico antes de enviar Contact Me.");
+        return;
+      }
+      owner = verified.owner;
+      setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: owner } : item));
+    }
+
     if (!plan.created_by) {
       alert("Este plan no tiene un piloto asociado para recibir Contact Me.");
       return;
