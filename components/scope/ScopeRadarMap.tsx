@@ -28,6 +28,13 @@ const HISPANIOLA_SVG_HEIGHT = 141.20445;
 const MDST_APP_PATH =
   "M 71.24 94.06 L 73.93 85.06 L 63.07 83.24 C 58.34244 83.24 54.51 86.45683 54.51 90.425 C 54.51 94.39317 58.53048 97.61 63.49 97.61 L 71.20 97.61 Z";
 
+// MDPC APP boundary: PIXES -> PC202 -> LETAD -> MESPA -> smooth lower arc through
+// CIRCULO 1 -> CIRCULO 2 -> BEREL. The lower section uses two cubic curves so MESPA
+// and CIRCULO 2 join their nearly vertical straight segments cleanly while CIRCULO 1
+// remains the lowest reference point of the rounded boundary.
+const MDPC_APP_PATH =
+  "M 73.93 85.06 L 83.72 84.96 L 100.56 96.22 L 99.61 103.25 C 99.23 106.06 94.10 110.25 87.36 110.25 C 79.10 110.25 71.19 106.00 71.20 102.55 L 71.24 94.06 Z";
+
 const MDPC_SVG_TRANSFORM =
   "matrix(0.00602718270 0.000692389997 -0.0006984094 0.00603738534 85.6661924 101.218949)";
 
@@ -222,6 +229,9 @@ export default function ScopeRadarMap() {
             const style = pathStyle(airspace.tone);
             if (airspace.id === "MDST_APP") {
               return <path key={airspace.id} d={MDST_APP_PATH} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+            }
+            if (airspace.id === "MDPC_APP") {
+              return <path key={airspace.id} d={MDPC_APP_PATH} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
             }
             return <polyline key={airspace.id} points={points(airspace)} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
           })}
