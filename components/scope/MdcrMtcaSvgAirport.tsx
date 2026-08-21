@@ -11,6 +11,11 @@ const VIEWPORT_EVENT = "pf24-radar-viewport";
 // MDCR SVG runway centreline endpoints -> verified Scope RWY12/RWY30.
 const MDCR_TRANSFORM = "matrix(0.002654293298 0.001479223615 -0.001479223615 0.002654293298 56.73970455 108.85993827)";
 
+// Supplied MTCA SVG: left threshold is RWY08, right threshold is RWY26.
+// Map those exact runway endpoints to the verified Scope coordinates:
+// RWY08 34.54/103.47 and RWY26 33.20/103.61.
+const MTCA_TRANSFORM = "matrix(-0.006989345464 0.000730218883 -0.000730218883 -0.006989345464 34.6374489645 103.5141691701)";
+
 function readViewport(): Viewport {
   try {
     const parsed = JSON.parse(localStorage.getItem(VIEWPORT_KEY) ?? "{}") as Partial<Viewport>;
@@ -70,12 +75,18 @@ export default function MdcrMtcaSvgAirport() {
           <image href="/scope/mdcr-ground.svg" x={0} y={0} width={851.24261} height={85.69931} transform={MDCR_TRANSFORM} preserveAspectRatio="none" />
         )}
 
-        {/* MTCA: intentionally runway only. No apron/taxiway/airport schematic. */}
-        <g data-airport="MTCA" data-map-layer="mtca-runway-only">
-          <line x1={33.20} y1={103.61} x2={34.54} y2={103.47} stroke="#000" strokeWidth={0.20} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
-          <line x1={33.20} y1={103.61} x2={34.54} y2={103.47} stroke="#d5dad9" strokeWidth={0.05} strokeLinecap="butt" vectorEffect="non-scaling-stroke" />
-          {viewport.zoom >= 2 && <g fill="#b7bdbc" fontFamily="monospace" fontSize={0.21}><text x={33.24} y={103.56}>26</text><text x={34.43} y={103.57}>08</text></g>}
-        </g>
+        {/* MTCA uses only the runway geometry from the supplied SVG. */}
+        <image
+          data-airport="MTCA"
+          data-map-layer="mtca-runway-svg"
+          href="/scope/mtca-runway.svg"
+          x={0}
+          y={0}
+          width={217.87869}
+          height={15.99907}
+          transform={MTCA_TRANSFORM}
+          preserveAspectRatio="none"
+        />
       </svg>
     </div>,
     host,
