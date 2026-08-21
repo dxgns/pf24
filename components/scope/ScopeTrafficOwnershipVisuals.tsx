@@ -11,6 +11,7 @@ type UnplannedOwners = Record<string, string>;
 type PlannedMeta = { owner: string | null; transponder: string };
 type HandoverState = Record<string, { kind: "incoming-transfer" | "incoming-request"; from: string; to: string }>;
 type OptimisticOwner = { owner: string | null; previousOwner: string | null; expiresAt: number };
+type OwnershipHintDetail = { key?: string; owner?: string | null; previousOwner?: string | null };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const LIVE_ROOT = "[data-pf24-live-traffic='true']";
@@ -19,11 +20,13 @@ const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
 const HANDOVER_EVENT = "pf24-traffic-handover-state";
 const OWNERSHIP_EVENT = "pf24-traffic-ownership-change";
 const OWNERSHIP_HINT_EVENT = "pf24-traffic-ownership-hint";
+const OPTIMISTIC_TTL_MS = 5000;
 const GREEN = "#00e000";
 const GREY = "#9b9b9b";
 const FREE = "#d8d8d8";
 
 function norm(value: string) { return normalizeGameCallsign(value); }
+function normalizeOwner(value: string | null | undefined) { return value?.trim().toUpperCase() || null; }
 function readPosition() {
   try {
     const parsed = JSON.parse(sessionStorage.getItem(CONNECTION_STORAGE_KEY) ?? "null") as StoredConnection | null;
@@ -96,7 +99,7 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
   const plannedMeta = useMemo(() => {
     const map = new Map<string, PlannedMeta>();
     for (const plan of plans) {
-      const meta = { owner: plan.assumed_by?.trim().toUpperCase() || null, transponder: normalizeTransponder(plan.transponder) };
+      const meta = { owner: normalizeOwner(plan.assumed_by), transponder: normalizeTransponder(plan.transponder) };
       for (const key of planKeys(plan)) map.set(key, meta);
     }
     return map;
@@ -123,12 +126,25 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
     const onUnplannedOwners = (event: Event) => setUnplannedOwners((event as CustomEvent<{ owners?: UnplannedOwners }>).detail?.owners ?? {});
     const onHandover = (event: Event) => setHandoverStates((event as CustomEvent<{ states?: HandoverState }>).detail?.states ?? {});
     const onHint = (event: Event) => {
-      const detail = (event as CustomEvent<{ key?: string; owner?: string | null }>).detail;
+      const detail = (event as CustomEvent<OwnershipHintDetail>).detail;
       const key = norm(detail?.key ?? "");
       if (!key) return;
-      const owner = detail?.owner?.trim().toUpperCase() || null;
-      const previousOwner = plannedMeta.get(key)?.owner ?? (unplannedOwners[key]?.trim().toUpperCase() || null);
-      setOptimisticOwners((current) => ({ ...current, [key]: { owner, previousOwner, expiresAt: Date.now() + 4000 } }));
+      const owner = normalizeOwner(detail?.owner);
+      const actualOwner = plannedMeta.get(key)?.owner ?? normalizeOwner(unplannedOwners[key]);
+      const hasExplicitPrevious = Boolean(detail && Object.prototype.hasOwnProperty.call(detail, "previousOwner"));
+      const explicitPrevious = hasExplicitPrevious ? normalizeOwner(detail?.previousOwner) : null;
+
+      setOptimisticOwners((current) => {
+        const existing = current[key];
+        let previousOwner = hasExplicitPrevious ? explicitPrevious : actualOwner;
+        if (owner === null && previousOwner === null) {
+          previousOwner = existing?.owner === null ? existing.previousOwner : (actualOwner ?? normalizeOwner(position));
+        }
+        return {
+          ...current,
+          [key]: { owner, previousOwner, expiresAt: Date.now() + OPTIMISTIC_TTL_MS },
+        };
+      });
       scheduleRefresh(120);
     };
     const onOwnershipChange = () => scheduleRefresh(40);
@@ -145,10 +161,10 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       window.removeEventListener(OWNERSHIP_HINT_EVENT, onHint);
       window.removeEventListener(OWNERSHIP_EVENT, onOwnershipChange);
     };
-  }, [plannedMeta, scheduleRefresh, unplannedOwners]);
+  }, [plannedMeta, position, scheduleRefresh, unplannedOwners]);
 
   useEffect(() => {
-    const channel = supabase.channel("scope-traffic-ownership-visuals-v4")
+    const channel = supabase.channel("scope-traffic-ownership-visuals-v5")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -161,8 +177,26 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       let changed = false;
       for (const [key, optimistic] of Object.entries(current)) {
         const meta = plannedMeta.get(key);
-        const actual = meta ? meta.owner : (unplannedOwners[key]?.trim().toUpperCase() || null);
-        if (optimistic.expiresAt <= now || actual === optimistic.owner || actual !== optimistic.previousOwner) {
+        const actual = meta ? meta.owner : normalizeOwner(unplannedOwners[key]);
+
+        if (optimistic.expiresAt <= now) {
+          delete next[key];
+          changed = true;
+          continue;
+        }
+
+        if (optimistic.owner === null) {
+          // A release is intentionally kept optimistic through the whole grace period.
+          // Presence and postgres changes can briefly replay the previous owner after FREE.
+          // Only a genuinely different new owner is allowed to override the release early.
+          if (actual && actual !== optimistic.previousOwner) {
+            delete next[key];
+            changed = true;
+          }
+          continue;
+        }
+
+        if (actual === optimistic.owner || actual !== optimistic.previousOwner) {
           delete next[key];
           changed = true;
         }
@@ -186,7 +220,7 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       const optimistic = optimisticOwners[key];
       const owner = optimistic && optimistic.expiresAt > now
         ? optimistic.owner
-        : meta ? meta.owner : (unplannedOwners[key]?.trim().toUpperCase() || null);
+        : meta ? meta.owner : normalizeOwner(unplannedOwners[key]);
       const mine = Boolean(position && owner === position);
       const handover = handoverStates[key];
       let color = mine ? GREEN : owner ? GREY : FREE;
@@ -201,7 +235,8 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
       syncTransponder(label, meta?.transponder ?? "9999");
       syncMenuOwnership(label, owner, position, handover);
 
-      const target = targets[index];
+      const siblingTarget = label.parentElement?.querySelector<HTMLButtonElement>(":scope > [data-pf24-traffic-select='true']");
+      const target = siblingTarget ?? targets[index];
       const group = groups[index];
       if (target) target.dataset.pf24Ownership = ownership;
       if (group) group.dataset.pf24Ownership = ownership;
@@ -213,10 +248,8 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
 
   useEffect(() => {
     const style = document.createElement("style");
-    style.dataset.pf24TrafficOwnershipBaseline = "v4";
+    style.dataset.pf24TrafficOwnershipBaseline = "v5";
     style.textContent = `
-      /* New React traffic nodes start as FREE until the ownership authority paints them.
-         Inline !important ownership colors applied by sync() override this baseline. */
       ${LIVE_ROOT} [data-pf24-traffic-label='true']:not([data-pf24-ownership]) { color:${FREE} !important; }
       ${LIVE_ROOT} [data-pf24-traffic-label='true']:not([data-pf24-ownership]) span:not([data-pf24-mapp-indicator='true']),
       ${LIVE_ROOT} [data-pf24-traffic-label='true']:not([data-pf24-ownership]) button,
@@ -234,30 +267,9 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
     `;
     document.head.appendChild(style);
 
-    const onAction = (event: MouseEvent) => {
-      const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
-      const menu = button?.closest<HTMLElement>("[data-pf24-callsign-menu='true']");
-      const label = menu?.closest<HTMLElement>("[data-pf24-traffic-label='true']");
-      if (!button || !menu || !label) return;
-      const action = (button.dataset.pf24OwnerActionLabel || button.textContent || "").trim().toUpperCase();
-      if (action !== "ASSUME" && action !== "FREE") return;
-      const key = norm(trafficCallsign(label));
-      if (!key) return;
-      const previousOwner = plannedMeta.get(key)?.owner ?? (unplannedOwners[key]?.trim().toUpperCase() || null);
-      if (action === "ASSUME" && position) {
-        setOptimisticOwners((current) => ({ ...current, [key]: { owner: position, previousOwner, expiresAt: Date.now() + 4000 } }));
-        scheduleRefresh(200);
-      }
-      if (action === "FREE") {
-        setOptimisticOwners((current) => ({ ...current, [key]: { owner: null, previousOwner, expiresAt: Date.now() + 4000 } }));
-        scheduleRefresh(200);
-      }
-    };
-
     sync();
     const timer = window.setInterval(sync, 80);
     const onStateChange = () => window.requestAnimationFrame(sync);
-    document.addEventListener("click", onAction, true);
     window.addEventListener(OWNERSHIP_EVENT, onStateChange);
     window.addEventListener(OWNERS_EVENT, onStateChange);
     window.addEventListener(HANDOVER_EVENT, onStateChange);
@@ -265,13 +277,12 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
     return () => {
       style.remove();
       window.clearInterval(timer);
-      document.removeEventListener("click", onAction, true);
       window.removeEventListener(OWNERSHIP_EVENT, onStateChange);
       window.removeEventListener(OWNERS_EVENT, onStateChange);
       window.removeEventListener(HANDOVER_EVENT, onStateChange);
       if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
     };
-  }, [plannedMeta, position, scheduleRefresh, sync, unplannedOwners]);
+  }, [sync]);
 
   return null;
 }
