@@ -42,6 +42,17 @@ const MDPC_APP_PATH =
 const MDPC_TWR_PATH =
   "M 73.97 101.54 L 74.11 103.24 L 83.05 103.45 C 83.55 105.35 85.20 107.00 87.44 107.00 C 89.65 107.00 91.30 105.25 91.80 103.38 L 93.15 103.40 L 93.16 101.87 L 91.83 101.83 C 91.25 99.90 89.65 98.23 87.47 98.23 C 85.25 98.23 83.45 99.85 82.86 101.72 L 73.97 101.54 Z";
 
+// TWR styling is shared by MDPC, MDAB and MDCR.
+const TWR_STROKE = "#176997";
+const TWR_STROKE_WIDTH = 0.11;
+const TWR_DASH = "0.38 0.28";
+
+// The existing MDPC TWR 2 NM references are about 4.385 map units from PNA.
+// Scaling that established Scope distance gives 3.28875 map units for a 1.50 NM radius.
+const TWR_RADIUS_1_5_NM = 3.28875;
+const MDAB_TWR_CENTER = { x: 81.52, y: 95.57 } as const;
+const MDCR_TWR_CENTER = { x: 57.83, y: 109.65 } as const;
+
 const MDPC_SVG_TRANSFORM =
   "matrix(0.00602718270 0.000692389997 -0.0006984094 0.00603738534 85.6661924 101.218949)";
 
@@ -87,7 +98,7 @@ function points(path: MapPath) {
 function pathStyle(tone: MapPath["tone"]) {
   if (tone === "fir") return { stroke: "#087153", width: 0.16, dash: undefined };
   if (tone === "app") return { stroke: "#176997", width: 0.13, dash: "0.55 0.38" };
-  if (tone === "tower") return { stroke: "#176997", width: 0.11, dash: "0.38 0.28" };
+  if (tone === "tower") return { stroke: TWR_STROKE, width: TWR_STROKE_WIDTH, dash: TWR_DASH };
   if (tone === "runway") return { stroke: "#82898b", width: 0.2, dash: undefined };
   return { stroke: "#777d7f", width: 0.075, dash: undefined };
 }
@@ -242,7 +253,9 @@ export default function ScopeRadarMap() {
             }
             return <polyline key={airspace.id} points={points(airspace)} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
           })}
-          <path data-map-layer="mdpc-twr" d={MDPC_TWR_PATH} fill="none" stroke="#176997" strokeWidth={0.11} strokeDasharray="0.38 0.28" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          <path data-map-layer="mdpc-twr" d={MDPC_TWR_PATH} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          <circle data-map-layer="mdab-twr" cx={MDAB_TWR_CENTER.x} cy={MDAB_TWR_CENTER.y} r={TWR_RADIUS_1_5_NM} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} vectorEffect="non-scaling-stroke" />
+          <circle data-map-layer="mdcr-twr" cx={MDCR_TWR_CENTER.x} cy={MDCR_TWR_CENTER.y} r={TWR_RADIUS_1_5_NM} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} vectorEffect="non-scaling-stroke" />
         </g>
         <MdpcSvgAirport zoom={viewport.zoom} />
         <g data-map-layer="fixes">
