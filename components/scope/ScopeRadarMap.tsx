@@ -22,6 +22,12 @@ const HISPANIOLA_SVG_TRANSFORM =
 const HISPANIOLA_SVG_WIDTH = 344.39517;
 const HISPANIOLA_SVG_HEIGHT = 141.20445;
 
+// MDST APP boundary: BEREL -> PIXES -> UNION 1 -> circular arc through CIRCULO 1 -> UNION 2 -> UNION 3.
+// The radius is the exact circle through UNION 1 (63.07,83.24), CIRCULO 1 (54.51,86.59)
+// and UNION 2 (63.49,97.61), so this section renders as a true SVG circular arc.
+const MDST_APP_PATH =
+  "M 71.24 94.06 L 73.93 85.06 L 63.07 83.24 A 7.549585333 7.549585333 0 1 0 63.49 97.61 L 71.20 97.61 Z";
+
 const MDPC_SVG_TRANSFORM =
   "matrix(0.00602718270 0.000692389997 -0.0006984094 0.00603738534 85.6661924 101.218949)";
 
@@ -214,6 +220,9 @@ export default function ScopeRadarMap() {
         <g data-map-layer="airspace">
           {AIRSPACE_PATHS.map((airspace) => {
             const style = pathStyle(airspace.tone);
+            if (airspace.id === "MDST_APP") {
+              return <path key={airspace.id} d={MDST_APP_PATH} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+            }
             return <polyline key={airspace.id} points={points(airspace)} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
           })}
         </g>
