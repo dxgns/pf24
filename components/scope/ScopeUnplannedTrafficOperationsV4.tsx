@@ -13,6 +13,7 @@ type Owners = Record<string, string>;
 type PresencePayload = { position?: string; sessionId?: string; claims?: ClaimTimes; onlineAt?: number };
 type Winner = { owner: string; claimedAt: number; sessionId: string };
 type HandoverDetail = { refId?: string; key?: string; from?: string; to?: string };
+type ReleasedOwner = { owner: string; expiresAt: number };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const CLAIMS_STORAGE_KEY = "pf24_scope_unplanned_claims_v4";
@@ -21,8 +22,9 @@ const OWNERS_EVENT = "pf24-unplanned-ownership-sync";
 const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
 const OWNERSHIP_HINT_EVENT = "pf24-traffic-ownership-hint";
 const HANDOVER_APPLY_EVENT = "pf24-unplanned-handover-apply";
-const PRESENCE_CHANNEL = "scope-unplanned-ownership-v5";
+const PRESENCE_CHANNEL = "scope-unplanned-ownership-v6";
 const HANDOVER_PROTECTION_MS = 3500;
+const RELEASE_SUPPRESSION_MS = 5000;
 
 function norm(value: string) { return normalizeGameCallsign(value); }
 function readPosition() {
@@ -71,8 +73,8 @@ function planKeys(plan: ScopeFlightPlan) {
 function publishOwners(owners: Owners) {
   window.dispatchEvent(new CustomEvent(OWNERS_EVENT, { detail: { owners } }));
 }
-function hintOwnership(key: string, owner: string | null) {
-  window.dispatchEvent(new CustomEvent(OWNERSHIP_HINT_EVENT, { detail: { key, owner } }));
+function hintOwnership(key: string, owner: string | null, previousOwner?: string | null) {
+  window.dispatchEvent(new CustomEvent(OWNERSHIP_HINT_EVENT, { detail: { key, owner, previousOwner } }));
 }
 
 export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Props) {
@@ -88,6 +90,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const subscribedRef = useRef(false);
   const protectedClaimsRef = useRef(new Map<string, number>());
+  const releasedOwnersRef = useRef(new Map<string, ReleasedOwner>());
   const processedHandoverRef = useRef(new Set<string>());
 
   if (!sessionIdRef.current && typeof window !== "undefined") sessionIdRef.current = getSessionId();
@@ -130,6 +133,11 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
     publishOwners(next);
   }, []);
 
+  const suppressReleasedOwner = useCallback((key: string, owner: string) => {
+    if (!key || !owner) return;
+    releasedOwnersRef.current.set(key, { owner, expiresAt: Date.now() + RELEASE_SUPPRESSION_MS });
+  }, []);
+
   useEffect(() => {
     const initial = readPosition();
     positionRef.current = initial;
@@ -145,6 +153,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       if (!next || (previous && next !== previous)) {
         claimsRef.current = {};
         protectedClaimsRef.current.clear();
+        releasedOwnersRef.current.clear();
         clearClaimsStorage();
       } else if (!previous && next && Object.keys(claimsRef.current).length === 0) {
         claimsRef.current = readClaims();
@@ -170,6 +179,12 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
     const syncPresence = () => {
       const state = channel.presenceState() as unknown as Record<string, PresencePayload[]>;
       const winners: Record<string, Winner> = {};
+      const now = Date.now();
+
+      for (const [key, released] of releasedOwnersRef.current) {
+        if (released.expiresAt <= now) releasedOwnersRef.current.delete(key);
+      }
+
       for (const entries of Object.values(state)) {
         for (const entry of entries) {
           const owner = entry.position?.trim().toUpperCase() ?? "";
@@ -178,6 +193,10 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
           for (const [key, rawTime] of Object.entries(entry.claims)) {
             const claimedAt = Number(rawTime);
             if (!key || !Number.isFinite(claimedAt)) continue;
+
+            const released = releasedOwnersRef.current.get(key);
+            if (released && released.expiresAt > now && released.owner === owner) continue;
+
             const current = winners[key];
             if (!current || claimedAt < current.claimedAt || (claimedAt === current.claimedAt && sessionId < current.sessionId)) {
               winners[key] = { owner, claimedAt, sessionId };
@@ -190,7 +209,6 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       Object.entries(winners).forEach(([key, winner]) => { nextOwners[key] = winner.owner; });
       applyOwners(nextOwners);
 
-      const now = Date.now();
       for (const [key, expiresAt] of protectedClaimsRef.current) {
         if (expiresAt <= now) protectedClaimsRef.current.delete(key);
       }
@@ -198,6 +216,12 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       const local = { ...claimsRef.current };
       let changed = false;
       for (const key of Object.keys(local)) {
+        const released = releasedOwnersRef.current.get(key);
+        if (released && released.expiresAt > now && released.owner === positionRef.current) {
+          delete local[key];
+          changed = true;
+          continue;
+        }
         const winner = winners[key];
         const protectedUntil = protectedClaimsRef.current.get(key) ?? 0;
         if (winner && winner.sessionId !== sessionIdRef.current && protectedUntil <= now) {
@@ -226,7 +250,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
   }, [applyOwners, setLocalClaims, trackPresence]);
 
   useEffect(() => {
-    const channel = supabase.channel("scope-unplanned-plans-v5")
+    const channel = supabase.channel("scope-unplanned-plans-v6")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -239,6 +263,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
       if (!plannedKeys.has(key)) continue;
       delete next[key];
       protectedClaimsRef.current.delete(key);
+      releasedOwnersRef.current.delete(key);
       changed = true;
     }
     if (changed) setLocalClaims(next);
@@ -261,6 +286,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
 
       if (here === from) {
         protectedClaimsRef.current.delete(key);
+        suppressReleasedOwner(key, from);
         if (key in claimsRef.current) {
           const next = { ...claimsRef.current };
           delete next[key];
@@ -271,19 +297,19 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
         const optimistic = { ...ownersRef.current };
         delete optimistic[key];
         applyOwners(optimistic);
-        hintOwnership(key, null);
+        hintOwnership(key, null, from);
       }
 
       if (here === to) {
         const now = Date.now();
+        const released = releasedOwnersRef.current.get(key);
+        if (released?.owner === to) releasedOwnersRef.current.delete(key);
         protectedClaimsRef.current.set(key, now + HANDOVER_PROTECTION_MS);
         const next = { ...claimsRef.current, [key]: now };
         setLocalClaims(next);
         applyOwners({ ...ownersRef.current, [key]: to });
-        hintOwnership(key, to);
+        hintOwnership(key, to, from);
 
-        // Retrack while the previous owner is leaving Presence. Protection prevents
-        // the normal collision resolver from deleting the incoming claim too early.
         window.setTimeout(() => {
           if (plannedKeys.has(key) || !(key in claimsRef.current)) return;
           void trackPresence();
@@ -297,7 +323,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
 
     window.addEventListener(HANDOVER_APPLY_EVENT, onHandoverApply);
     return () => window.removeEventListener(HANDOVER_APPLY_EVENT, onHandoverApply);
-  }, [applyOwners, plannedKeys, setLocalClaims, trackPresence]);
+  }, [applyOwners, plannedKeys, setLocalClaims, suppressReleasedOwner, trackPresence]);
 
   useEffect(() => {
     const onMenuClick = (event: MouseEvent) => {
@@ -332,10 +358,12 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
         }
         const currentOwner = ownersRef.current[key];
         if (currentOwner && currentOwner !== here) return;
+        const released = releasedOwnersRef.current.get(key);
+        if (released?.owner === here) releasedOwnersRef.current.delete(key);
         const next = { ...claimsRef.current, [key]: Date.now() };
         setLocalClaims(next);
         applyOwners({ ...ownersRef.current, [key]: here });
-        hintOwnership(key, here);
+        hintOwnership(key, here, currentOwner || null);
         return;
       }
 
@@ -349,6 +377,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
         }
 
         protectedClaimsRef.current.delete(key);
+        suppressReleasedOwner(key, currentOwner || here);
         const next = { ...claimsRef.current };
         delete next[key];
         setLocalClaims(next);
@@ -356,12 +385,12 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
         const optimistic = { ...ownersRef.current };
         delete optimistic[key];
         applyOwners(optimistic);
-        hintOwnership(key, null);
+        hintOwnership(key, null, currentOwner || here);
 
-        // Presence can briefly report the old claim while track() propagates.
-        // Re-track to make sure the released traffic stays free across clients.
-        window.setTimeout(() => void trackPresence(), 120);
-        window.setTimeout(() => void trackPresence(), 500);
+        window.setTimeout(() => void trackPresence(), 80);
+        window.setTimeout(() => void trackPresence(), 250);
+        window.setTimeout(() => void trackPresence(), 750);
+        window.setTimeout(() => void trackPresence(), 1500);
         return;
       }
 
@@ -372,7 +401,7 @@ export default function ScopeUnplannedTrafficOperationsV4({ initialPlans }: Prop
 
     window.addEventListener("click", onMenuClick, true);
     return () => window.removeEventListener("click", onMenuClick, true);
-  }, [applyOwners, plannedKeys, position, setLocalClaims, trackPresence]);
+  }, [applyOwners, plannedKeys, position, setLocalClaims, suppressReleasedOwner, trackPresence]);
 
   const fplPortal = radarHost && blankFplOpen ? createPortal(
     <div className="absolute left-1/2 top-1/2 z-[130] w-[900px] max-w-[calc(100%-40px)] -translate-x-1/2 -translate-y-1/2 border border-[#888] bg-[#cecece] p-[10px] font-mono text-[#111] shadow-xl">
