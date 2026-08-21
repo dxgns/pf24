@@ -22,11 +22,11 @@ const HISPANIOLA_SVG_TRANSFORM =
 const HISPANIOLA_SVG_WIDTH = 344.39517;
 const HISPANIOLA_SVG_HEIGHT = 141.20445;
 
-// MDST APP boundary: BEREL -> PIXES -> UNION 1 -> shaped arc through CIRCULO 1 -> UNION 2 -> UNION 3.
-// The curved section is intentionally flattened at both joins so it never overshoots
-// above UNION 1 or below the horizontal UNION 2 -> UNION 3 segment.
+// MDST APP boundary: BEREL -> PIXES -> UNION 1 -> smooth half-ellipse -> UNION 2 -> UNION 3.
+// The original left reference at x=54.51 is kept, but its y is moved to 90.425 so the
+// curve can meet UNION 1 and UNION 2 with clean horizontal tangents instead of overshooting.
 const MDST_APP_PATH =
-  "M 71.24 94.06 L 73.93 85.06 L 63.07 83.24 C 60.20 83.24 56.40 83.95 54.51 86.59 C 54.51 91.10 56.60 95.75 59.20 97.00 C 60.70 97.61 62.10 97.61 63.49 97.61 L 71.20 97.61 Z";
+  "M 71.24 94.06 L 73.93 85.06 L 63.07 83.24 C 58.34244 83.24 54.51 86.45683 54.51 90.425 C 54.51 94.39317 58.53048 97.61 63.49 97.61 L 71.20 97.61 Z";
 
 const MDPC_SVG_TRANSFORM =
   "matrix(0.00602718270 0.000692389997 -0.0006984094 0.00603738534 85.6661924 101.218949)";
