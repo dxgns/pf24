@@ -71,6 +71,12 @@ function planKeys(plan: ScopeFlightPlan) {
   return keys;
 }
 
+function announceOwnerHint(plan: ScopeFlightPlan, owner: string | null) {
+  for (const key of planKeys(plan)) {
+    window.dispatchEvent(new CustomEvent("pf24-traffic-ownership-hint", { detail: { key, owner } }));
+  }
+}
+
 function planForDisplayedCallsign(plans: ScopeFlightPlan[], callsign: string) {
   const key = normalized(callsign);
   return plans.find((plan) => planKeys(plan).has(key)) ?? null;
@@ -196,8 +202,6 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       }
     }
 
-    // Ownership/transfer button labels are intentionally NOT changed here.
-    // ScopeTrafficOwnershipVisuals is the single authority for Assume/Transfer/Req on Freq/Accept.
     const menus = Array.from(document.querySelectorAll<HTMLElement>("[data-pf24-callsign-menu='true']"));
     for (const menu of menus) {
       const label = menu.closest<HTMLElement>("[data-pf24-traffic-label='true']");
@@ -246,11 +250,9 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
     }
     const owner = plan.assumed_by?.trim().toUpperCase() || "";
     if (owner === position) return;
-    if (owner && owner !== position) {
-      return;
-    }
+    if (owner && owner !== position) return;
 
-    window.dispatchEvent(new CustomEvent("pf24-traffic-ownership-hint", { detail: { key: plan.callsign, owner: position } }));
+    announceOwnerHint(plan, position);
     setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: position } : item));
     announceOwnershipChange();
 
@@ -278,7 +280,7 @@ export default function ScopeTrafficOperations({ initialPlans }: Props) {
       return;
     }
 
-    window.dispatchEvent(new CustomEvent("pf24-traffic-ownership-hint", { detail: { key: plan.callsign, owner: null } }));
+    announceOwnerHint(plan, null);
     setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, assumed_by: null } : item));
     announceOwnershipChange();
 
