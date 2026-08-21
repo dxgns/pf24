@@ -81,7 +81,9 @@ export default function RadarViewport() {
       const cursorX = event.clientX - rect.left;
       const cursorY = event.clientY - rect.top;
       const oldZoom = viewport.zoom;
-      const factor = event.deltaY < 0 ? 1.16 : 1 / 1.16;
+      // 30% stronger than the previous 1.16 wheel step, while preserving the
+      // same viewport event so ground-traffic scaling stays synchronized.
+      const factor = event.deltaY < 0 ? 1.208 : 1 / 1.208;
       const nextZoom = clamp(oldZoom * factor, MIN_ZOOM, MAX_ZOOM);
       if (nextZoom === oldZoom) return;
       const worldX = (cursorX - viewport.panX) / oldZoom;
