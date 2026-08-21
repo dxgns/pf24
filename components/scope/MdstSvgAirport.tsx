@@ -11,20 +11,6 @@ const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 const MDST_DETAIL_ZOOM = 2.35;
 
-// Latest measured Scope positions for the actual MDST runway centreline ends.
-const MDST_RUNWAY_11 = { x: 67.19, y: 92.42 } as const;
-const MDST_RUNWAY_29 = { x: 69.56, y: 93.45 } as const;
-
-// IMPORTANT: the MDST source SVG is internally self-consistent. Do not shear or
-// stretch it to force individual parking spots to fit. Previous versions used a
-// free affine transform based on a misidentified B1 geometry anchor, which
-// distorted the apron even though the runway still looked plausible.
-//
-// This is the unique similarity transform (uniform scale + rotation +
-// translation) that maps the SVG runway centreline endpoints
-//   (31.152344, 31.58984) -> RWY 11
-//   (770.6162, 33.14573) -> RWY 29
-// after the SVG's own translate(-3.5 -283.5) has been applied.
 const MDST_IMAGE_MATRIX = {
   a: 0.0032079413749857145,
   b: 0.0013861513146006619,
@@ -33,33 +19,18 @@ const MDST_IMAGE_MATRIX = {
   e: 67.13385340499863,
   f: 92.27547978264633,
 } as const;
-
 const MDST_IMAGE_TRANSFORM = `matrix(${MDST_IMAGE_MATRIX.a} ${MDST_IMAGE_MATRIX.b} ${MDST_IMAGE_MATRIX.c} ${MDST_IMAGE_MATRIX.d} ${MDST_IMAGE_MATRIX.e} ${MDST_IMAGE_MATRIX.f})`;
-
-// Text anchors below are stored in the original Inkscape coordinate frame,
-// before the source layer's translate(-3.5 -283.5). Derive their translation
-// from the image matrix instead of maintaining a second hand-tuned matrix.
-// Keeping a single source of truth prevents labels and pavement from drifting
-// apart when the airport calibration changes.
 const MDST_SOURCE_LAYER_OFFSET = { x: -3.5, y: -283.5 } as const;
 const MDST_MAP_MATRIX = {
   a: MDST_IMAGE_MATRIX.a,
   b: MDST_IMAGE_MATRIX.b,
   c: MDST_IMAGE_MATRIX.c,
   d: MDST_IMAGE_MATRIX.d,
-  e:
-    MDST_IMAGE_MATRIX.e +
-    MDST_IMAGE_MATRIX.a * MDST_SOURCE_LAYER_OFFSET.x +
-    MDST_IMAGE_MATRIX.c * MDST_SOURCE_LAYER_OFFSET.y,
-  f:
-    MDST_IMAGE_MATRIX.f +
-    MDST_IMAGE_MATRIX.b * MDST_SOURCE_LAYER_OFFSET.x +
-    MDST_IMAGE_MATRIX.d * MDST_SOURCE_LAYER_OFFSET.y,
+  e: MDST_IMAGE_MATRIX.e + MDST_IMAGE_MATRIX.a * MDST_SOURCE_LAYER_OFFSET.x + MDST_IMAGE_MATRIX.c * MDST_SOURCE_LAYER_OFFSET.y,
+  f: MDST_IMAGE_MATRIX.f + MDST_IMAGE_MATRIX.b * MDST_SOURCE_LAYER_OFFSET.x + MDST_IMAGE_MATRIX.d * MDST_SOURCE_LAYER_OFFSET.y,
 } as const;
 const MDST_MAP_SCALE = Math.hypot(MDST_MAP_MATRIX.a, MDST_MAP_MATRIX.b);
 
-// Every label is rendered outside the rotated source SVG so letters and gate
-// numbers stay upright relative to the Scope while retaining their SVG anchor.
 const MDST_LABELS: readonly MdstLabel[] = [
   { text: "A", x: -295.375, y: 258.03086, transform: "translate(733.12233,88.08914)", fill: "#c9c9c9" },
   { text: "B", x: -295.375, y: 258.03086, transform: "translate(865.47178,88.432936)", fill: "#c9c9c9" },
@@ -165,7 +136,7 @@ export default function MdstSvgAirport() {
     return `${MAP_BOUNDS.minX} ${MAP_BOUNDS.minY} ${width} ${height}`;
   }, []);
 
-  if (!host) return null;
+  if (!host || viewport.zoom < MDST_DETAIL_ZOOM) return null;
 
   return createPortal(
     <div data-pf24-mdst-svg="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
@@ -173,72 +144,19 @@ export default function MdstSvgAirport() {
         className="absolute inset-0 block h-full w-full"
         viewBox={viewBox}
         preserveAspectRatio="xMidYMid meet"
-        style={{
-          transformOrigin: "0 0",
-          transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`,
-        }}
+        style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}
       >
-        {viewport.zoom < MDST_DETAIL_ZOOM ? (
-          <g data-map-layer="mdst-low-zoom">
-            <line
-              x1={MDST_RUNWAY_11.x}
-              y1={MDST_RUNWAY_11.y}
-              x2={MDST_RUNWAY_29.x}
-              y2={MDST_RUNWAY_29.y}
-              stroke="#343a3b"
-              strokeWidth={0.27}
-              vectorEffect="non-scaling-stroke"
-            />
-            <line
-              x1={MDST_RUNWAY_11.x}
-              y1={MDST_RUNWAY_11.y}
-              x2={MDST_RUNWAY_29.x}
-              y2={MDST_RUNWAY_29.y}
-              stroke="#d5dad9"
-              strokeWidth={0.05}
-              vectorEffect="non-scaling-stroke"
-            />
-            <text
-              x={68.28}
-              y={92.65}
-              fontSize={0.34}
-              fill="#9da5a4"
-              fontFamily="monospace"
-            >
-              MDST
-            </text>
-          </g>
-        ) : (
-          <>
-            <image
-              href="/scope/mdst-ground.svg"
-              x={0}
-              y={0}
-              width={814.5}
-              height={167}
-              transform={MDST_IMAGE_TRANSFORM}
-              preserveAspectRatio="none"
-            />
-            <g data-map-layer="mdst-svg-labels-upright">
-              {MDST_LABELS.map((label, index) => {
-                const placement = labelPlacement(label);
-                return (
-                  <text
-                    key={`${label.text}-${index}`}
-                    x={placement.x}
-                    y={placement.y}
-                    fill={label.fill}
-                    fontFamily="'B612 Mono', monospace"
-                    fontSize={placement.fontSize}
-                    fontWeight={400}
-                  >
-                    {label.text}
-                  </text>
-                );
-              })}
-            </g>
-          </>
-        )}
+        <image href="/scope/mdst-ground.svg" x={0} y={0} width={814.5} height={167} transform={MDST_IMAGE_TRANSFORM} preserveAspectRatio="none" />
+        <g data-map-layer="mdst-svg-labels-upright">
+          {MDST_LABELS.map((label, index) => {
+            const placement = labelPlacement(label);
+            return (
+              <text key={`${label.text}-${index}`} x={placement.x} y={placement.y} fill={label.fill} fontFamily="'B612 Mono', monospace" fontSize={placement.fontSize} fontWeight={400}>
+                {label.text}
+              </text>
+            );
+          })}
+        </g>
       </svg>
     </div>,
     host,
