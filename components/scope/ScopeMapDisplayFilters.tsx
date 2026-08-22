@@ -5,11 +5,8 @@ import { useEffect, useRef, useState } from "react";
 
 type FilterKey = "ctrs" | "tmas" | "atzs" | "waypoints" | "terrain" | "taxiLetters" | "gateNumbers";
 type FilterState = Record<FilterKey, boolean>;
-type Anchor = { left: number; top: number; scale: number };
 
 const STORAGE_KEY = "pf24_scope_map_display_filters_v1";
-const BUTTON_WIDTH = 48;
-const BUTTON_HEIGHT = 21;
 
 const DEFAULT_FILTERS: FilterState = {
   ctrs: true,
@@ -92,25 +89,12 @@ function classifyAirportLabels(root: ParentNode) {
 
 function FilterGlyph() {
   return (
-    <svg width="48" height="21" viewBox="0 0 48 21" aria-hidden="true">
-      <text
-        x="37.5"
-        y="6.2"
-        fill="#e2e2e2"
-        fontFamily="monospace"
-        fontSize="7.1"
-        fontWeight="400"
-        textAnchor="middle"
-      >
-        FL
-      </text>
+    <svg width="47" height="20" viewBox="0 0 100 44" aria-hidden="true">
+      <text x="77" y="13" fill="#e2e2e2" fontFamily="monospace" fontSize="13" textAnchor="middle">FL</text>
       <path
-        d="M4.2 9.2 L9.2 6.1 L17.8 6.1 L22.8 9.2 L22.8 11.1 L17.1 16.4 L17.1 20 L10.0 20 L10.0 16.4 L4.2 11.1 Z"
+        d="M8 20 L26 11 L48 11 L65 20 L65 27 L47 41 L47 44 L29 44 L29 34 L10 24 Z M14 21 L29 15 L46 15 L59 21 L59 24 L46 29 L29 29 L14 24 Z"
         fill="#e2e2e2"
-      />
-      <path
-        d="M5.5 9.35 L9.8 6.9 L17.2 6.9 L21.5 9.35 L21.5 10.45 L17.0 12.25 L10.0 12.25 L5.5 10.45 Z"
-        fill="#064a40"
+        fillRule="evenodd"
       />
     </svg>
   );
@@ -120,8 +104,8 @@ export default function ScopeMapDisplayFilters() {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  const [anchor, setAnchor] = useState<Anchor | null>(null);
-  const shiftedButtonsRef = useRef<HTMLButtonElement[]>([]);
+  const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ left: number; top: number; scale: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -131,71 +115,78 @@ export default function ScopeMapDisplayFilters() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    let attempts = 0;
+    let host: HTMLDivElement | null = null;
 
-    const position = () => {
-      if (cancelled) return;
+    const install = () => {
       const row = findToolbarRow();
-      if (!row) return;
-      const buttons = directToolbarButtons(row);
-      if (buttons.length < 2) return;
+      if (!row) return false;
 
-      const plannedRoute = buttons.at(-2);
-      const distance = buttons.at(-1);
-      if (!plannedRoute || !distance) return;
-
-      for (const oldButton of shiftedButtonsRef.current) {
-        if (oldButton !== plannedRoute && oldButton !== distance && oldButton.dataset.pf24MapFilterShift === "true") {
-          oldButton.style.removeProperty("transform");
-          oldButton.style.removeProperty("z-index");
-          delete oldButton.dataset.pf24MapFilterShift;
-        }
+      const existing = row.querySelector<HTMLElement>(":scope > [data-pf24-map-filter-host='true']");
+      if (existing) {
+        host = existing as HTMLDivElement;
+        setToolbarHost(existing);
+        return true;
       }
 
-      const plannedRect = plannedRoute.getBoundingClientRect();
-      const logicalWidth = plannedRoute.offsetWidth || BUTTON_WIDTH;
-      const scale = logicalWidth > 0 ? plannedRect.width / logicalWidth : 1;
-      const alreadyShifted = plannedRoute.dataset.pf24MapFilterShift === "true";
-      const baseLeft = plannedRect.left - (alreadyShifted ? BUTTON_WIDTH * scale : 0);
-      const baseTop = plannedRect.top;
+      const buttons = directToolbarButtons(row);
+      if (buttons.length < 2) return false;
+      const firstExistingTool = buttons.at(-2);
+      if (!firstExistingTool) return false;
 
-      plannedRoute.style.transform = `translateX(${BUTTON_WIDTH}px)`;
-      distance.style.transform = `translateX(${BUTTON_WIDTH}px)`;
-      plannedRoute.style.zIndex = "1";
-      distance.style.zIndex = "1";
-      plannedRoute.dataset.pf24MapFilterShift = "true";
-      distance.dataset.pf24MapFilterShift = "true";
-      shiftedButtonsRef.current = [plannedRoute, distance];
+      host = document.createElement("div");
+      host.dataset.pf24MapFilterHost = "true";
+      host.className = "scopeTopCell relative h-[21px] w-[48px] shrink-0";
+      row.insertBefore(host, firstExistingTool);
+      setToolbarHost(host);
+      return true;
+    };
 
-      setAnchor((current) => {
-        if (
-          current &&
-          Math.abs(current.left - baseLeft) < 0.25 &&
-          Math.abs(current.top - baseTop) < 0.25 &&
-          Math.abs(current.scale - scale) < 0.001
-        ) return current;
-        return { left: baseLeft, top: baseTop, scale };
+    if (!install()) {
+      const timer = window.setInterval(() => {
+        attempts += 1;
+        if (install() || attempts >= 50) window.clearInterval(timer);
+      }, 100);
+      return () => {
+        window.clearInterval(timer);
+        if (host?.isConnected) host.remove();
+      };
+    }
+
+    return () => {
+      if (host?.isConnected) host.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) {
+      setMenuPosition(null);
+      return;
+    }
+
+    const update = () => {
+      const button = buttonRef.current;
+      const main = document.querySelector<HTMLElement>("main.fixed");
+      if (!button || !main) return;
+      const buttonRect = button.getBoundingClientRect();
+      const mainRect = main.getBoundingClientRect();
+      const logicalWidth = button.offsetWidth || 48;
+      const scale = logicalWidth > 0 ? buttonRect.width / logicalWidth : 1;
+      setMenuPosition({
+        left: (buttonRect.left - mainRect.left) / Math.max(scale, 0.001),
+        top: (buttonRect.bottom - mainRect.top) / Math.max(scale, 0.001),
+        scale,
       });
     };
 
-    position();
-    const interval = window.setInterval(position, 400);
-    window.addEventListener("resize", position);
-
+    update();
+    window.addEventListener("resize", update);
+    const timer = window.setInterval(update, 300);
     return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      window.removeEventListener("resize", position);
-      for (const button of shiftedButtonsRef.current) {
-        if (button.dataset.pf24MapFilterShift === "true") {
-          button.style.removeProperty("transform");
-          button.style.removeProperty("z-index");
-          delete button.dataset.pf24MapFilterShift;
-        }
-      }
-      shiftedButtonsRef.current = [];
+      window.clearInterval(timer);
+      window.removeEventListener("resize", update);
     };
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     const style = document.createElement("style");
@@ -281,42 +272,35 @@ export default function ScopeMapDisplayFilters() {
     };
   }, [open]);
 
-  if (!mounted || !anchor) return null;
+  if (!mounted || !toolbarHost) return null;
 
-  return createPortal(
+  const main = document.querySelector<HTMLElement>("main.fixed");
+
+  return (
     <>
-      <button
-        ref={buttonRef}
-        type="button"
-        data-pf24-map-filter-button="true"
-        aria-label="Map display filters"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="fixed flex items-center justify-center border-r border-[#173d38] bg-[#064a40] font-mono text-[#e2e2e2] hover:bg-[#0a554a]"
-        style={{
-          left: anchor.left,
-          top: anchor.top,
-          width: BUTTON_WIDTH,
-          height: BUTTON_HEIGHT,
-          transform: `scale(${anchor.scale})`,
-          transformOrigin: "top left",
-          zIndex: 1200,
-          background: open ? "#0a5b50" : "#064a40",
-        }}
-      >
-        <FilterGlyph />
-      </button>
+      {createPortal(
+        <button
+          ref={buttonRef}
+          type="button"
+          data-pf24-map-filter-button="true"
+          aria-label="Map display filters"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+          className={`flex h-full w-full items-center justify-center bg-[#064a40] font-mono text-[#e2e2e2] hover:bg-[#0a554a] ${open ? "scopeToolOn" : ""}`}
+        >
+          <FilterGlyph />
+        </button>,
+        toolbarHost,
+      )}
 
-      {open && (
+      {open && menuPosition && main && createPortal(
         <div
           ref={menuRef}
           data-pf24-map-filter-menu="true"
-          className="fixed w-[172px] bg-[#064a40] font-mono text-[#e2e2e2] shadow-[0_0_0_1px_#102f2a]"
+          className="absolute w-[172px] bg-[#064a40] font-mono text-[#e2e2e2] shadow-[0_0_0_1px_#102f2a]"
           style={{
-            left: anchor.left,
-            top: anchor.top + BUTTON_HEIGHT * anchor.scale,
-            transform: `scale(${anchor.scale})`,
-            transformOrigin: "top left",
+            left: menuPosition.left,
+            top: menuPosition.top,
             zIndex: 1201,
           }}
         >
@@ -333,9 +317,9 @@ export default function ScopeMapDisplayFilters() {
               <span className="whitespace-nowrap">{item.label}</span>
             </button>
           ))}
-        </div>
+        </div>,
+        main,
       )}
-    </>,
-    document.body,
+    </>
   );
 }
