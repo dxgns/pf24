@@ -9,11 +9,17 @@ type Props = { initialPlans: ScopeFlightPlan[] };
 type StoredConnection = { callsign?: string };
 type OwnershipHintDetail = { key?: string; owner?: string | null };
 type OptimisticOwner = { owner: string | null; expiresAt: number };
+type OwnershipState = "mine" | "other" | "free";
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const LIST_SELECTOR = "[data-pf24-live-sector-list='true']";
 const LIVE_ROOT = "[data-pf24-live-traffic='true']";
 const OPTIMISTIC_TTL_MS = 5000;
+const OWNERSHIP_COLORS: Record<OwnershipState, string> = {
+  mine: "#00e000",
+  other: "#9b9b9b",
+  free: "#d8d8d8",
+};
 
 function norm(value: string) {
   return normalizeGameCallsign(value);
@@ -54,6 +60,20 @@ function trafficCallsign(label: HTMLElement) {
   return button?.textContent?.trim().toUpperCase() ?? "";
 }
 
+function validOwnership(value: string | undefined): value is OwnershipState {
+  return value === "mine" || value === "other" || value === "free";
+}
+
+function paintRow(wrapper: HTMLElement, state: OwnershipState) {
+  const row = wrapper.firstElementChild instanceof HTMLElement ? wrapper.firstElementChild : wrapper;
+  const color = OWNERSHIP_COLORS[state];
+  wrapper.dataset.pf24SectorOwnership = state;
+  row.style.setProperty("color", color, "important");
+  row.querySelectorAll<HTMLElement>("span,button,input").forEach((element) => {
+    element.style.setProperty("color", color, "important");
+  });
+}
+
 export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
@@ -84,12 +104,17 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
     const list = document.querySelector<HTMLElement>(LIST_SELECTOR);
     if (!list) return;
 
-    const radarOwnership = new Map<string, "mine" | "other" | "free">();
+    // Radar ownership is authoritative for the visual state. Resolve the radar
+    // callsign to a flight-plan id first so plan callsign and game callsign can differ.
+    const radarByPlanId = new Map<string, OwnershipState>();
+    const radarByRawKey = new Map<string, OwnershipState>();
     document.querySelectorAll<HTMLElement>(`${LIVE_ROOT} [data-pf24-traffic-label='true']`).forEach((label) => {
       const key = norm(trafficCallsign(label));
       const ownership = label.dataset.pf24Ownership;
-      if (!key || (ownership !== "mine" && ownership !== "other" && ownership !== "free")) return;
-      radarOwnership.set(key, ownership);
+      if (!key || !validOwnership(ownership)) return;
+      radarByRawKey.set(key, ownership);
+      const plan = planByKey.get(key);
+      if (plan) radarByPlanId.set(plan.id, ownership);
     });
 
     const now = Date.now();
@@ -100,21 +125,28 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
     for (const wrapper of rows) {
       const key = norm(rowCallsign(wrapper));
       if (!key) continue;
+      const plan = planByKey.get(key);
 
-      const radar = radarOwnership.get(key);
-      if (radar) {
-        wrapper.dataset.pf24SectorOwnership = radar;
+      const radarState = plan ? radarByPlanId.get(plan.id) : radarByRawKey.get(key);
+      if (radarState) {
+        paintRow(wrapper, radarState);
         continue;
       }
 
-      const plan = planByKey.get(key);
       if (!plan) continue;
-      const optimistic = optimisticOwners[key];
-      const owner = optimistic && optimistic.expiresAt > now
-        ? optimistic.owner
-        : normalizeOwner(plan.assumed_by);
-      const state = position && owner === position ? "mine" : owner ? "other" : "free";
-      wrapper.dataset.pf24SectorOwnership = state;
+
+      let optimistic: OptimisticOwner | undefined;
+      for (const alias of planKeys(plan)) {
+        const candidate = optimisticOwners[alias];
+        if (candidate && candidate.expiresAt > now) {
+          optimistic = candidate;
+          break;
+        }
+      }
+
+      const owner = optimistic ? optimistic.owner : normalizeOwner(plan.assumed_by);
+      const state: OwnershipState = position && owner === position ? "mine" : owner ? "other" : "free";
+      paintRow(wrapper, state);
     }
   }, [optimisticOwners, planByKey, position]);
 
@@ -152,39 +184,16 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-sector-ownership-visuals-v1")
+      .channel("scope-sector-ownership-visuals-v2")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
   }, [loadPlans]);
 
   useEffect(() => {
-    const style = document.createElement("style");
-    style.dataset.pf24SectorOwnershipVisuals = "v1";
-    style.textContent = `
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child,
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child span,
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child button,
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child input { color:#00e000 !important; }
-
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='other'] > div:first-child,
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='other'] > div:first-child span,
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='other'] > div:first-child button,
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='other'] > div:first-child input { color:#9b9b9b !important; }
-
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='free'] > div:first-child,
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='free'] > div:first-child span,
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='free'] > div:first-child button,
-      ${LIST_SELECTOR} > [data-pf24-sector-ownership='free'] > div:first-child input { color:#d8d8d8 !important; }
-    `;
-    document.head.appendChild(style);
-
     sync();
-    const timer = window.setInterval(sync, 80);
-    return () => {
-      style.remove();
-      window.clearInterval(timer);
-    };
+    const timer = window.setInterval(sync, 50);
+    return () => window.clearInterval(timer);
   }, [sync]);
 
   return null;
