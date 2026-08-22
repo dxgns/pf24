@@ -29,10 +29,10 @@ const MDST_APP_PATH =
   "M 71.24 94.06 L 73.93 85.06 L 63.07 83.24 C 58.34244 83.24 54.51 86.45683 54.51 90.425 C 54.51 94.39317 58.53048 97.61 63.49 97.61 L 71.20 97.61 Z";
 
 // MDPC APP boundary: PIXES -> PC202 -> LETAD -> MESPA -> smooth lower arc through
-// CIRCULO 1 -> CIRCULO 2 -> BEREL. It intentionally stays open at BEREL so the shared
-// BEREL -> PIXES border is rendered only once by MDST APP instead of producing a double line.
+// CIRCULO 1 -> CIRCULO 2 -> shared UNION 3 at (71.20,97.61). From that union back
+// through BEREL to PIXES, MDST APP owns the shared border so it is rendered only once.
 const MDPC_APP_PATH =
-  "M 73.93 85.06 L 83.72 84.96 L 100.56 96.22 L 99.61 103.25 C 99.23 106.06 94.10 110.25 87.36 110.25 C 79.10 110.25 71.19 106.00 71.20 102.55 L 71.24 94.06";
+  "M 73.93 85.06 L 83.72 84.96 L 100.56 96.22 L 99.61 103.25 C 99.23 106.06 94.10 110.25 87.36 110.25 C 79.10 110.25 71.19 106.00 71.20 102.55 L 71.20 97.61";
 
 // MDPC TWR boundary. The straight corridor sections end at UNION 3/4/7/8 and the
 // circular portions begin there with their own direction; the joins are intentionally
