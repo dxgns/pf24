@@ -246,7 +246,7 @@ export default function ScopeGlidePath() {
   if (!host || activeRunways.length === 0) return null;
 
   return createPortal(
-    <div className="pointer-events-none absolute inset-0 z-[7] overflow-hidden" data-pf24-glide-path="true" aria-hidden="true">
+    <div className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" data-pf24-glide-path="true" aria-hidden="true">
       <svg
         className="absolute inset-0 block h-full w-full"
         viewBox={viewBox}
