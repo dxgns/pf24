@@ -21,6 +21,7 @@ import ScopeTrafficOwnershipVisuals from "@/components/scope/ScopeTrafficOwnersh
 import ScopeSharedHoldSync from "@/components/scope/ScopeSharedHoldSync";
 import ScopeHoldTelemetry from "@/components/scope/ScopeHoldTelemetry";
 import ScopeSectorListRules from "@/components/scope/ScopeSectorListRules";
+import ScopeSectorListRealtimeSync from "@/components/scope/ScopeSectorListRealtimeSync";
 import ScopeTrafficFooterPlacement from "@/components/scope/ScopeTrafficFooterPlacement";
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
@@ -72,7 +73,7 @@ export default async function ScopePage() {
     <ScopeRatingAccess roles={session.user?.discordRoles ?? []} /><ScopeUiRefinements /><ScopeUiConsistencyFixes />
     <ScopeChromeAdditions /><ScopeInterfaceCorrections /><ScopeAtisDialogV2 controllerName={controllerName} />
     <ScopeAtisJurisdictionGuard controllerName={controllerName} /><ScopeAtisDisconnectCleanup controllerName={controllerName} />
-    <ScopeAtcPresence controllerName={controllerName} /><ScopeOperationalSyncV2 /><ScopeSectorChat /><ScopeTrafficMenuLayerFix />
+    <ScopeAtcPresence controllerName={controllerName} /><ScopeOperationalSyncV2 /><ScopeSectorListRealtimeSync initialPlans={plans} /><ScopeSectorChat /><ScopeTrafficMenuLayerFix />
     <ScopeSectorListRules initialPlans={plans} /><ScopeNativeListBodyGuard />
   </>;
 }
