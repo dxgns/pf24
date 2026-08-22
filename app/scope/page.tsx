@@ -29,6 +29,7 @@ import MdstSvgAirport from "@/components/scope/MdstSvgAirport";
 import MdabSvgAirport from "@/components/scope/MdabSvgAirport";
 import MdcrMtcaSvgAirport from "@/components/scope/MdcrMtcaSvgAirport";
 import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
+import ScopeQdmTool from "@/components/scope/ScopeQdmTool";
 import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
 import ScopeUiConsistencyFixes from "@/components/scope/ScopeUiConsistencyFixes";
@@ -66,7 +67,7 @@ export default async function ScopePage() {
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
     <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} />
-    <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras />
+    <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras /><ScopeQdmTool />
     <ScopeRatingAccess roles={session.user?.discordRoles ?? []} /><ScopeUiRefinements /><ScopeUiConsistencyFixes />
     <ScopeChromeAdditions /><ScopeInterfaceCorrections /><ScopeAtisDialogV2 controllerName={controllerName} />
     <ScopeAtisJurisdictionGuard controllerName={controllerName} /><ScopeAtisDisconnectCleanup controllerName={controllerName} />
