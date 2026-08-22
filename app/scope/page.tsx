@@ -49,6 +49,7 @@ import ScopeNativeListBodyGuard from "@/components/scope/ScopeNativeListBodyGuar
 import ScopeConnectionPersistence from "@/components/scope/ScopeConnectionPersistence";
 import ScopeAtisDisconnectCleanup from "@/components/scope/ScopeAtisDisconnectCleanup";
 import ScopeTrafficMenuLayerFix from "@/components/scope/ScopeTrafficMenuLayerFix";
+import ScopeStartupWindowOverlapGuard from "@/components/scope/ScopeStartupWindowOverlapGuard";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = { title: "PF24 Scope | PF24", description: "Entorno operativo ATC de PF24." };
@@ -66,7 +67,7 @@ export default async function ScopePage() {
   return <>
     <ScopeNativeListCss /><PF24Scope initialPlans={plans} controllerName={controllerName} />
     <ScopeConnectionPersistence /><ScopeConnectDialogPersistence /><ScopeOwnedTrafficLifecycle /><ScopeTrafficAutoRelease />
-    <ScopeLayoutGuards /><WeatherPanelV2 /><ScopeRadarMap /><ScopeAirspaceBoundaryDedup /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport />
+    <ScopeLayoutGuards /><ScopeStartupWindowOverlapGuard /><WeatherPanelV2 /><ScopeRadarMap /><ScopeAirspaceBoundaryDedup /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport />
     <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
