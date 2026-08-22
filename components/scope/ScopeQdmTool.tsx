@@ -10,6 +10,7 @@ type Viewport = { zoom: number; panX: number; panY: number };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 const LINE_COLOR = "#8a8a8a";
+const LABEL_OFFSET_PX = 10;
 
 function readViewport(): Viewport {
   try {
@@ -51,11 +52,27 @@ function bearingFromDelta(dx: number, dy: number) {
 
 function readableLineAngle(dx: number, dy: number) {
   let angle = Math.atan2(dy, dx) * 180 / Math.PI;
-  // Keep the text following the exact line axis while avoiding upside-down text.
-  // A vertical QDM therefore remains fully vertical at +/-90 degrees.
   if (angle > 90) angle -= 180;
   if (angle < -90) angle += 180;
   return angle;
+}
+
+function labelBelowLine(dx: number, dy: number) {
+  const length = Math.hypot(dx, dy);
+  if (length < 0.001) return { x: 0, y: LABEL_OFFSET_PX };
+
+  const normalA = { x: -dy / length, y: dx / length };
+  const normalB = { x: dy / length, y: -dx / length };
+
+  // Prefer the screen-space lower side of the line. A perfectly vertical line
+  // has no lower perpendicular side, so place the vertical label to the right.
+  if (Math.abs(normalA.y - normalB.y) < 0.001) {
+    const normal = normalA.x >= normalB.x ? normalA : normalB;
+    return { x: normal.x * LABEL_OFFSET_PX, y: normal.y * LABEL_OFFSET_PX };
+  }
+
+  const normal = normalA.y > normalB.y ? normalA : normalB;
+  return { x: normal.x * LABEL_OFFSET_PX, y: normal.y * LABEL_OFFSET_PX };
 }
 
 export default function ScopeQdmTool() {
@@ -216,22 +233,15 @@ export default function ScopeQdmTool() {
 
     const dx = endpoint.x - origin.x;
     const dy = endpoint.y - origin.y;
-    const length = Math.hypot(dx, dy);
     const distanceNm = scopeDistanceNmFromScreenDelta(dx, dy, rect.width, rect.height, viewport.zoom);
     const bearing = bearingFromDelta(dx, dy);
     const angle = readableLineAngle(dx, dy);
     const mid = { x: (origin.x + endpoint.x) / 2, y: (origin.y + endpoint.y) / 2 };
+    const offset = labelBelowLine(dx, dy);
+    const label = { x: mid.x + offset.x, y: mid.y + offset.y };
     const labelText = `${Math.max(0, distanceNm).toFixed(1)}nm ${String(bearing).padStart(3, "0")}°`;
-    const labelWidth = labelText.length * 7.2;
 
-    const unit = length > 0.001 ? { x: dx / length, y: dy / length } : { x: 1, y: 0 };
-    // Because the text now follows the line itself, the gap only needs to cover
-    // the text width along that same axis.
-    const halfGap = Math.min(labelWidth / 2 + 5, Math.max(0, length * 0.42));
-    const gapStart = { x: mid.x - unit.x * halfGap, y: mid.y - unit.y * halfGap };
-    const gapEnd = { x: mid.x + unit.x * halfGap, y: mid.y + unit.y * halfGap };
-
-    return { origin, endpoint, distanceNm, bearing, angle, mid, labelText, gapStart, gapEnd };
+    return { origin, endpoint, angle, label, labelText };
   }, [cursor, frozenEndBase, originBase, radar, sizeTick, viewport]);
 
   if (!radar || !rendered) return null;
@@ -271,27 +281,16 @@ export default function ScopeQdmTool() {
       <line
         x1={rendered.origin.x}
         y1={rendered.origin.y}
-        x2={rendered.gapStart.x}
-        y2={rendered.gapStart.y}
-        stroke={LINE_COLOR}
-        strokeWidth="2"
-      />
-      <line
-        x1={rendered.gapEnd.x}
-        y1={rendered.gapEnd.y}
         x2={rendered.endpoint.x}
         y2={rendered.endpoint.y}
         stroke={LINE_COLOR}
         strokeWidth="2"
       />
       <text
-        x={rendered.mid.x}
-        y={rendered.mid.y}
-        transform={`rotate(${rendered.angle} ${rendered.mid.x} ${rendered.mid.y})`}
+        x={rendered.label.x}
+        y={rendered.label.y}
+        transform={`rotate(${rendered.angle} ${rendered.label.x} ${rendered.label.y})`}
         fill={LINE_COLOR}
-        stroke="#0b0b0b"
-        strokeWidth="2"
-        paintOrder="stroke"
         fontSize="12"
         fontFamily="monospace"
         textAnchor="middle"
