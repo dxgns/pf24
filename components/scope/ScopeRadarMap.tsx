@@ -253,7 +253,7 @@ export default function ScopeRadarMap() {
         </svg>
       </div>
 
-      <div data-pf24-island-layer="true" className="pointer-events-none absolute inset-0 z-[4] overflow-hidden" aria-hidden="true">
+      <div data-pf24-island-layer="true" className="pointer-events-none absolute inset-0 z-[2] overflow-hidden" aria-hidden="true">
         <svg className="absolute inset-0 block h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" style={transformStyle}>
           <g data-map-layer="hispaniola-coastline">
             <image
