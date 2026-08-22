@@ -157,8 +157,6 @@ export default function ScopeChromeAdditions() {
       const matched = listKeyFromCloseButton(button);
       if (!matched) return;
 
-      // These three windows stay mounted in React. Closing/showing them is only a visibility change,
-      // so MENU never needs to reload the page to recreate a window.
       event.preventDefault();
       event.stopImmediatePropagation();
       const next = { ...readSavedVisibility(), [matched]: false };
@@ -181,7 +179,7 @@ export default function ScopeChromeAdditions() {
   };
 
   const topAtis = topBar ? createPortal(
-    <div className="pointer-events-none absolute left-[658px] top-0 z-[3] h-[21px] w-[60px]">
+    <div className="pointer-events-none absolute left-[706px] top-0 z-[3] h-[21px] w-[60px]">
       <button
         type="button"
         data-pf24-top-atis="true"
