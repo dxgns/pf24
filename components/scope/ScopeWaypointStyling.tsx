@@ -4,7 +4,7 @@ export default function ScopeWaypointStyling() {
       [data-pf24-vector-map="true"] g[data-map-layer="fixes"] > g > path {
         transform-box: fill-box;
         transform-origin: center;
-        transform: scale(clamp(1.9, var(--pf24-radar-zoom, 1), 2.5));
+        transform: scale(clamp(1.85, var(--pf24-radar-zoom, 1), 2.3));
         stroke: #969c9e;
         stroke-width: 0.055;
       }
@@ -12,7 +12,7 @@ export default function ScopeWaypointStyling() {
       [data-pf24-vector-map="true"] g[data-map-layer="fixes"] > g > circle {
         transform-box: fill-box;
         transform-origin: center;
-        transform: scale(clamp(1.3, var(--pf24-radar-zoom, 1), 1.7));
+        transform: scale(clamp(1.25, var(--pf24-radar-zoom, 1), 1.55));
         stroke: #969c9e;
         stroke-width: 0.05;
       }
@@ -20,7 +20,7 @@ export default function ScopeWaypointStyling() {
       [data-pf24-vector-map="true"] g[data-map-layer="fixes"] > g > text {
         transform-box: fill-box;
         transform-origin: left center;
-        transform: scale(clamp(1.1, var(--pf24-radar-zoom, 1), 1.45));
+        transform: translateX(0.18px) scale(clamp(1.08, var(--pf24-radar-zoom, 1), 1.35));
         font-size: 0.38px;
         fill: #7d8385;
         opacity: 0.88;
