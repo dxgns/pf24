@@ -41,7 +41,7 @@ import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
 import ScopeQdmTool from "@/components/scope/ScopeQdmTool";
 import ScopePlannedRouteTool from "@/components/scope/ScopePlannedRouteTool";
 import ScopeMapDisplayFilters from "@/components/scope/ScopeMapDisplayFilters";
-import ScopeConflictDetection from "@/components/scope/ScopeConflictDetection";
+import ScopeConflictDetectionV2 from "@/components/scope/ScopeConflictDetectionV2";
 import ScopeConflictColorGuard from "@/components/scope/ScopeConflictColorGuard";
 import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
 import ScopeUiRefinements from "@/components/scope/ScopeUiRefinements";
@@ -81,7 +81,7 @@ export default async function ScopePage() {
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedPlanOwnershipBridge initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
     <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} /><ScopeTrafficOwnershipColorGuard /><ScopeSectorOwnershipVisuals initialPlans={plans} />
-    <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras /><ScopeQdmTool /><ScopeMapDisplayFilters /><ScopePlannedRouteTool initialPlans={plans} /><ScopeConflictDetection initialPlans={plans} /><ScopeConflictColorGuard />
+    <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras /><ScopeQdmTool /><ScopeMapDisplayFilters /><ScopePlannedRouteTool initialPlans={plans} /><ScopeConflictDetectionV2 initialPlans={plans} /><ScopeConflictColorGuard />
     <ScopeRatingAccess roles={session.user?.discordRoles ?? []} /><ScopeUiRefinements /><ScopeUiConsistencyFixes />
     <ScopeChromeAdditions /><ScopeInterfaceCorrections /><ScopeAtisDialogV2 controllerName={controllerName} />
     <ScopeAtisJurisdictionGuard controllerName={controllerName} /><ScopeAtisDisconnectCleanup controllerName={controllerName} />
