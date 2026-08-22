@@ -136,7 +136,8 @@ export default function MdstSvgAirport() {
     return `${MAP_BOUNDS.minX} ${MAP_BOUNDS.minY} ${width} ${height}`;
   }, []);
 
-  if (!host || viewport.zoom < MDST_DETAIL_ZOOM) return null;
+  if (!host) return null;
+  const showAirportDetail = viewport.zoom >= MDST_DETAIL_ZOOM;
 
   return createPortal(
     <div data-pf24-mdst-svg="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
@@ -146,8 +147,8 @@ export default function MdstSvgAirport() {
         preserveAspectRatio="xMidYMid meet"
         style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}
       >
-        <image href="/scope/mdst-ground.svg" x={0} y={0} width={814.5} height={167} transform={MDST_IMAGE_TRANSFORM} preserveAspectRatio="none" />
-        <g data-map-layer="mdst-svg-labels-upright">
+        <image href="/scope/mdst-ground.svg" x={0} y={0} width={814.5} height={167} transform={MDST_IMAGE_TRANSFORM} preserveAspectRatio="none" opacity={showAirportDetail ? 1 : 0} />
+        <g data-map-layer="mdst-svg-labels-upright" opacity={showAirportDetail ? 1 : 0}>
           {MDST_LABELS.map((label, index) => {
             const placement = labelPlacement(label);
             return (
