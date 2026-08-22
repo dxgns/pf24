@@ -7,6 +7,7 @@ import ScopeNativeListCss from "@/components/scope/ScopeNativeListCss";
 import ScopeLayoutGuards from "@/components/scope/ScopeLayoutGuards";
 import WeatherPanelV2 from "@/components/scope/WeatherPanelV2";
 import ProjectFlightTrafficConfigured from "@/components/scope/ProjectFlightTrafficConfigured";
+import ScopeDisconnectedFlightPlanCleanup from "@/components/scope/ScopeDisconnectedFlightPlanCleanup";
 import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopeTrafficLabelUX from "@/components/scope/ScopeTrafficLabelUX";
 import ScopeTrafficMappState from "@/components/scope/ScopeTrafficMappState";
@@ -69,7 +70,7 @@ export default async function ScopePage() {
     <ScopeNativeListCss /><PF24Scope initialPlans={plans} controllerName={controllerName} />
     <ScopeConnectionPersistence /><ScopeConnectDialogPersistence /><ScopeOwnedTrafficLifecycle /><ScopeTrafficAutoRelease />
     <ScopeLayoutGuards /><ScopeStartupWindowOverlapGuard /><WeatherPanelV2 /><ScopeRadarMap /><ScopeAirspaceBoundaryDedup /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport />
-    <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
+    <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} /><ScopeDisconnectedFlightPlanCleanup initialPlans={plans} />
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
     <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} /><ScopeTrafficOwnershipColorGuard />
