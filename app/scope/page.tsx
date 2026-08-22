@@ -18,6 +18,7 @@ import ScopeUnplannedHold from "@/components/scope/ScopeUnplannedHold";
 import ScopeOwnedTrafficLifecycle from "@/components/scope/ScopeOwnedTrafficLifecycle";
 import ScopeTrafficAutoRelease from "@/components/scope/ScopeTrafficAutoRelease";
 import ScopeTrafficOwnershipVisuals from "@/components/scope/ScopeTrafficOwnershipVisuals";
+import ScopeTrafficOwnershipColorGuard from "@/components/scope/ScopeTrafficOwnershipColorGuard";
 import ScopeSharedHoldSync from "@/components/scope/ScopeSharedHoldSync";
 import ScopeHoldTelemetry from "@/components/scope/ScopeHoldTelemetry";
 import ScopeSectorListRules from "@/components/scope/ScopeSectorListRules";
@@ -71,7 +72,7 @@ export default async function ScopePage() {
     <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
-    <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} />
+    <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} /><ScopeTrafficOwnershipColorGuard />
     <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras /><ScopeQdmTool /><ScopePlannedRouteTool initialPlans={plans} />
     <ScopeRatingAccess roles={session.user?.discordRoles ?? []} /><ScopeUiRefinements /><ScopeUiConsistencyFixes />
     <ScopeChromeAdditions /><ScopeInterfaceCorrections /><ScopeAtisDialogV2 controllerName={controllerName} />
