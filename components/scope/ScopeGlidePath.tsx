@@ -10,16 +10,18 @@ type RunwaySelection = { active?: boolean; dep?: boolean; arr?: boolean };
 type RunwayState = Record<string, RunwaySelection>;
 type Point = { x: number; y: number };
 type RunwayGeometry = { threshold: Point; oppositeThreshold: Point };
+type Segment = { x1: number; y1: number; x2: number; y2: number };
 
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 const RUNWAY_STORAGE_KEY = "pf24_scope_runways_v2";
 
 const GLIDE_PATH_LENGTH_NM = 5;
-// Proportions taken from the supplied SendaPlaneo.svg: the threshold and 5 NM
-// bars are roughly twice as long as the intermediate mile marks.
 const SHORT_TICK_HALF_NM = 0.45;
 const LONG_TICK_HALF_NM = 0.96;
+const LONG_TICK_DISTANCE_NM = 3;
+const FINAL_ARM_FORWARD_NM = 1;
+const FINAL_ARM_SPREAD_NM = 0.58;
 const GLIDE_STROKE = "#d2c09d";
 const GLIDE_STROKE_WIDTH = 0.1;
 
@@ -113,25 +115,25 @@ function glideGeometry(runway: RunwayGeometry) {
   const uy = dy / magnitude;
   const px = -uy;
   const py = ux;
-  const length = GLIDE_PATH_LENGTH_NM * SCOPE_MAP_UNITS_PER_NM;
+  const nm = SCOPE_MAP_UNITS_PER_NM;
+  const length = GLIDE_PATH_LENGTH_NM * nm;
   const end = {
     x: runway.threshold.x + ux * length,
     y: runway.threshold.y + uy * length,
   };
 
-  // Match the supplied SVG pattern: long bar at the runway threshold, four
-  // shorter 1 NM bars, then another long bar at the 5 NM end point.
-  const ticks = Array.from({ length: GLIDE_PATH_LENGTH_NM + 1 }, (_, index) => {
-    const distance = index * SCOPE_MAP_UNITS_PER_NM;
+  // No mark is drawn on the runway threshold. Marks start at 1 NM; the 3 NM
+  // bar is the only long one, matching the supplied SendaPlaneo.svg layout.
+  const ticks: Segment[] = Array.from({ length: GLIDE_PATH_LENGTH_NM }, (_, index) => {
+    const distanceNm = index + 1;
+    const distance = distanceNm * nm;
     const center = {
       x: runway.threshold.x + ux * distance,
       y: runway.threshold.y + uy * distance,
     };
     const halfLengthNm =
-      index === 0 || index === GLIDE_PATH_LENGTH_NM
-        ? LONG_TICK_HALF_NM
-        : SHORT_TICK_HALF_NM;
-    const tickHalf = halfLengthNm * SCOPE_MAP_UNITS_PER_NM;
+      distanceNm === LONG_TICK_DISTANCE_NM ? LONG_TICK_HALF_NM : SHORT_TICK_HALF_NM;
+    const tickHalf = halfLengthNm * nm;
 
     return {
       x1: center.x + px * tickHalf,
@@ -141,7 +143,19 @@ function glideGeometry(runway: RunwayGeometry) {
     };
   });
 
-  return { end, ticks };
+  // At the 5 NM end, two diagonal arms fan outward and continue one additional
+  // nautical mile along the approach axis. Their lateral spread reproduces the
+  // roughly 30-degree opening visible in the supplied SVG.
+  const armForward = FINAL_ARM_FORWARD_NM * nm;
+  const armSpread = FINAL_ARM_SPREAD_NM * nm;
+  const arms: Segment[] = [1, -1].map((side) => ({
+    x1: end.x,
+    y1: end.y,
+    x2: end.x + ux * armForward + px * armSpread * side,
+    y2: end.y + uy * armForward + py * armSpread * side,
+  }));
+
+  return { end, ticks, arms };
 }
 
 export default function ScopeGlidePath() {
@@ -237,11 +251,24 @@ export default function ScopeGlidePath() {
                 />
                 {geometry.ticks.map((tick, index) => (
                   <line
-                    key={index}
+                    key={`tick-${index}`}
                     x1={tick.x1}
                     y1={tick.y1}
                     x2={tick.x2}
                     y2={tick.y2}
+                    fill="none"
+                    stroke={GLIDE_STROKE}
+                    strokeWidth={GLIDE_STROKE_WIDTH}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+                {geometry.arms.map((arm, index) => (
+                  <line
+                    key={`arm-${index}`}
+                    x1={arm.x1}
+                    y1={arm.y1}
+                    x2={arm.x2}
+                    y2={arm.y2}
                     fill="none"
                     stroke={GLIDE_STROKE}
                     strokeWidth={GLIDE_STROKE_WIDTH}
