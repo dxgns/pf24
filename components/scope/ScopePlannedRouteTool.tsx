@@ -52,11 +52,24 @@ function findPlannedRouteButton() {
   return buttons.length >= 2 ? buttons.at(-2) ?? null : null;
 }
 
-function trafficCallsign(target: Element) {
-  const hit = target.closest<HTMLElement>("[data-pf24-traffic-select='true']");
+function callsignFromSelect(hit: HTMLElement | null) {
   if (!hit) return null;
   const label = hit.getAttribute("aria-label") ?? "";
   return label.match(/(?:Seleccionar|Abrir información de)\s+(.+)$/i)?.[1]?.trim() ?? null;
+}
+
+function trafficCallsign(target: Element) {
+  const directHit = target.closest<HTMLElement>("[data-pf24-traffic-select='true']");
+  const directCallsign = callsignFromSelect(directHit);
+  if (directCallsign) return directCallsign;
+
+  // Traffic labels and the radar symbol live under the same traffic wrapper.
+  // Resolve the callsign from the sibling symbol so clicking anywhere on the
+  // label (simple or expanded) selects the exact same planned route.
+  const trafficLabel = target.closest<HTMLElement>("[data-pf24-traffic-label='true']");
+  if (!trafficLabel) return null;
+  const siblingHit = trafficLabel.parentElement?.querySelector<HTMLElement>("[data-pf24-traffic-select='true']") ?? null;
+  return callsignFromSelect(siblingHit);
 }
 
 function planKey(value: string) {
@@ -156,8 +169,6 @@ function labelBelowLine(a: Point, b: Point) {
   if (length < 0.001) return { x: mid.x, y: mid.y + 10 };
 
   let normal = { x: -dy / length, y: dx / length };
-  // Prefer the visually lower side of the segment. On a vertical line there is
-  // no lower side, so keep the label on the right.
   if (normal.y < -0.001 || (Math.abs(normal.y) <= 0.001 && normal.x < 0)) {
     normal = { x: -normal.x, y: -normal.y };
   }
@@ -256,8 +267,6 @@ export default function ScopePlannedRouteTool({ initialPlans }: Props) {
       const callsign = trafficCallsign(target);
       if (!callsign) return;
 
-      // While the route tool is active, a traffic click is owned by this tool.
-      // A traffic without a plan deliberately does nothing at all.
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
