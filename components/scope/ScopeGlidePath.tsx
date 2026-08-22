@@ -127,22 +127,24 @@ function glideGeometry(runway: RunwayGeometry) {
     y2: end.y + uy * armForward - py * armSide,
   };
 
+  // The SVG does not continue the diagonal arms. Each arm bends at its tip
+  // into a second, lateral segment. Keep the V untouched and add those two
+  // outer legs perpendicular to the runway/glide-path axis.
   const legExtension = END_LEG_EXTENSION_NM * nm;
-  const makeLeg = (arm: { x1: number; y1: number; x2: number; y2: number }) => {
-    const legDx = arm.x2 - arm.x1;
-    const legDy = arm.y2 - arm.y1;
-    const legMagnitude = Math.hypot(legDx, legDy);
-    const legUx = legDx / legMagnitude;
-    const legUy = legDy / legMagnitude;
-    return {
-      x1: arm.x2,
-      y1: arm.y2,
-      x2: arm.x2 + legUx * legExtension,
-      y2: arm.y2 + legUy * legExtension,
-    };
-  };
-
-  const legs = [makeLeg(leftArm), makeLeg(rightArm)];
+  const legs = [
+    {
+      x1: leftArm.x2,
+      y1: leftArm.y2,
+      x2: leftArm.x2 + px * legExtension,
+      y2: leftArm.y2 + py * legExtension,
+    },
+    {
+      x1: rightArm.x2,
+      y1: rightArm.y2,
+      x2: rightArm.x2 - px * legExtension,
+      y2: rightArm.y2 - py * legExtension,
+    },
+  ];
 
   return { end, ticks, arms: [leftArm, rightArm], legs };
 }
