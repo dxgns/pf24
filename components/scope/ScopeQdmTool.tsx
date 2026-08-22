@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { scopeDistanceNmFromScreenDelta } from "@/lib/scope/distanceScale";
 
 type Point = { x: number; y: number };
@@ -39,7 +39,8 @@ function blocksQdm(target: EventTarget | null) {
     target.closest("[data-pf24-traffic-label='true']") ||
     target.closest("[data-pf24-traffic-popup='true']") ||
     target.closest("[data-pf24-callsign-menu='true']") ||
-    target.closest("[data-pf24-distance-layer='true']")
+    target.closest("[data-pf24-distance-layer='true']") ||
+    target.closest("[data-pf24-qdm-line='true']")
   );
 }
 
@@ -53,13 +54,26 @@ export default function ScopeQdmTool() {
   const [viewport, setViewport] = useState<Viewport>({ zoom: 1, panX: 0, panY: 0 });
   const [originBase, setOriginBase] = useState<Point | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
+  const [frozenEndBase, setFrozenEndBase] = useState<Point | null>(null);
+  const [holding, setHolding] = useState(false);
   const [sizeTick, setSizeTick] = useState(0);
+  const holdingRef = useRef(false);
+  const frozenRef = useRef<Point | null>(null);
+  const cursorRef = useRef<Point | null>(null);
+  const viewportRef = useRef(viewport);
+
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
 
   useEffect(() => {
     setViewport(readViewport());
     const onViewport = (event: Event) => {
       const detail = (event as CustomEvent<Viewport>).detail;
-      if (detail) setViewport(detail);
+      if (detail) {
+        viewportRef.current = detail;
+        setViewport(detail);
+      }
     };
     window.addEventListener(VIEWPORT_EVENT, onViewport);
     return () => window.removeEventListener(VIEWPORT_EVENT, onViewport);
@@ -84,8 +98,21 @@ export default function ScopeQdmTool() {
   useEffect(() => {
     if (!radar) return;
 
-    const onDoubleClick = (event: MouseEvent) => {
-      if (event.button !== 0 || blocksQdm(event.target)) return;
+    const clearLiveQdm = () => {
+      holdingRef.current = false;
+      setHolding(false);
+      setOriginBase(null);
+      cursorRef.current = null;
+      setCursor(null);
+      frozenRef.current = null;
+      setFrozenEndBase(null);
+    };
+
+    // MouseEvent.detail is already 2 on the DOWN phase of the second click.
+    // Starting here (instead of on dblclick) lets the user keep that second
+    // button press held while the QDM line follows the cursor.
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0 || event.detail < 2 || frozenRef.current || blocksQdm(event.target)) return;
       const rect = radar.getBoundingClientRect();
       if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
 
@@ -95,43 +122,105 @@ export default function ScopeQdmTool() {
 
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
-      const zoom = Math.max(0.01, viewport.zoom);
-      setOriginBase({
-        x: (x - viewport.panX) / zoom,
-        y: (y - viewport.panY) / zoom,
-      });
+      const currentViewport = viewportRef.current;
+      const zoom = Math.max(0.01, currentViewport.zoom);
+      const origin = {
+        x: (x - currentViewport.panX) / zoom,
+        y: (y - currentViewport.panY) / zoom,
+      };
+
+      frozenRef.current = null;
+      setFrozenEndBase(null);
+      setOriginBase(origin);
+      cursorRef.current = { x, y };
       setCursor({ x, y });
+      holdingRef.current = true;
+      setHolding(true);
+    };
+
+    const onDoubleClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("[data-pf24-qdm-line='true']")) return;
+      if (event.button !== 0 || blocksQdm(event.target)) return;
+      const rect = radar.getBoundingClientRect();
+      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
+      // Suppress other blank-map double-click actions. QDM itself was already
+      // started on the second mousedown above.
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
     };
 
     const onMouseMove = (event: MouseEvent) => {
-      if (!originBase) return;
+      if (!holdingRef.current || frozenRef.current) return;
       const rect = radar.getBoundingClientRect();
-      setCursor({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      cursorRef.current = point;
+      setCursor(point);
+    };
+
+    const onMouseUp = (event: MouseEvent) => {
+      if (event.button !== 0 || !holdingRef.current) return;
+      holdingRef.current = false;
+      setHolding(false);
+      // Q freezes before mouseup and sets frozenRef synchronously. Without Q,
+      // releasing the second click removes the temporary QDM immediately.
+      if (!frozenRef.current) {
+        setOriginBase(null);
+        cursorRef.current = null;
+        setCursor(null);
+      }
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !originBase) return;
-      setOriginBase(null);
-      setCursor(null);
+      if (event.code === "KeyQ" && holdingRef.current && !frozenRef.current) {
+        const point = cursorRef.current;
+        if (!point) return;
+        const rect = radar.getBoundingClientRect();
+        const currentViewport = viewportRef.current;
+        const zoom = Math.max(0.01, currentViewport.zoom);
+        const frozen = {
+          x: (point.x - currentViewport.panX) / zoom,
+          y: (point.y - currentViewport.panY) / zoom,
+        };
+        event.preventDefault();
+        event.stopPropagation();
+        frozenRef.current = frozen;
+        setFrozenEndBase(frozen);
+        holdingRef.current = false;
+        setHolding(false);
+        return;
+      }
+
+      // Escape only cancels a temporary, non-frozen QDM. A Q-frozen line is
+      // intentionally persistent until the user double-clicks that line.
+      if (event.key === "Escape" && holdingRef.current && !frozenRef.current) {
+        event.preventDefault();
+        clearLiveQdm();
+      }
     };
 
     const onResize = () => setSizeTick((value) => value + 1);
 
+    radar.addEventListener("mousedown", onMouseDown, true);
     radar.addEventListener("dblclick", onDoubleClick, true);
     window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("mouseup", onMouseUp, true);
+    window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("resize", onResize);
     return () => {
+      radar.removeEventListener("mousedown", onMouseDown, true);
       radar.removeEventListener("dblclick", onDoubleClick, true);
       window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mouseup", onMouseUp, true);
+      window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("resize", onResize);
     };
-  }, [originBase, radar, viewport]);
+  }, [radar]);
 
   const rendered = useMemo(() => {
     void sizeTick;
-    if (!radar || !originBase || !cursor) return null;
+    if (!radar || !originBase) return null;
     const rect = radar.getBoundingClientRect();
     if (!(rect.width > 0) || !(rect.height > 0)) return null;
 
@@ -139,16 +228,35 @@ export default function ScopeQdmTool() {
       x: originBase.x * viewport.zoom + viewport.panX,
       y: originBase.y * viewport.zoom + viewport.panY,
     };
-    const dx = cursor.x - origin.x;
-    const dy = cursor.y - origin.y;
+    const endpoint = frozenEndBase
+      ? {
+          x: frozenEndBase.x * viewport.zoom + viewport.panX,
+          y: frozenEndBase.y * viewport.zoom + viewport.panY,
+        }
+      : cursor;
+    if (!endpoint) return null;
+
+    const dx = endpoint.x - origin.x;
+    const dy = endpoint.y - origin.y;
     const distanceNm = scopeDistanceNmFromScreenDelta(dx, dy, rect.width, rect.height, viewport.zoom);
     const bearing = bearingFromDelta(dx, dy);
-    const mid = { x: (origin.x + cursor.x) / 2, y: (origin.y + cursor.y) / 2 };
+    const mid = { x: (origin.x + endpoint.x) / 2, y: (origin.y + endpoint.y) / 2 };
 
-    return { origin, cursor, distanceNm, bearing, mid };
-  }, [cursor, originBase, radar, sizeTick, viewport]);
+    return { origin, endpoint, distanceNm, bearing, mid };
+  }, [cursor, frozenEndBase, originBase, radar, sizeTick, viewport]);
 
   if (!radar || !rendered) return null;
+
+  const removeFrozen = () => {
+    if (!frozenRef.current) return;
+    frozenRef.current = null;
+    setFrozenEndBase(null);
+    setOriginBase(null);
+    cursorRef.current = null;
+    setCursor(null);
+    holdingRef.current = false;
+    setHolding(false);
+  };
 
   return createPortal(
     <svg
@@ -156,11 +264,28 @@ export default function ScopeQdmTool() {
       className="pointer-events-none absolute inset-0 z-[11] h-full w-full"
       aria-hidden="true"
     >
-      <line
+      {frozenEndBase && <line
+        data-pf24-qdm-line="true"
         x1={rendered.origin.x}
         y1={rendered.origin.y}
-        x2={rendered.cursor.x}
-        y2={rendered.cursor.y}
+        x2={rendered.endpoint.x}
+        y2={rendered.endpoint.y}
+        stroke="transparent"
+        strokeWidth="12"
+        pointerEvents="stroke"
+        className="pointer-events-auto cursor-pointer"
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          removeFrozen();
+        }}
+      />}
+      <line
+        data-pf24-qdm-line={frozenEndBase ? "true" : undefined}
+        x1={rendered.origin.x}
+        y1={rendered.origin.y}
+        x2={rendered.endpoint.x}
+        y2={rendered.endpoint.y}
         stroke={LINE_COLOR}
         strokeWidth="2"
       />
