@@ -15,6 +15,7 @@ import ScopeTrafficHandover from "@/components/scope/ScopeTrafficHandover";
 import ScopeHandoverAudioAlerts from "@/components/scope/ScopeHandoverAudioAlerts";
 import ScopeTrafficOperations from "@/components/scope/ScopeTrafficOperations";
 import ScopeUnplannedTrafficOperationsV4 from "@/components/scope/ScopeUnplannedTrafficOperationsV4";
+import ScopeUnplannedPlanOwnershipBridge from "@/components/scope/ScopeUnplannedPlanOwnershipBridge";
 import ScopeUnplannedHold from "@/components/scope/ScopeUnplannedHold";
 import ScopeOwnedTrafficLifecycle from "@/components/scope/ScopeOwnedTrafficLifecycle";
 import ScopeTrafficAutoRelease from "@/components/scope/ScopeTrafficAutoRelease";
@@ -76,7 +77,7 @@ export default async function ScopePage() {
     <ScopeLayoutGuards /><ScopeStartupWindowOverlapGuard /><WeatherPanelV2 /><ScopeRadarMap /><ScopeGlidePath /><ScopeAirspaceBoundaryDedup /><ScopeTwrGeometryCorrection /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport />
     <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} /><ScopeDisconnectedFlightPlanCleanup initialPlans={plans} />
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
-    <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
+    <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedPlanOwnershipBridge initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
     <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} /><ScopeTrafficOwnershipColorGuard /><ScopeSectorOwnershipVisuals initialPlans={plans} />
     <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras /><ScopeQdmTool /><ScopeMapDisplayFilters /><ScopePlannedRouteTool initialPlans={plans} />
     <ScopeRatingAccess roles={session.user?.discordRoles ?? []} /><ScopeUiRefinements /><ScopeUiConsistencyFixes />
