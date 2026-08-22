@@ -42,7 +42,13 @@ const MDPC_APP_PATH =
 const MDPC_TWR_PATH =
   "M 73.97 101.54 L 74.11 103.24 L 83.05 103.45 C 83.55 105.35 85.20 107.00 87.44 107.00 C 89.65 107.00 91.30 105.25 91.80 103.38 L 93.15 103.40 L 93.16 101.87 L 91.83 101.83 C 91.25 99.90 89.65 98.23 87.47 98.23 C 85.25 98.23 83.45 99.85 82.86 101.72 L 73.97 101.54 Z";
 
-// TWR styling is shared by MDPC, MDAB and MDCR.
+// MDST TWR boundary. UNION 2 -> UNION 3 is a true circular arc through CIRCULO 1,
+// and UNION 6 -> UNION 1 is a true circular arc through CIRCULO 2. The radii are
+// calculated from each supplied three-point arc, preserving the straight/arc joins.
+const MDST_TWR_PATH =
+  "M 70.79 95.09 L 71.70 93.08 A 3.24791575 3.24791575 0 0 0 65.49 91.48 L 60.34 88.99 L 60.32 90.56 L 65.03 92.65 A 3.36161385 3.36161385 0 0 0 70.79 95.09 Z";
+
+// TWR styling is shared by MDPC, MDST, MDAB and MDCR.
 const TWR_STROKE = "#176997";
 const TWR_STROKE_WIDTH = 0.11;
 const TWR_DASH = "0.38 0.28";
@@ -254,6 +260,7 @@ export default function ScopeRadarMap() {
             return <polyline key={airspace.id} points={points(airspace)} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
           })}
           <path data-map-layer="mdpc-twr" d={MDPC_TWR_PATH} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          <path data-map-layer="mdst-twr" d={MDST_TWR_PATH} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           <circle data-map-layer="mdab-twr" cx={MDAB_TWR_CENTER.x} cy={MDAB_TWR_CENTER.y} r={TWR_RADIUS_1_5_NM} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} vectorEffect="non-scaling-stroke" />
           <circle data-map-layer="mdcr-twr" cx={MDCR_TWR_CENTER.x} cy={MDCR_TWR_CENTER.y} r={TWR_RADIUS_1_5_NM} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} vectorEffect="non-scaling-stroke" />
         </g>
