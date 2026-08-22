@@ -20,6 +20,7 @@ const SHORT_TICK_HALF_NM = 0.45;
 const LONG_TICK_HALF_NM = 0.96;
 const END_ARM_FORWARD_NM = 1;
 const END_ARM_SIDE_NM = 0.6;
+const END_LEG_EXTENSION_NM = 1;
 const GLIDE_STROKE = "#d2c09d";
 const GLIDE_STROKE_WIDTH = 0.1;
 
@@ -126,7 +127,24 @@ function glideGeometry(runway: RunwayGeometry) {
     y2: end.y + uy * armForward - py * armSide,
   };
 
-  return { end, ticks, arms: [leftArm, rightArm] };
+  const legExtension = END_LEG_EXTENSION_NM * nm;
+  const makeLeg = (arm: { x1: number; y1: number; x2: number; y2: number }) => {
+    const legDx = arm.x2 - arm.x1;
+    const legDy = arm.y2 - arm.y1;
+    const legMagnitude = Math.hypot(legDx, legDy);
+    const legUx = legDx / legMagnitude;
+    const legUy = legDy / legMagnitude;
+    return {
+      x1: arm.x2,
+      y1: arm.y2,
+      x2: arm.x2 + legUx * legExtension,
+      y2: arm.y2 + legUy * legExtension,
+    };
+  };
+
+  const legs = [makeLeg(leftArm), makeLeg(rightArm)];
+
+  return { end, ticks, arms: [leftArm, rightArm], legs };
 }
 
 export default function ScopeGlidePath() {
@@ -234,6 +252,19 @@ export default function ScopeGlidePath() {
                     y1={arm.y1}
                     x2={arm.x2}
                     y2={arm.y2}
+                    fill="none"
+                    stroke={GLIDE_STROKE}
+                    strokeWidth={GLIDE_STROKE_WIDTH}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+                {geometry.legs.map((leg, index) => (
+                  <line
+                    key={`leg-${index}`}
+                    x1={leg.x1}
+                    y1={leg.y1}
+                    x2={leg.x2}
+                    y2={leg.y2}
                     fill="none"
                     stroke={GLIDE_STROKE}
                     strokeWidth={GLIDE_STROKE_WIDTH}
