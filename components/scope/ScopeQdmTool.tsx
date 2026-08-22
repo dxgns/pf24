@@ -10,6 +10,7 @@ type Viewport = { zoom: number; panX: number; panY: number };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 const LINE_COLOR = "#8a8a8a";
+const LABEL_BACKGROUND = "#0b0b0b";
 
 function readViewport(): Viewport {
   try {
@@ -47,6 +48,19 @@ function blocksQdm(target: EventTarget | null) {
 function bearingFromDelta(dx: number, dy: number) {
   const degrees = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
   return Math.round(degrees) % 360;
+}
+
+function labelOffset(dx: number, dy: number) {
+  const length = Math.hypot(dx, dy);
+  if (length < 0.001) return { x: 0, y: -11 };
+
+  const first = { x: -dy / length, y: dx / length };
+  const second = { x: dy / length, y: -dx / length };
+
+  // Prefer the side that places the label visually above the line. For an
+  // exactly vertical line, place it to the right instead.
+  if (Math.abs(first.y - second.y) < 0.001) return first.x >= second.x ? first : second;
+  return first.y < second.y ? first : second;
 }
 
 export default function ScopeQdmTool() {
@@ -213,8 +227,12 @@ export default function ScopeQdmTool() {
     const distanceNm = scopeDistanceNmFromScreenDelta(dx, dy, rect.width, rect.height, viewport.zoom);
     const bearing = bearingFromDelta(dx, dy);
     const mid = { x: (origin.x + endpoint.x) / 2, y: (origin.y + endpoint.y) / 2 };
+    const offset = labelOffset(dx, dy);
+    const label = { x: mid.x + offset.x * 11, y: mid.y + offset.y * 11 };
+    const labelText = `${Math.max(0, distanceNm).toFixed(1)}nm ${String(bearing).padStart(3, "0")}°`;
+    const labelWidth = labelText.length * 7.2 + 8;
 
-    return { origin, endpoint, distanceNm, bearing, mid };
+    return { origin, endpoint, distanceNm, bearing, mid, label, labelText, labelWidth };
   }, [cursor, frozenEndBase, originBase, radar, sizeTick, viewport]);
 
   if (!radar || !rendered) return null;
@@ -260,14 +278,25 @@ export default function ScopeQdmTool() {
         stroke={LINE_COLOR}
         strokeWidth="2"
       />
+      <rect
+        x={rendered.label.x - rendered.labelWidth / 2}
+        y={rendered.label.y - 8}
+        width={rendered.labelWidth}
+        height="16"
+        rx="2"
+        fill={LABEL_BACKGROUND}
+        fillOpacity="0.92"
+      />
       <text
-        x={rendered.mid.x + 8}
-        y={rendered.mid.y - 5}
+        x={rendered.label.x}
+        y={rendered.label.y}
         fill={LINE_COLOR}
         fontSize="12"
         fontFamily="monospace"
+        textAnchor="middle"
+        dominantBaseline="middle"
       >
-        {Math.max(0, rendered.distanceNm).toFixed(1)}nm {String(rendered.bearing).padStart(3, "0")}°
+        {rendered.labelText}
       </text>
     </svg>,
     radar,
