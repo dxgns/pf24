@@ -10,6 +10,13 @@ type NavigationLike = EventTarget & {
   removeEventListener(type: "navigate", listener: (event: Event & { navigationType?: string }) => void): void;
 };
 
+type ATCSessionRow = {
+  id?: string;
+  controller_name?: string;
+  position?: string;
+  is_active?: boolean;
+};
+
 function getScopeConnection() {
   const topRow = document.querySelector<HTMLElement>("main.fixed header > div:first-child");
   if (!topRow) return { connected: false, position: "" };
@@ -48,10 +55,34 @@ function clearSessionId() {
   localStorage.removeItem(STORAGE_KEY);
 }
 
+function topConnectionButton() {
+  const topRow = document.querySelector<HTMLElement>("main.fixed header > div:first-child");
+  return Array.from(topRow?.querySelectorAll<HTMLButtonElement>(":scope > button") ?? []).find((button) => {
+    const label = button.textContent?.trim().toUpperCase();
+    return label === "CONNECT" || label === "DISCONNECT";
+  }) ?? null;
+}
+
+function forceScopeDisconnect() {
+  const topButton = topConnectionButton();
+  if (topButton?.textContent?.trim().toUpperCase() !== "DISCONNECT") return;
+
+  // Use the Scope's own disconnect UI so every dependent component receives
+  // exactly the same state/events as a manual disconnect.
+  topButton.click();
+  window.setTimeout(() => {
+    const dialog = document.querySelector<HTMLElement>(".connectBox");
+    const disconnect = Array.from(dialog?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+      .find((button) => button.textContent?.trim().toUpperCase() === "DISCONNECT");
+    disconnect?.click();
+  }, 0);
+}
+
 export default function ScopeAtcPresence({ controllerName }: { controllerName: string }) {
   const syncingRef = useRef(false);
   const lastStateRef = useRef({ connected: false, position: "" });
   const reloadingRef = useRef(false);
+  const forcedDisconnectRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +93,7 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
     };
 
     const closeSession = async () => {
+      const skipAtisCleanup = forcedDisconnectRef.current;
       const sessionId = readSessionId();
       if (sessionId) {
         const { error } = await supabase
@@ -71,7 +103,17 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
         if (error) console.error("PF24 Scope ATC presence close failed:", error);
         clearSessionId();
       }
-      await removeOwnedAtis();
+      if (!skipAtisCleanup) await removeOwnedAtis();
+      forcedDisconnectRef.current = false;
+    };
+
+    const retireOtherSessions = async () => {
+      const { error } = await supabase
+        .from("atc_sessions")
+        .update({ is_active: false, ended_at: new Date().toISOString() })
+        .eq("controller_name", controllerName)
+        .eq("is_active", true);
+      if (error) console.error("PF24 Scope duplicate ATC session cleanup failed:", error);
     };
 
     const openSession = async (position: string) => {
@@ -86,6 +128,9 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
         if (error) console.error("PF24 Scope ATC presence lookup failed:", error);
         if (data?.is_active && data.position === position) return;
         if (data && data.position === position) {
+          // Before reopening this tab, retire any other active position owned by
+          // the same controller. The current row is inactive, so it is preserved.
+          await retireOtherSessions();
           const { error: reopenError } = await supabase
             .from("atc_sessions")
             .update({ is_active: true, ended_at: null })
@@ -94,6 +139,11 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
         }
         await closeSession();
       }
+
+      // A controller may only own one active ATC session. Retire any session
+      // left active in another tab/device before publishing this new position.
+      await removeOwnedAtis();
+      await retireOtherSessions();
 
       const { data, error } = await supabase.from("atc_sessions").insert({
         controller_name: controllerName,
@@ -127,6 +177,22 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
 
     const onConnectionChange = () => void sync();
     window.addEventListener("pf24-scope-connection-change", onConnectionChange);
+
+    // If another tab/device for this same controller takes over, its openSession
+    // marks this row inactive. React to that DB change by disconnecting this UI.
+    const sessionChannel = supabase
+      .channel(`scope-single-atc-session-${controllerName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "atc_sessions" }, (payload) => {
+        const row = payload.new as ATCSessionRow;
+        const ownSessionId = readSessionId();
+        if (!ownSessionId || row.id !== ownSessionId || row.is_active !== false) return;
+        if (reloadingRef.current || forcedDisconnectRef.current) return;
+
+        forcedDisconnectRef.current = true;
+        clearSessionId();
+        forceScopeDisconnect();
+      })
+      .subscribe();
 
     lastStateRef.current = getScopeConnection();
     if (lastStateRef.current.connected && lastStateRef.current.position) void openSession(lastStateRef.current.position);
@@ -176,6 +242,7 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
       window.removeEventListener("pf24-scope-connection-change", onConnectionChange);
       navigation?.removeEventListener("navigate", onNavigate);
       window.removeEventListener("pagehide", handlePageHide);
+      void supabase.removeChannel(sessionChannel);
     };
   }, [controllerName]);
 
