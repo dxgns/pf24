@@ -147,10 +147,23 @@ export default function ScopeGlidePath() {
       if (event.key === ATIS_STORAGE_KEY) setConfigs(readConfigs());
     };
 
+    // The ATIS dialog writes its config to localStorage in the same tab. The browser's
+    // storage event does not fire in that tab, so keep a lightweight sync loop as a
+    // fallback while also supporting the explicit/custom and cross-tab events above.
+    let lastSerialized = JSON.stringify(readConfigs());
+    const configTimer = window.setInterval(() => {
+      const next = readConfigs();
+      const serialized = JSON.stringify(next);
+      if (serialized === lastSerialized) return;
+      lastSerialized = serialized;
+      setConfigs(next);
+    }, 250);
+
     window.addEventListener(VIEWPORT_EVENT, onViewport);
     window.addEventListener(ATIS_CONFIG_EVENT, onConfig);
     window.addEventListener("storage", onStorage);
     return () => {
+      window.clearInterval(configTimer);
       window.removeEventListener(VIEWPORT_EVENT, onViewport);
       window.removeEventListener(ATIS_CONFIG_EVENT, onConfig);
       window.removeEventListener("storage", onStorage);
