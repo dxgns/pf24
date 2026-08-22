@@ -10,7 +10,8 @@ type SeenPlan = { lastSeen: number; callsign: string };
 
 const LIVE_ROOT = "[data-pf24-live-traffic='true']";
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
-const DISCONNECT_CONFIRM_MS = 20_000;
+const PROJECT_FLIGHT_FEED_EVENT = "pf24-project-flight-feed-status";
+const DISCONNECT_CONFIRM_MS = 180_000;
 const POLL_MS = 500;
 
 function norm(value: string) {
@@ -49,6 +50,7 @@ function trafficCallsign(label: HTMLElement) {
 export default function ScopeDisconnectedFlightPlanCleanup({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const connectedRef = useRef(false);
+  const feedConnectedRef = useRef(false);
   const seenRef = useRef(new Map<string, SeenPlan>());
   const deletingRef = useRef(new Set<string>());
 
@@ -77,22 +79,44 @@ export default function ScopeDisconnectedFlightPlanCleanup({ initialPlans }: Pro
   useEffect(() => {
     connectedRef.current = scopeConnected();
 
-    const onConnection = (event: Event) => {
-      const detail = (event as CustomEvent<{ connected?: boolean }>).detail;
-      connectedRef.current = Boolean(detail?.connected);
-      // A controller disconnect/reconnect is not a pilot disconnect. Require every
-      // traffic to be observed again before it can become eligible for cleanup.
+    const resetEligibility = () => {
       seenRef.current.clear();
       deletingRef.current.clear();
     };
 
+    const onConnection = (event: Event) => {
+      const detail = (event as CustomEvent<{ connected?: boolean }>).detail;
+      connectedRef.current = Boolean(detail?.connected);
+      feedConnectedRef.current = false;
+      // A controller disconnect/reconnect is not a pilot disconnect. Require every
+      // traffic to be observed again on a healthy PF feed before cleanup is allowed.
+      resetEligibility();
+    };
+
+    const onFeedStatus = (event: Event) => {
+      const detail = (event as CustomEvent<{ connected?: boolean }>).detail;
+      const healthy = Boolean(detail?.connected);
+      if (!healthy) {
+        feedConnectedRef.current = false;
+        // Any WebSocket interruption invalidates absence timers. This prevents a
+        // Project Flight outage/reconnect from being mistaken for pilot disconnects.
+        resetEligibility();
+        return;
+      }
+      feedConnectedRef.current = true;
+    };
+
     window.addEventListener("pf24-scope-connection-change", onConnection);
-    return () => window.removeEventListener("pf24-scope-connection-change", onConnection);
+    window.addEventListener(PROJECT_FLIGHT_FEED_EVENT, onFeedStatus);
+    return () => {
+      window.removeEventListener("pf24-scope-connection-change", onConnection);
+      window.removeEventListener(PROJECT_FLIGHT_FEED_EVENT, onFeedStatus);
+    };
   }, []);
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-disconnected-flight-plan-cleanup-v1")
+      .channel("scope-disconnected-flight-plan-cleanup-v2")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -110,10 +134,17 @@ export default function ScopeDisconnectedFlightPlanCleanup({ initialPlans }: Pro
 
   useEffect(() => {
     const removePlan = async (planId: string, callsign: string) => {
-      if (deletingRef.current.has(planId)) return;
+      if (!connectedRef.current || !feedConnectedRef.current || deletingRef.current.has(planId)) return;
       deletingRef.current.add(planId);
 
       try {
+        // Re-check immediately before the destructive request. The cleanup timer is
+        // only meaningful while both the controller and PF traffic feed are healthy.
+        if (!connectedRef.current || !feedConnectedRef.current) {
+          deletingRef.current.delete(planId);
+          return;
+        }
+
         const response = await fetch("/api/scope/disconnected-flight-plan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -143,7 +174,7 @@ export default function ScopeDisconnectedFlightPlanCleanup({ initialPlans }: Pro
     };
 
     const tick = () => {
-      if (!connectedRef.current) return;
+      if (!connectedRef.current || !feedConnectedRef.current) return;
       const root = document.querySelector<HTMLElement>(LIVE_ROOT);
       if (!root) return;
 
