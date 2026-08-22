@@ -184,7 +184,9 @@ export async function createFlightPlan(
     created_by: pilotId,
     transponder: getDefaultTransponder(flightRules),
     status: "PENDING",
-    sector_status: "",
+    // Keep a DB-valid initial sector status. The Scope UI is responsible for
+    // presenting the untouched initial STS as visually empty.
+    sector_status: "STUP",
   });
 
   if (error) {
