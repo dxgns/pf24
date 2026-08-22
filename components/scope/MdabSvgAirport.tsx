@@ -124,7 +124,8 @@ export default function MdabSvgAirport() {
     return `${MAP_BOUNDS.minX} ${MAP_BOUNDS.minY} ${width} ${height}`;
   }, []);
 
-  if (!host || viewport.zoom < MDAB_DETAIL_ZOOM) return null;
+  if (!host) return null;
+  const showAirportDetail = viewport.zoom >= MDAB_DETAIL_ZOOM;
 
   return createPortal(
     <div data-pf24-mdab-svg="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
@@ -134,8 +135,8 @@ export default function MdabSvgAirport() {
         preserveAspectRatio="xMidYMid meet"
         style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}
       >
-        <image href="/scope/mdab-ground.svg" x={0} y={0} width={794.06701} height={215.94569} transform={MDAB_IMAGE_TRANSFORM} preserveAspectRatio="none" />
-        <g data-map-layer="mdab-svg-labels-upright">
+        <image href="/scope/mdab-ground.svg" x={0} y={0} width={794.06701} height={215.94569} transform={MDAB_IMAGE_TRANSFORM} preserveAspectRatio="none" opacity={showAirportDetail ? 1 : 0} />
+        <g data-map-layer="mdab-svg-labels-upright" opacity={showAirportDetail ? 1 : 0}>
           {MDAB_LABELS.map((label, index) => {
             const placement = labelPlacement(label);
             return (
