@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
+import { getGameCallsignFromNotes, normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 type StoredConnection = { callsign?: string };
 type Props = { initialPlans: ScopeFlightPlan[] };
+type OwnershipHintDetail = { key?: string; owner?: string | null };
+type OptimisticOwner = { owner: string | null; expiresAt: number };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const LIST_SELECTOR = "[data-pf24-live-sector-list='true']";
+const OPTIMISTIC_TTL_MS = 5000;
 
 const FIR_AIRPORTS: Record<string, string[]> = {
   MDCS: ["MDPC", "MDST", "MDCR", "MDAB"],
@@ -23,6 +26,19 @@ const FIR_AIRPORTS: Record<string, string[]> = {
 
 function norm(value: string) {
   return normalizeGameCallsign(value);
+}
+
+function normalizeOwner(value: string | null | undefined) {
+  return value?.trim().toUpperCase() || null;
+}
+
+function planKeys(plan: ScopeFlightPlan) {
+  const keys = new Set<string>();
+  const displayed = norm(plan.callsign);
+  const game = norm(getGameCallsignFromNotes(plan.notes));
+  if (displayed) keys.add(displayed);
+  if (game) keys.add(game);
+  return keys;
 }
 
 function readPosition() {
@@ -69,10 +85,13 @@ function rowCallsign(row: HTMLElement) {
 export default function ScopeSectorListRules({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
+  const [optimisticOwners, setOptimisticOwners] = useState<Record<string, OptimisticOwner>>({});
 
   const plansByCallsign = useMemo(() => {
     const map = new Map<string, ScopeFlightPlan>();
-    for (const plan of plans) map.set(norm(plan.callsign), plan);
+    for (const plan of plans) {
+      for (const key of planKeys(plan)) map.set(key, plan);
+    }
     return map;
   }, [plans]);
 
@@ -89,15 +108,21 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
     const list = document.querySelector<HTMLElement>(LIST_SELECTOR);
     if (!list) return;
     const rows = Array.from(list.children).slice(1).filter((node): node is HTMLElement => node instanceof HTMLElement);
+    const now = Date.now();
 
     for (const row of rows) {
-      const callsign = rowCallsign(row);
-      const plan = plansByCallsign.get(norm(callsign));
+      const key = norm(rowCallsign(row));
+      const plan = plansByCallsign.get(key);
       const visible = Boolean(plan && visibleToPosition(plan, position));
       row.style.display = visible ? "" : "none";
       if (!plan || !visible) continue;
 
-      const mine = Boolean(position && plan.assumed_by?.trim().toUpperCase() === position);
+      const optimistic = optimisticOwners[key];
+      const owner = optimistic && optimistic.expiresAt > now
+        ? optimistic.owner
+        : normalizeOwner(plan.assumed_by);
+      const mine = Boolean(position && owner === position);
+
       row.dataset.pf24Editable = mine ? "true" : "false";
       row.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
         button.disabled = !mine;
@@ -105,21 +130,65 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
         button.style.cursor = mine ? "pointer" : "default";
       });
     }
-  }, [plansByCallsign, position]);
+  }, [optimisticOwners, plansByCallsign, position]);
 
   useEffect(() => {
     setPosition(readPosition());
+
     const onConnection = (event: Event) => {
       const detail = (event as CustomEvent<{ connected?: boolean; callsign?: string }>).detail;
       setPosition(detail?.connected ? (detail.callsign?.trim().toUpperCase() || readPosition()) : "");
+      if (!detail?.connected) setOptimisticOwners({});
     };
+
+    const onHint = (event: Event) => {
+      const detail = (event as CustomEvent<OwnershipHintDetail>).detail;
+      const key = norm(detail?.key ?? "");
+      if (!key) return;
+      setOptimisticOwners((current) => ({
+        ...current,
+        [key]: {
+          owner: normalizeOwner(detail?.owner),
+          expiresAt: Date.now() + OPTIMISTIC_TTL_MS,
+        },
+      }));
+    };
+
+    const onOwnershipChange = () => {
+      void loadPlans();
+      window.setTimeout(() => void loadPlans(), 160);
+    };
+
     window.addEventListener("pf24-scope-connection-change", onConnection);
-    return () => window.removeEventListener("pf24-scope-connection-change", onConnection);
-  }, []);
+    window.addEventListener("pf24-traffic-ownership-hint", onHint);
+    window.addEventListener("pf24-traffic-ownership-change", onOwnershipChange);
+    return () => {
+      window.removeEventListener("pf24-scope-connection-change", onConnection);
+      window.removeEventListener("pf24-traffic-ownership-hint", onHint);
+      window.removeEventListener("pf24-traffic-ownership-change", onOwnershipChange);
+    };
+  }, [loadPlans]);
+
+  useEffect(() => {
+    setOptimisticOwners((current) => {
+      const now = Date.now();
+      const next = { ...current };
+      let changed = false;
+      for (const [key, optimistic] of Object.entries(current)) {
+        const plan = plansByCallsign.get(key);
+        const actual = normalizeOwner(plan?.assumed_by);
+        if (optimistic.expiresAt <= now || (plan && actual === optimistic.owner)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [plansByCallsign]);
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-sector-list-rules")
+      .channel("scope-sector-list-rules-v2")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -127,7 +196,7 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
 
   useEffect(() => {
     applyRules();
-    const timer = window.setInterval(applyRules, 250);
+    const timer = window.setInterval(applyRules, 100);
     const onClickCapture = (event: MouseEvent) => {
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>(`${LIST_SELECTOR} button`) : null;
       const row = button?.closest<HTMLElement>(`${LIST_SELECTOR} > div.relative`);
