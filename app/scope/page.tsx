@@ -11,6 +11,7 @@ import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopeTrafficLabelUX from "@/components/scope/ScopeTrafficLabelUX";
 import ScopeTrafficMappState from "@/components/scope/ScopeTrafficMappState";
 import ScopeTrafficHandover from "@/components/scope/ScopeTrafficHandover";
+import ScopeHandoverAudioAlerts from "@/components/scope/ScopeHandoverAudioAlerts";
 import ScopeTrafficOperations from "@/components/scope/ScopeTrafficOperations";
 import ScopeUnplannedTrafficOperationsV4 from "@/components/scope/ScopeUnplannedTrafficOperationsV4";
 import ScopeUnplannedHold from "@/components/scope/ScopeUnplannedHold";
@@ -62,7 +63,7 @@ export default async function ScopePage() {
     <ScopeConnectionPersistence /><ScopeConnectDialogPersistence /><ScopeOwnedTrafficLifecycle /><ScopeTrafficAutoRelease />
     <ScopeLayoutGuards /><WeatherPanelV2 /><ScopeRadarMap /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport />
     <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} />
-    <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} />
+    <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
     <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} />
     <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras />
