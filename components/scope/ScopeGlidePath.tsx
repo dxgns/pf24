@@ -24,6 +24,16 @@ const END_LEG_EXTENSION_NM = 1;
 const GLIDE_STROKE = "#d2c09d";
 const GLIDE_STROKE_WIDTH = 0.1;
 
+// Exact geometry from the supplied SendaVerde.svg. The pointed end is placed
+// on the active arrival runway threshold and the center of the outer edge is
+// scaled to exactly 5 NM from that threshold.
+const GREEN_SENDA_SVG = {
+  width: 446.84378,
+  height: 312.42633,
+  tip: { x: 446.84379, y: 312.42632 },
+  outerCenter: { x: 10.724985, y: 16.08748 },
+} as const;
+
 const RUNWAY_GEOMETRY: Record<string, Record<string, RunwayGeometry>> = {
   MDST: {
     "11": { threshold: { x: 67.19, y: 92.42 }, oppositeThreshold: { x: 69.56, y: 93.45 } },
@@ -79,6 +89,35 @@ function activeArrivalRunways(state: RunwayState) {
   return result;
 }
 
+function greenSendaTransform(runway: RunwayGeometry) {
+  const targetDx = runway.threshold.x - runway.oppositeThreshold.x;
+  const targetDy = runway.threshold.y - runway.oppositeThreshold.y;
+  const targetMagnitude = Math.hypot(targetDx, targetDy);
+  if (!(targetMagnitude > 0)) return null;
+
+  const ux = targetDx / targetMagnitude;
+  const uy = targetDy / targetMagnitude;
+
+  const sourceDx = GREEN_SENDA_SVG.outerCenter.x - GREEN_SENDA_SVG.tip.x;
+  const sourceDy = GREEN_SENDA_SVG.outerCenter.y - GREEN_SENDA_SVG.tip.y;
+  const sourceMagnitude = Math.hypot(sourceDx, sourceDy);
+  const sourceUx = sourceDx / sourceMagnitude;
+  const sourceUy = sourceDy / sourceMagnitude;
+
+  const cos = sourceUx * ux + sourceUy * uy;
+  const sin = sourceUx * uy - sourceUy * ux;
+  const scale = (GLIDE_PATH_LENGTH_NM * SCOPE_MAP_UNITS_PER_NM) / sourceMagnitude;
+
+  const a = scale * cos;
+  const b = scale * sin;
+  const c = -scale * sin;
+  const d = scale * cos;
+  const e = runway.threshold.x - a * GREEN_SENDA_SVG.tip.x - c * GREEN_SENDA_SVG.tip.y;
+  const f = runway.threshold.y - b * GREEN_SENDA_SVG.tip.x - d * GREEN_SENDA_SVG.tip.y;
+
+  return `matrix(${a} ${b} ${c} ${d} ${e} ${f})`;
+}
+
 function glideGeometry(runway: RunwayGeometry) {
   const dx = runway.threshold.x - runway.oppositeThreshold.x;
   const dy = runway.threshold.y - runway.oppositeThreshold.y;
@@ -127,9 +166,6 @@ function glideGeometry(runway: RunwayGeometry) {
     y2: end.y + uy * armForward - py * armSide,
   };
 
-  // The SVG does not continue the diagonal arms. Each arm bends at its tip
-  // into a second, lateral segment. Keep the V untouched and add those two
-  // outer legs perpendicular to the runway/glide-path axis.
   const legExtension = END_LEG_EXTENSION_NM * nm;
   const legs = [
     {
@@ -221,9 +257,21 @@ export default function ScopeGlidePath() {
           {activeRunways.map(({ airport, runway }) => {
             const definition = RUNWAY_GEOMETRY[airport]?.[runway];
             const geometry = definition ? glideGeometry(definition) : null;
+            const greenTransform = definition ? greenSendaTransform(definition) : null;
             if (!definition || !geometry) return null;
             return (
               <g key={`${airport}-${runway}`} data-airport={airport} data-runway={runway}>
+                {greenTransform ? (
+                  <image
+                    href="/scope/senda-verde.svg"
+                    x={0}
+                    y={0}
+                    width={GREEN_SENDA_SVG.width}
+                    height={GREEN_SENDA_SVG.height}
+                    transform={greenTransform}
+                    preserveAspectRatio="none"
+                  />
+                ) : null}
                 <line
                   x1={definition.threshold.x}
                   y1={definition.threshold.y}
