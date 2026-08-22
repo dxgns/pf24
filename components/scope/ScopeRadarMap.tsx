@@ -242,6 +242,17 @@ export default function ScopeRadarMap() {
 
   return createPortal(
     <>
+      <div data-pf24-fir-layer="true" className="pointer-events-none absolute inset-0 z-[3] overflow-hidden" aria-hidden="true">
+        <svg className="absolute inset-0 block h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" style={transformStyle}>
+          <g data-map-layer="fir-airspace">
+            {AIRSPACE_PATHS.filter((airspace) => airspace.tone === "fir").map((airspace) => {
+              const style = pathStyle(airspace.tone);
+              return <polyline key={airspace.id} points={points(airspace)} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+            })}
+          </g>
+        </svg>
+      </div>
+
       <div data-pf24-island-layer="true" className="pointer-events-none absolute inset-0 z-[4] overflow-hidden" aria-hidden="true">
         <svg className="absolute inset-0 block h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" style={transformStyle}>
           <g data-map-layer="hispaniola-coastline">
@@ -261,7 +272,7 @@ export default function ScopeRadarMap() {
       <div data-pf24-vector-map="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
         <svg className="absolute inset-0 block h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" style={transformStyle}>
           <g data-map-layer="airspace">
-            {AIRSPACE_PATHS.map((airspace) => {
+            {AIRSPACE_PATHS.filter((airspace) => airspace.tone !== "fir").map((airspace) => {
               const style = pathStyle(airspace.tone);
               if (airspace.id === "MDST_APP") {
                 return <path key={airspace.id} d={MDST_APP_PATH} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
