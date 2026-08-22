@@ -66,6 +66,7 @@ const DEFAULT_SERVER_ID = "2ykygVZiX5";
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 const CONNECTION_EVENT = "pf24-scope-connection-change";
+const PROJECT_FLIGHT_FEED_EVENT = "pf24-project-flight-feed-status";
 const CONTROLS_KEY = "pf24_scope_traffic_controls_v1";
 const LABEL_OFFSETS_KEY = "pf24_scope_traffic_label_offsets_v1";
 const TARGET_SIZE = 18;
@@ -77,7 +78,7 @@ const VECTOR_PIXELS_PER_NM = 28;
 const GROUND_VECTOR_PIXELS = 10;
 const GROUND_ALTITUDE_FT = 100;
 const TRAIL_SAMPLE_MS = 1200;
-const STALE_TRAFFIC_MS = 15000;
+const STALE_TRAFFIC_MS = 120000;
 const STALE_SWEEP_MS = 3000;
 
 const MIN_X = -180000;
@@ -643,6 +644,10 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
   useEffect(() => {
     let disposed = false;
 
+    const publishFeedStatus = (feedConnected: boolean) => {
+      window.dispatchEvent(new CustomEvent(PROJECT_FLIGHT_FEED_EVENT, { detail: { connected: feedConnected } }));
+    };
+
     const publishTraffic = () => {
       const now = performance.now();
       for (const [id, value] of liveRef.current) {
@@ -662,6 +667,7 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
     };
 
     const stop = () => {
+      publishFeedStatus(false);
       if (reconnectRef.current !== null) window.clearTimeout(reconnectRef.current);
       reconnectRef.current = null;
       const current = socketRef.current;
@@ -677,9 +683,12 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
       socket.binaryType = "arraybuffer";
       socketRef.current = socket;
 
+      socket.onopen = () => publishFeedStatus(true);
+
       socket.onmessage = (event) => {
         void decodeMessage(event.data).then((decoded) => {
           if (disposed || decoded.length === 0) return;
+          publishFeedStatus(true);
           const now = performance.now();
 
           for (const item of decoded) {
@@ -723,6 +732,7 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
       };
 
       socket.onclose = () => {
+        publishFeedStatus(false);
         if (socketRef.current === socket) socketRef.current = null;
         if (disposed || !connected) return;
         reconnectRef.current = window.setTimeout(() => {
