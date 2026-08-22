@@ -55,7 +55,6 @@ export default function ScopeQdmTool() {
   const [originBase, setOriginBase] = useState<Point | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
   const [frozenEndBase, setFrozenEndBase] = useState<Point | null>(null);
-  const [holding, setHolding] = useState(false);
   const [sizeTick, setSizeTick] = useState(0);
   const holdingRef = useRef(false);
   const frozenRef = useRef<Point | null>(null);
@@ -100,7 +99,6 @@ export default function ScopeQdmTool() {
 
     const clearLiveQdm = () => {
       holdingRef.current = false;
-      setHolding(false);
       setOriginBase(null);
       cursorRef.current = null;
       setCursor(null);
@@ -135,7 +133,6 @@ export default function ScopeQdmTool() {
       cursorRef.current = { x, y };
       setCursor({ x, y });
       holdingRef.current = true;
-      setHolding(true);
     };
 
     const onDoubleClick = (event: MouseEvent) => {
@@ -162,7 +159,6 @@ export default function ScopeQdmTool() {
     const onMouseUp = (event: MouseEvent) => {
       if (event.button !== 0 || !holdingRef.current) return;
       holdingRef.current = false;
-      setHolding(false);
       // Q freezes before mouseup and sets frozenRef synchronously. Without Q,
       // releasing the second click removes the temporary QDM immediately.
       if (!frozenRef.current) {
@@ -176,7 +172,6 @@ export default function ScopeQdmTool() {
       if (event.code === "KeyQ" && holdingRef.current && !frozenRef.current) {
         const point = cursorRef.current;
         if (!point) return;
-        const rect = radar.getBoundingClientRect();
         const currentViewport = viewportRef.current;
         const zoom = Math.max(0.01, currentViewport.zoom);
         const frozen = {
@@ -188,7 +183,6 @@ export default function ScopeQdmTool() {
         frozenRef.current = frozen;
         setFrozenEndBase(frozen);
         holdingRef.current = false;
-        setHolding(false);
         return;
       }
 
@@ -255,7 +249,6 @@ export default function ScopeQdmTool() {
     cursorRef.current = null;
     setCursor(null);
     holdingRef.current = false;
-    setHolding(false);
   };
 
   return createPortal(
