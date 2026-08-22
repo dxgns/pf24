@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-const WINDOW_SELECTOR = "main.fixed > section > div.absolute.z-30, [data-pf24-weather-window='true']";
+const WINDOW_SELECTOR = "main.fixed > section > div.absolute.z-30, [data-pf24-weather-window='true'], [data-pf24-conflict-window='true']";
 const COLLISION_GAP = 2;
 
 type DragState = {
