@@ -97,15 +97,6 @@ export default function ScopeQdmTool() {
   useEffect(() => {
     if (!radar) return;
 
-    const clearLiveQdm = () => {
-      holdingRef.current = false;
-      setOriginBase(null);
-      cursorRef.current = null;
-      setCursor(null);
-      frozenRef.current = null;
-      setFrozenEndBase(null);
-    };
-
     // MouseEvent.detail is already 2 on the DOWN phase of the second click.
     // Starting here (instead of on dblclick) lets the user keep that second
     // button press held while the QDM line follows the cursor.
@@ -141,8 +132,6 @@ export default function ScopeQdmTool() {
       if (event.button !== 0 || blocksQdm(event.target)) return;
       const rect = radar.getBoundingClientRect();
       if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
-      // Suppress other blank-map double-click actions. QDM itself was already
-      // started on the second mousedown above.
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -159,8 +148,6 @@ export default function ScopeQdmTool() {
     const onMouseUp = (event: MouseEvent) => {
       if (event.button !== 0 || !holdingRef.current) return;
       holdingRef.current = false;
-      // Q freezes before mouseup and sets frozenRef synchronously. Without Q,
-      // releasing the second click removes the temporary QDM immediately.
       if (!frozenRef.current) {
         setOriginBase(null);
         cursorRef.current = null;
@@ -169,29 +156,20 @@ export default function ScopeQdmTool() {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code === "KeyQ" && holdingRef.current && !frozenRef.current) {
-        const point = cursorRef.current;
-        if (!point) return;
-        const currentViewport = viewportRef.current;
-        const zoom = Math.max(0.01, currentViewport.zoom);
-        const frozen = {
-          x: (point.x - currentViewport.panX) / zoom,
-          y: (point.y - currentViewport.panY) / zoom,
-        };
-        event.preventDefault();
-        event.stopPropagation();
-        frozenRef.current = frozen;
-        setFrozenEndBase(frozen);
-        holdingRef.current = false;
-        return;
-      }
-
-      // Escape only cancels a temporary, non-frozen QDM. A Q-frozen line is
-      // intentionally persistent until the user double-clicks that line.
-      if (event.key === "Escape" && holdingRef.current && !frozenRef.current) {
-        event.preventDefault();
-        clearLiveQdm();
-      }
+      if (event.code !== "KeyQ" || !holdingRef.current || frozenRef.current) return;
+      const point = cursorRef.current;
+      if (!point) return;
+      const currentViewport = viewportRef.current;
+      const zoom = Math.max(0.01, currentViewport.zoom);
+      const frozen = {
+        x: (point.x - currentViewport.panX) / zoom,
+        y: (point.y - currentViewport.panY) / zoom,
+      };
+      event.preventDefault();
+      event.stopPropagation();
+      frozenRef.current = frozen;
+      setFrozenEndBase(frozen);
+      holdingRef.current = false;
     };
 
     const onResize = () => setSizeTick((value) => value + 1);
