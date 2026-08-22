@@ -11,13 +11,17 @@ const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 const MDAB_DETAIL_ZOOM = 2.35;
 
+// Recalibrated from the uploaded MDAB runway centreline to the corrected Scope
+// RWY 11 (80.82, 95.44) and RWY 29 (82.26, 95.70) coordinates.
+// The same matrix moves/scales/rotates the entire airport so the ground layout
+// remains aligned with the corrected runway position.
 const MDAB_IMAGE_MATRIX = {
-  a: 0.0026602008717161243,
-  b: 0.0005178160684169315,
-  c: -0.0005178160684169315,
-  d: 0.0026602008717161243,
-  e: 80.36922097910265,
-  f: 94.83981934936152,
+  a: 0.0022142259719154906,
+  b: 0.0004340446900998935,
+  c: -0.0004340446900998935,
+  d: 0.0022142259719154906,
+  e: 80.64512888581041,
+  f: 94.97337997863933,
 } as const;
 const MDAB_IMAGE_TRANSFORM = `matrix(${MDAB_IMAGE_MATRIX.a} ${MDAB_IMAGE_MATRIX.b} ${MDAB_IMAGE_MATRIX.c} ${MDAB_IMAGE_MATRIX.d} ${MDAB_IMAGE_MATRIX.e} ${MDAB_IMAGE_MATRIX.f})`;
 const MDAB_SOURCE_LAYER_OFFSET = { x: -16.183031, y: -136.55389 } as const;
