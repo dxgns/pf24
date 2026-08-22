@@ -10,7 +10,6 @@ type Viewport = { zoom: number; panX: number; panY: number };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 const LINE_COLOR = "#8a8a8a";
-const LABEL_BACKGROUND = "#0b0b0b";
 
 function readViewport(): Viewport {
   try {
@@ -48,19 +47,6 @@ function blocksQdm(target: EventTarget | null) {
 function bearingFromDelta(dx: number, dy: number) {
   const degrees = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
   return Math.round(degrees) % 360;
-}
-
-function labelOffset(dx: number, dy: number) {
-  const length = Math.hypot(dx, dy);
-  if (length < 0.001) return { x: 0, y: -11 };
-
-  const first = { x: -dy / length, y: dx / length };
-  const second = { x: dy / length, y: -dx / length };
-
-  // Prefer the side that places the label visually above the line. For an
-  // exactly vertical line, place it to the right instead.
-  if (Math.abs(first.y - second.y) < 0.001) return first.x >= second.x ? first : second;
-  return first.y < second.y ? first : second;
 }
 
 export default function ScopeQdmTool() {
@@ -111,9 +97,6 @@ export default function ScopeQdmTool() {
   useEffect(() => {
     if (!radar) return;
 
-    // MouseEvent.detail is already 2 on the DOWN phase of the second click.
-    // Starting here (instead of on dblclick) lets the user keep that second
-    // button press held while the QDM line follows the cursor.
     const onMouseDown = (event: MouseEvent) => {
       if (event.button !== 0 || event.detail < 2 || frozenRef.current || blocksQdm(event.target)) return;
       const rect = radar.getBoundingClientRect();
@@ -224,15 +207,21 @@ export default function ScopeQdmTool() {
 
     const dx = endpoint.x - origin.x;
     const dy = endpoint.y - origin.y;
+    const length = Math.hypot(dx, dy);
     const distanceNm = scopeDistanceNmFromScreenDelta(dx, dy, rect.width, rect.height, viewport.zoom);
     const bearing = bearingFromDelta(dx, dy);
     const mid = { x: (origin.x + endpoint.x) / 2, y: (origin.y + endpoint.y) / 2 };
-    const offset = labelOffset(dx, dy);
-    const label = { x: mid.x + offset.x * 11, y: mid.y + offset.y * 11 };
     const labelText = `${Math.max(0, distanceNm).toFixed(1)}nm ${String(bearing).padStart(3, "0")}°`;
-    const labelWidth = labelText.length * 7.2 + 8;
+    const labelWidth = labelText.length * 7.2;
+    const halfLabelHeight = 7;
 
-    return { origin, endpoint, distanceNm, bearing, mid, label, labelText, labelWidth };
+    const unit = length > 0.001 ? { x: dx / length, y: dy / length } : { x: 1, y: 0 };
+    const projectedHalfLabel = Math.abs(unit.x) * (labelWidth / 2) + Math.abs(unit.y) * halfLabelHeight;
+    const halfGap = Math.min(projectedHalfLabel + 5, Math.max(0, length * 0.42));
+    const gapStart = { x: mid.x - unit.x * halfGap, y: mid.y - unit.y * halfGap };
+    const gapEnd = { x: mid.x + unit.x * halfGap, y: mid.y + unit.y * halfGap };
+
+    return { origin, endpoint, distanceNm, bearing, mid, labelText, gapStart, gapEnd };
   }, [cursor, frozenEndBase, originBase, radar, sizeTick, viewport]);
 
   if (!radar || !rendered) return null;
@@ -270,27 +259,28 @@ export default function ScopeQdmTool() {
         }}
       />}
       <line
-        data-pf24-qdm-line={frozenEndBase ? "true" : undefined}
         x1={rendered.origin.x}
         y1={rendered.origin.y}
+        x2={rendered.gapStart.x}
+        y2={rendered.gapStart.y}
+        stroke={LINE_COLOR}
+        strokeWidth="2"
+      />
+      <line
+        x1={rendered.gapEnd.x}
+        y1={rendered.gapEnd.y}
         x2={rendered.endpoint.x}
         y2={rendered.endpoint.y}
         stroke={LINE_COLOR}
         strokeWidth="2"
       />
-      <rect
-        x={rendered.label.x - rendered.labelWidth / 2}
-        y={rendered.label.y - 8}
-        width={rendered.labelWidth}
-        height="16"
-        rx="2"
-        fill={LABEL_BACKGROUND}
-        fillOpacity="0.92"
-      />
       <text
-        x={rendered.label.x}
-        y={rendered.label.y}
+        x={rendered.mid.x}
+        y={rendered.mid.y}
         fill={LINE_COLOR}
+        stroke="#0b0b0b"
+        strokeWidth="2"
+        paintOrder="stroke"
         fontSize="12"
         fontFamily="monospace"
         textAnchor="middle"
