@@ -9,6 +9,23 @@ const MIN_ZOOM = 0.55;
 const MAX_ZOOM = 256;
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
+// Airport detail SVGs are intentionally preloaded independently from their zoom
+// visibility. Several airport renderers mount/unmount external <image> elements
+// around the detail threshold; very fast wheel zoom can otherwise make the browser
+// abort an SVG request and leave the newly mounted element blank. Keeping these
+// Image objects alive for the lifetime of the radar gives every airport a stable,
+// shared cached resource regardless of how quickly the detail threshold is crossed.
+const AIRPORT_SVG_ASSETS = [
+  "/scope/mdpc-ground-1.svg",
+  "/scope/mdpc-ground-2.svg",
+  "/scope/mdpc-ground-3.svg",
+  "/scope/mdpc-ground-4.svg",
+  "/scope/mdst-ground.svg",
+  "/scope/mdab-ground.svg",
+  "/scope/mdcr-ground.svg",
+  "/scope/mtca-ground.svg",
+] as const;
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
@@ -51,8 +68,24 @@ function isPanBlocked(target: EventTarget | null) {
 
 export default function RadarViewport() {
   useEffect(() => {
+    const airportPreloads = AIRPORT_SVG_ASSETS.map((src) => {
+      const image = new Image();
+      image.decoding = "async";
+      image.src = src;
+      return image;
+    });
+
     const radar = findRadar();
-    if (!radar) return;
+    if (!radar) {
+      return () => {
+        // Keep the preload requests untouched; simply release callbacks/references
+        // when the Scope itself unmounts.
+        airportPreloads.forEach((image) => {
+          image.onload = null;
+          image.onerror = null;
+        });
+      };
+    }
 
     let viewport = readViewport();
     let panning = false;
@@ -155,6 +188,10 @@ export default function RadarViewport() {
       radar.style.removeProperty("--pf24-radar-pan-x");
       radar.style.removeProperty("--pf24-radar-pan-y");
       delete radar.dataset.pf24RadarZoom;
+      airportPreloads.forEach((image) => {
+        image.onload = null;
+        image.onerror = null;
+      });
     };
   }, []);
 
