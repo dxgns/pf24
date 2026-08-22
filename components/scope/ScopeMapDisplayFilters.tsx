@@ -92,13 +92,26 @@ function classifyAirportLabels(root: ParentNode) {
 
 function FilterGlyph() {
   return (
-    <svg width="43" height="19" viewBox="0 0 116 52" aria-hidden="true">
-      <path
-        d="M7 18 L24 8 L49 8 L66 18 L66 28 L47 47 L47 51 L26 51 L26 38 L8 21 Z M12 19 L27 12 L47 12 L61 20 L61 25 L47 31 L26 31 L12 25 Z"
+    <svg width="48" height="21" viewBox="0 0 48 21" aria-hidden="true">
+      <text
+        x="37.5"
+        y="6.2"
         fill="#e2e2e2"
-        fillRule="evenodd"
+        fontFamily="monospace"
+        fontSize="7.1"
+        fontWeight="400"
+        textAnchor="middle"
+      >
+        FL
+      </text>
+      <path
+        d="M4.2 9.2 L9.2 6.1 L17.8 6.1 L22.8 9.2 L22.8 11.1 L17.1 16.4 L17.1 20 L10.0 20 L10.0 16.4 L4.2 11.1 Z"
+        fill="#e2e2e2"
       />
-      <text x="72" y="22" fill="#e2e2e2" fontFamily="monospace" fontSize="20" fontWeight="600">FL</text>
+      <path
+        d="M5.5 9.35 L9.8 6.9 L17.2 6.9 L21.5 9.35 L21.5 10.45 L17.0 12.25 L10.0 12.25 L5.5 10.45 Z"
+        fill="#064a40"
+      />
     </svg>
   );
 }
