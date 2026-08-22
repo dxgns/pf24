@@ -6,24 +6,21 @@ import { MAP_BOUNDS } from "@/lib/scope/mapData";
 import { SCOPE_MAP_UNITS_PER_NM } from "@/lib/scope/distanceScale";
 
 type Viewport = { zoom: number; panX: number; panY: number };
-type AirportConfig = { active?: boolean; dep?: string; arr?: string; approach?: string; remarks?: string };
-type ConfigMap = Record<string, AirportConfig>;
+type RunwaySelection = { active?: boolean; dep?: boolean; arr?: boolean };
+type RunwayState = Record<string, RunwaySelection>;
 type Point = { x: number; y: number };
 type RunwayGeometry = { threshold: Point; oppositeThreshold: Point };
 
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
-const ATIS_STORAGE_KEY = "pf24_scope_atis_configs_v1";
-const ATIS_CONFIG_EVENT = "pf24-atis-config-sync";
+const RUNWAY_STORAGE_KEY = "pf24_scope_runways_v2";
 
 const GLIDE_PATH_LENGTH_NM = 5;
 const TICK_HALF_LENGTH_NM = 0.5;
 const GLIDE_STROKE = "#d2c09d";
 const GLIDE_STROKE_WIDTH = 0.1;
 
-// Precise runway threshold geometry already calibrated in the PF24 Scope coordinate frame.
-// MDST thresholds come from the calibrated RWY 11/29 SVG centerline.
-// MDPC thresholds use the existing Scope runway coordinates.
+// Runway thresholds calibrated in the PF24 Scope coordinate frame.
 const RUNWAY_GEOMETRY: Record<string, Record<string, RunwayGeometry>> = {
   MDST: {
     "11": {
@@ -53,6 +50,16 @@ const RUNWAY_GEOMETRY: Record<string, Record<string, RunwayGeometry>> = {
       oppositeThreshold: { x: 86.37, y: 102.93 },
     },
   },
+  MDAB: {
+    "11": {
+      threshold: { x: 80.82, y: 95.44 },
+      oppositeThreshold: { x: 82.26, y: 95.70 },
+    },
+    "29": {
+      threshold: { x: 82.26, y: 95.70 },
+      oppositeThreshold: { x: 80.82, y: 95.44 },
+    },
+  },
 };
 
 function readViewport(): Viewport {
@@ -68,9 +75,9 @@ function readViewport(): Viewport {
   }
 }
 
-function readConfigs(): ConfigMap {
+function readRunwayState(): RunwayState {
   try {
-    const parsed = JSON.parse(localStorage.getItem(ATIS_STORAGE_KEY) ?? "{}") as ConfigMap;
+    const parsed = JSON.parse(localStorage.getItem(RUNWAY_STORAGE_KEY) ?? "{}") as RunwayState;
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
@@ -81,13 +88,14 @@ function findRadar() {
   return document.querySelector<HTMLElement>("main.fixed > section");
 }
 
-function activeArrivalRunways(configs: ConfigMap) {
+function activeArrivalRunways(state: RunwayState) {
   const result: Array<{ airport: string; runway: string }> = [];
-  for (const [airport, config] of Object.entries(configs)) {
-    if (!config?.active || !config.arr) continue;
-    for (const runway of config.arr.split("/").map((value) => value.trim()).filter(Boolean)) {
-      if (RUNWAY_GEOMETRY[airport]?.[runway]) result.push({ airport, runway });
-    }
+  for (const [key, selection] of Object.entries(state)) {
+    if (!selection?.active || !selection.arr) continue;
+    const match = key.match(/^([A-Z0-9]{4})-(.+)$/);
+    if (!match) continue;
+    const [, airport, runway] = match;
+    if (RUNWAY_GEOMETRY[airport]?.[runway]) result.push({ airport, runway });
   }
   return result;
 }
@@ -129,43 +137,37 @@ function glideGeometry(runway: RunwayGeometry) {
 export default function ScopeGlidePath() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [viewport, setViewport] = useState<Viewport>({ zoom: 1, panX: 0, panY: 0 });
-  const [configs, setConfigs] = useState<ConfigMap>({});
+  const [runwayState, setRunwayState] = useState<RunwayState>({});
 
   useEffect(() => {
     setViewport(readViewport());
-    setConfigs(readConfigs());
+    setRunwayState(readRunwayState());
 
     const onViewport = (event: Event) => {
       const detail = (event as CustomEvent<Viewport>).detail;
       if (detail) setViewport(detail);
     };
-    const onConfig = (event: Event) => {
-      const detail = (event as CustomEvent<ConfigMap>).detail;
-      setConfigs(detail && typeof detail === "object" ? detail : readConfigs());
-    };
     const onStorage = (event: StorageEvent) => {
-      if (event.key === ATIS_STORAGE_KEY) setConfigs(readConfigs());
+      if (event.key === RUNWAY_STORAGE_KEY) setRunwayState(readRunwayState());
     };
 
-    // The ATIS dialog writes its config to localStorage in the same tab. The browser's
-    // storage event does not fire in that tab, so keep a lightweight sync loop as a
-    // fallback while also supporting the explicit/custom and cross-tab events above.
-    let lastSerialized = JSON.stringify(readConfigs());
-    const configTimer = window.setInterval(() => {
-      const next = readConfigs();
+    // PF24Scope writes the runway selector state to localStorage in this same tab,
+    // so the native storage event does not fire here. Poll lightly to mirror changes
+    // from the Runway selector dialog immediately.
+    let lastSerialized = JSON.stringify(readRunwayState());
+    const runwayTimer = window.setInterval(() => {
+      const next = readRunwayState();
       const serialized = JSON.stringify(next);
       if (serialized === lastSerialized) return;
       lastSerialized = serialized;
-      setConfigs(next);
-    }, 250);
+      setRunwayState(next);
+    }, 150);
 
     window.addEventListener(VIEWPORT_EVENT, onViewport);
-    window.addEventListener(ATIS_CONFIG_EVENT, onConfig);
     window.addEventListener("storage", onStorage);
     return () => {
-      window.clearInterval(configTimer);
+      window.clearInterval(runwayTimer);
       window.removeEventListener(VIEWPORT_EVENT, onViewport);
-      window.removeEventListener(ATIS_CONFIG_EVENT, onConfig);
       window.removeEventListener("storage", onStorage);
     };
   }, []);
@@ -192,7 +194,7 @@ export default function ScopeGlidePath() {
     return `${MAP_BOUNDS.minX} ${MAP_BOUNDS.minY} ${width} ${height}`;
   }, []);
 
-  const activeRunways = useMemo(() => activeArrivalRunways(configs), [configs]);
+  const activeRunways = useMemo(() => activeArrivalRunways(runwayState), [runwayState]);
   if (!host || activeRunways.length === 0) return null;
 
   return createPortal(
