@@ -42,6 +42,7 @@ import ScopeSectorChat from "@/components/scope/ScopeSectorChat";
 import ScopeNativeListBodyGuard from "@/components/scope/ScopeNativeListBodyGuard";
 import ScopeConnectionPersistence from "@/components/scope/ScopeConnectionPersistence";
 import ScopeAtisDisconnectCleanup from "@/components/scope/ScopeAtisDisconnectCleanup";
+import ScopeTrafficMenuLayerFix from "@/components/scope/ScopeTrafficMenuLayerFix";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 export const metadata: Metadata = { title: "PF24 Scope | PF24", description: "Entorno operativo ATC de PF24." };
@@ -68,7 +69,7 @@ export default async function ScopePage() {
     <ScopeRatingAccess roles={session.user?.discordRoles ?? []} /><ScopeUiRefinements /><ScopeUiConsistencyFixes />
     <ScopeChromeAdditions /><ScopeInterfaceCorrections /><ScopeAtisDialogV2 controllerName={controllerName} />
     <ScopeAtisJurisdictionGuard controllerName={controllerName} /><ScopeAtisDisconnectCleanup controllerName={controllerName} />
-    <ScopeAtcPresence controllerName={controllerName} /><ScopeOperationalSyncV2 /><ScopeSectorChat />
+    <ScopeAtcPresence controllerName={controllerName} /><ScopeOperationalSyncV2 /><ScopeSectorChat /><ScopeTrafficMenuLayerFix />
     <ScopeSectorListRules initialPlans={plans} /><ScopeNativeListBodyGuard />
   </>;
 }
