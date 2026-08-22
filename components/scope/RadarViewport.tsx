@@ -6,7 +6,7 @@ type Viewport = { zoom: number; panX: number; panY: number };
 
 const STORAGE_KEY = "pf24_scope_radar_viewport_v1";
 const MIN_ZOOM = 0.55;
-const MAX_ZOOM = 256;
+const MAX_ZOOM = 512;
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
 // Airport detail SVGs are intentionally preloaded independently from their zoom
