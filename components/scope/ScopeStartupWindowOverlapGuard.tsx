@@ -53,7 +53,7 @@ function separateSectorAndTaxi() {
   const sector = findScopeWindow("SECTOR LIST");
   const taxi = findScopeWindow("COMBINED TAXI LIST");
   if (!sector || !taxi) return;
-  if (sector.style.display === "none" || taxi.style.display === "none") return;
+  if (window.getComputedStyle(sector).display === "none" || window.getComputedStyle(taxi).display === "none") return;
 
   const section = sector.parentElement;
   if (!section || section !== taxi.parentElement || section.tagName !== "SECTION") return;
@@ -84,18 +84,59 @@ function scheduleChecks() {
 export default function ScopeStartupWindowOverlapGuard() {
   useEffect(() => {
     let cancelChecks = scheduleChecks();
+    let frame = 0;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const requestCheck = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = window.requestAnimationFrame(() => {
+          frame = 0;
+          separateSectorAndTaxi();
+        });
+      });
+    };
 
     const restartChecks = () => {
       cancelChecks();
       cancelChecks = scheduleChecks();
+      requestCheck();
     };
 
+    const attachResizeObserver = () => {
+      resizeObserver?.disconnect();
+      const sector = findScopeWindow("SECTOR LIST");
+      const taxi = findScopeWindow("COMBINED TAXI LIST");
+      if (!sector || !taxi || typeof ResizeObserver === "undefined") return;
+      resizeObserver = new ResizeObserver(requestCheck);
+      resizeObserver.observe(sector);
+      resizeObserver.observe(taxi);
+    };
+
+    attachResizeObserver();
+    const section = document.querySelector<HTMLElement>("main.fixed > section");
+    const mutationObserver = section ? new MutationObserver(() => {
+      attachResizeObserver();
+      requestCheck();
+    }) : null;
+    mutationObserver?.observe(section!, { childList: true, subtree: true });
+
     const onConnection = () => restartChecks();
+    const onVisibility = () => restartChecks();
+    const onResize = () => requestCheck();
+
     window.addEventListener("pf24-scope-connection-change", onConnection);
+    window.addEventListener("pf24-menu-visibility-sync", onVisibility);
+    window.addEventListener("resize", onResize);
 
     return () => {
       cancelChecks();
+      if (frame) window.cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
       window.removeEventListener("pf24-scope-connection-change", onConnection);
+      window.removeEventListener("pf24-menu-visibility-sync", onVisibility);
+      window.removeEventListener("resize", onResize);
     };
   }, []);
 
