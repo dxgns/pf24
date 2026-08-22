@@ -236,42 +236,54 @@ export default function ScopeRadarMap() {
   }, []);
 
   if (!host) return null;
+  const transformStyle = {
+    transformOrigin: "0 0",
+    transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`,
+  } as const;
+
   return createPortal(
-    <div data-pf24-vector-map="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
-      <svg className="absolute inset-0 block h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" style={{ transformOrigin: "0 0", transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})` }}>
-        <g data-map-layer="hispaniola-coastline">
-          <image
-            href="/scope/hispaniola.svg"
-            x={0}
-            y={0}
-            width={HISPANIOLA_SVG_WIDTH}
-            height={HISPANIOLA_SVG_HEIGHT}
-            transform={HISPANIOLA_SVG_TRANSFORM}
-            preserveAspectRatio="none"
-          />
-        </g>
-        <g data-map-layer="airspace">
-          {AIRSPACE_PATHS.map((airspace) => {
-            const style = pathStyle(airspace.tone);
-            if (airspace.id === "MDST_APP") {
-              return <path key={airspace.id} d={MDST_APP_PATH} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
-            }
-            if (airspace.id === "MDPC_APP") {
-              return <path key={airspace.id} d={MDPC_APP_PATH} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
-            }
-            return <polyline key={airspace.id} points={points(airspace)} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
-          })}
-          <path data-map-layer="mdpc-twr" d={MDPC_TWR_PATH} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-          <path data-map-layer="mdst-twr" d={MDST_TWR_PATH} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-          <circle data-map-layer="mdab-twr" cx={MDAB_TWR_CENTER.x} cy={MDAB_TWR_CENTER.y} r={TWR_RADIUS_1_5_NM} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} vectorEffect="non-scaling-stroke" />
-          <circle data-map-layer="mdcr-twr" cx={MDCR_TWR_CENTER.x} cy={MDCR_TWR_CENTER.y} r={TWR_RADIUS_1_5_NM} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} vectorEffect="non-scaling-stroke" />
-        </g>
-        <MdpcSvgAirport zoom={viewport.zoom} />
-        <g data-map-layer="fixes">
-          {WAYPOINTS.map((waypoint) => <Fix key={`${waypoint.name}-${waypoint.x}-${waypoint.y}`} x={waypoint.x} y={waypoint.y} name={waypoint.name} zoom={viewport.zoom} vor={waypoint.kind === "vor"} />)}
-        </g>
-      </svg>
-    </div>,
+    <>
+      <div data-pf24-island-layer="true" className="pointer-events-none absolute inset-0 z-[4] overflow-hidden" aria-hidden="true">
+        <svg className="absolute inset-0 block h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" style={transformStyle}>
+          <g data-map-layer="hispaniola-coastline">
+            <image
+              href="/scope/hispaniola.svg"
+              x={0}
+              y={0}
+              width={HISPANIOLA_SVG_WIDTH}
+              height={HISPANIOLA_SVG_HEIGHT}
+              transform={HISPANIOLA_SVG_TRANSFORM}
+              preserveAspectRatio="none"
+            />
+          </g>
+        </svg>
+      </div>
+
+      <div data-pf24-vector-map="true" className="pointer-events-none absolute inset-0 z-[6] overflow-hidden" aria-hidden="true">
+        <svg className="absolute inset-0 block h-full w-full" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" style={transformStyle}>
+          <g data-map-layer="airspace">
+            {AIRSPACE_PATHS.map((airspace) => {
+              const style = pathStyle(airspace.tone);
+              if (airspace.id === "MDST_APP") {
+                return <path key={airspace.id} d={MDST_APP_PATH} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+              }
+              if (airspace.id === "MDPC_APP") {
+                return <path key={airspace.id} d={MDPC_APP_PATH} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+              }
+              return <polyline key={airspace.id} points={points(airspace)} fill="none" stroke={style.stroke} strokeWidth={style.width} strokeDasharray={style.dash} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+            })}
+            <path data-map-layer="mdpc-twr" d={MDPC_TWR_PATH} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            <path data-map-layer="mdst-twr" d={MDST_TWR_PATH} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            <circle data-map-layer="mdab-twr" cx={MDAB_TWR_CENTER.x} cy={MDAB_TWR_CENTER.y} r={TWR_RADIUS_1_5_NM} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} vectorEffect="non-scaling-stroke" />
+            <circle data-map-layer="mdcr-twr" cx={MDCR_TWR_CENTER.x} cy={MDCR_TWR_CENTER.y} r={TWR_RADIUS_1_5_NM} fill="none" stroke={TWR_STROKE} strokeWidth={TWR_STROKE_WIDTH} strokeDasharray={TWR_DASH} vectorEffect="non-scaling-stroke" />
+          </g>
+          <MdpcSvgAirport zoom={viewport.zoom} />
+          <g data-map-layer="fixes">
+            {WAYPOINTS.map((waypoint) => <Fix key={`${waypoint.name}-${waypoint.x}-${waypoint.y}`} x={waypoint.x} y={waypoint.y} name={waypoint.name} zoom={viewport.zoom} vor={waypoint.kind === "vor"} />)}
+          </g>
+        </svg>
+      </div>
+    </>,
     host,
   );
 }
