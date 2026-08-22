@@ -10,6 +10,7 @@ import ProjectFlightTrafficConfigured from "@/components/scope/ProjectFlightTraf
 import ScopeDisconnectedFlightPlanCleanup from "@/components/scope/ScopeDisconnectedFlightPlanCleanup";
 import ScopeTrafficSettings from "@/components/scope/ScopeTrafficSettings";
 import ScopeTrafficLabelUX from "@/components/scope/ScopeTrafficLabelUX";
+import ScopeTrafficLabelSeparatorSpacing from "@/components/scope/ScopeTrafficLabelSeparatorSpacing";
 import ScopeTrafficMappState from "@/components/scope/ScopeTrafficMappState";
 import ScopeTrafficHandover from "@/components/scope/ScopeTrafficHandover";
 import ScopeHandoverAudioAlerts from "@/components/scope/ScopeHandoverAudioAlerts";
@@ -78,7 +79,7 @@ export default async function ScopePage() {
     <ScopeConnectionPersistence /><ScopeConnectDialogPersistence /><ScopeOwnedTrafficLifecycle /><ScopeTrafficAutoRelease />
     <ScopeLayoutGuards /><ScopeStartupWindowOverlapGuard /><WeatherPanelV2 /><ScopeRadarMap /><ScopeGlidePath /><ScopeAirspaceBoundaryDedup /><ScopeTwrGeometryCorrection /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport />
     <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} /><ScopeDisconnectedFlightPlanCleanup initialPlans={plans} />
-    <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
+    <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficLabelSeparatorSpacing /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedPlanOwnershipBridge initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
     <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} /><ScopeTrafficOwnershipColorGuard /><ScopeSectorOwnershipVisuals initialPlans={plans} />
     <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras /><ScopeQdmTool /><ScopeMapDisplayFilters /><ScopePlannedRouteTool initialPlans={plans} /><ScopeConflictDetectionV2 initialPlans={plans} /><ScopeConflictColorGuard />
