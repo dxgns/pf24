@@ -81,29 +81,27 @@ export default function MdcrMtcaSvgAirport() {
           transform: `translate(${viewport.panX}px, ${viewport.panY}px) scale(${viewport.zoom})`,
         }}
       >
-        {showAirportDetail && (
-          <image
-            href="/scope/mdcr-ground.svg"
-            x={0}
-            y={0}
-            width={851.24261}
-            height={85.69931}
-            transform={MDCR_TRANSFORM}
-            preserveAspectRatio="none"
-          />
-        )}
+        <image
+          href="/scope/mdcr-ground.svg"
+          x={0}
+          y={0}
+          width={851.24261}
+          height={85.69931}
+          transform={MDCR_TRANSFORM}
+          preserveAspectRatio="none"
+          opacity={showAirportDetail ? 1 : 0}
+        />
 
-        {showAirportDetail && (
-          <image
-            href="/scope/mtca-ground.svg"
-            x={0}
-            y={0}
-            width={217.87869}
-            height={15.99907}
-            transform={MTCA_TRANSFORM}
-            preserveAspectRatio="none"
-          />
-        )}
+        <image
+          href="/scope/mtca-ground.svg"
+          x={0}
+          y={0}
+          width={217.87869}
+          height={15.99907}
+          transform={MTCA_TRANSFORM}
+          preserveAspectRatio="none"
+          opacity={showAirportDetail ? 1 : 0}
+        />
       </svg>
     </div>,
     host,
