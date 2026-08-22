@@ -19,6 +19,24 @@ function syncChatTabLabels() {
   }
 }
 
+function runwayActiveInfo(button: HTMLButtonElement) {
+  const row = button.parentElement;
+  if (!row || row.children.length !== 5 || row.children[1] !== button) return null;
+
+  const dialog = button.closest<HTMLElement>("div.absolute");
+  const title = dialog?.firstElementChild?.textContent?.trim() ?? "";
+  if (!dialog || !title.includes("Runway selector dialog")) return null;
+
+  const airport = row.children[0]?.textContent?.trim().toUpperCase() ?? "";
+  if (!/^[A-Z0-9]{4}$/.test(airport)) return null;
+
+  return {
+    airport,
+    dialog,
+    checked: Boolean(button.querySelector("svg")),
+  };
+}
+
 export default function ScopeInterfaceCorrections() {
   useEffect(() => {
     const style = document.createElement("style");
@@ -44,9 +62,38 @@ export default function ScopeInterfaceCorrections() {
     `;
     document.head.appendChild(style);
 
+    let syncingRunwayActive = false;
+
     const onClickCapture = (event: MouseEvent) => {
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
-      if (!button || button.dataset.pf24ConfigClose !== "true") return;
+      if (!button) return;
+
+      if (!syncingRunwayActive) {
+        const runwayInfo = runwayActiveInfo(button);
+        if (runwayInfo) {
+          const nextActive = !runwayInfo.checked;
+
+          window.setTimeout(() => {
+            if (!runwayInfo.dialog.isConnected) return;
+            syncingRunwayActive = true;
+            try {
+              for (const row of Array.from(runwayInfo.dialog.querySelectorAll<HTMLElement>("div.grid"))) {
+                if (row.children.length !== 5) continue;
+                const airport = row.children[0]?.textContent?.trim().toUpperCase() ?? "";
+                const activeButton = row.children[1];
+                if (airport !== runwayInfo.airport || !(activeButton instanceof HTMLButtonElement) || activeButton === button) continue;
+
+                const active = Boolean(activeButton.querySelector("svg"));
+                if (active !== nextActive) activeButton.click();
+              }
+            } finally {
+              syncingRunwayActive = false;
+            }
+          }, 0);
+        }
+      }
+
+      if (button.dataset.pf24ConfigClose !== "true") return;
       const dialog = findConfigDialog(button);
       if (!dialog) return;
       const cancel = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find((candidate) => {
