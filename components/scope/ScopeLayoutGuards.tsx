@@ -85,6 +85,11 @@ export default function ScopeLayoutGuards() {
     let drag: DragState | null = null;
 
     const onMouseDown = (event: MouseEvent) => {
+      // Automatic layout corrections use synthetic mouse events so PF24Scope's
+      // existing drag state remains the single source of truth. Those programmatic
+      // moves must bypass the user collision guard or an already-overlapping pair
+      // can never be separated.
+      if (!event.isTrusted) return;
       if (event.button !== 0) return;
       const target = event.target instanceof Element ? event.target : null;
       const win = target?.closest<HTMLElement>(WINDOW_SELECTOR);
@@ -102,6 +107,7 @@ export default function ScopeLayoutGuards() {
     };
 
     const onMouseMove = (event: MouseEvent) => {
+      if (!event.isTrusted) return;
       if (!drag || !(event.buttons & 1)) return;
       const dx = event.clientX - drag.startMouseX;
       const dy = event.clientY - drag.startMouseY;
@@ -114,7 +120,10 @@ export default function ScopeLayoutGuards() {
       }
     };
 
-    const onMouseUp = () => { drag = null; };
+    const onMouseUp = (event: MouseEvent) => {
+      if (!event.isTrusted) return;
+      drag = null;
+    };
 
     const onClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest("button") : null;
