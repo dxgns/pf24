@@ -73,36 +73,7 @@ export default function ScopeTrafficAutoRelease() {
     window.dispatchEvent(new Event(OWNERSHIP_EVENT));
   }, []);
 
-  const releaseParked = useCallback(async (plan: FlightPlanRow) => {
-    const id = String(plan.id ?? "");
-    const owner = normalize(plan.assumed_by);
-    const parked = normalize(plan.sector_status) === "PARKED";
-    if (!id || !owner || !parked) return;
-
-    const { data, error } = await supabase
-      .from("flight_plans")
-      .update({ assumed_by: null, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .eq("assumed_by", owner)
-      .select("id,callsign,notes")
-      .maybeSingle();
-    if (error) {
-      console.error("PF24 Scope PARKED auto-release failed:", error);
-      return;
-    }
-    if (!data) return;
-    ownershipHint(data as FlightPlanRow, null, owner);
-    window.dispatchEvent(new Event(OWNERSHIP_EVENT));
-  }, []);
-
   useEffect(() => {
-    const flightChannel = supabase
-      .channel("scope-auto-release-parked-v2")
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "flight_plans" }, ({ new: next }) => {
-        void releaseParked(next as FlightPlanRow);
-      })
-      .subscribe();
-
     const sessionChannel = supabase
       .channel("scope-auto-release-disconnected-v2")
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "atc_sessions" }, ({ new: next, old }) => {
@@ -116,10 +87,9 @@ export default function ScopeTrafficAutoRelease() {
       .subscribe();
 
     return () => {
-      void supabase.removeChannel(flightChannel);
       void supabase.removeChannel(sessionChannel);
     };
-  }, [releaseParked, releasePosition]);
+  }, [releasePosition]);
 
   return null;
 }
