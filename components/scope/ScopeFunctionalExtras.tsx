@@ -2,6 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { scopeDistanceNmFromScreenDelta } from "@/lib/scope/distanceScale";
 
 type Point = { x: number; y: number };
 type Measurement = { id: number; first: string; second: string };
@@ -50,6 +51,10 @@ function trafficCenter(callsign: string): Point | null {
 }
 
 function radarZoom() {
+  const radar = document.querySelector<HTMLElement>("main.fixed > section");
+  const liveZoom = Number(radar?.dataset.pf24RadarZoom);
+  if (Number.isFinite(liveZoom) && liveZoom > 0) return liveZoom;
+
   try {
     const raw = localStorage.getItem(RADAR_VIEWPORT_KEY);
     const parsed = raw ? JSON.parse(raw) as { zoom?: number } : null;
@@ -250,14 +255,24 @@ export default function ScopeFunctionalExtras() {
   const renderedMeasurements = useMemo<RenderedMeasurement[]>(() => {
     void renderTick;
     const zoom = Math.max(0.01, radarZoom());
+    const radar = radarHost ?? document.querySelector<HTMLElement>("main.fixed > section");
+    const radarRect = radar?.getBoundingClientRect();
+    if (!radarRect || radarRect.width <= 0 || radarRect.height <= 0) return [];
+
     return measurements.flatMap((measurement) => {
       const a = trafficCenter(measurement.first);
       const b = trafficCenter(measurement.second);
       if (!a || !b) return [];
-      const distanceNm = Math.hypot(b.x - a.x, b.y - a.y) / zoom / 20;
+      const distanceNm = scopeDistanceNmFromScreenDelta(
+        b.x - a.x,
+        b.y - a.y,
+        radarRect.width,
+        radarRect.height,
+        zoom,
+      );
       return [{ ...measurement, a, b, distanceNm }];
     });
-  }, [measurements, renderTick]);
+  }, [measurements, renderTick, radarHost]);
 
   const timerPortal = timerBody ? createPortal(<TimerPanel />, timerBody) : null;
   const measurementPortal = radarHost ? createPortal(
