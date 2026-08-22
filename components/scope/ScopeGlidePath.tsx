@@ -16,7 +16,10 @@ const VIEWPORT_EVENT = "pf24-radar-viewport";
 const RUNWAY_STORAGE_KEY = "pf24_scope_runways_v2";
 
 const GLIDE_PATH_LENGTH_NM = 5;
-const TICK_HALF_LENGTH_NM = 0.5;
+// Proportions taken from the supplied SendaPlaneo.svg: the threshold and 5 NM
+// bars are roughly twice as long as the intermediate mile marks.
+const SHORT_TICK_HALF_NM = 0.45;
+const LONG_TICK_HALF_NM = 0.96;
 const GLIDE_STROKE = "#d2c09d";
 const GLIDE_STROKE_WIDTH = 0.1;
 
@@ -111,18 +114,25 @@ function glideGeometry(runway: RunwayGeometry) {
   const px = -uy;
   const py = ux;
   const length = GLIDE_PATH_LENGTH_NM * SCOPE_MAP_UNITS_PER_NM;
-  const tickHalf = TICK_HALF_LENGTH_NM * SCOPE_MAP_UNITS_PER_NM;
   const end = {
     x: runway.threshold.x + ux * length,
     y: runway.threshold.y + uy * length,
   };
 
-  const ticks = Array.from({ length: GLIDE_PATH_LENGTH_NM }, (_, index) => {
-    const distance = (index + 1) * SCOPE_MAP_UNITS_PER_NM;
+  // Match the supplied SVG pattern: long bar at the runway threshold, four
+  // shorter 1 NM bars, then another long bar at the 5 NM end point.
+  const ticks = Array.from({ length: GLIDE_PATH_LENGTH_NM + 1 }, (_, index) => {
+    const distance = index * SCOPE_MAP_UNITS_PER_NM;
     const center = {
       x: runway.threshold.x + ux * distance,
       y: runway.threshold.y + uy * distance,
     };
+    const halfLengthNm =
+      index === 0 || index === GLIDE_PATH_LENGTH_NM
+        ? LONG_TICK_HALF_NM
+        : SHORT_TICK_HALF_NM;
+    const tickHalf = halfLengthNm * SCOPE_MAP_UNITS_PER_NM;
+
     return {
       x1: center.x + px * tickHalf,
       y1: center.y + py * tickHalf,
