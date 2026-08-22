@@ -42,12 +42,13 @@ const MDPC_APP_PATH =
 const MDPC_TWR_PATH =
   "M 73.97 101.54 L 74.11 103.24 L 83.05 103.45 C 83.55 105.35 85.20 107.00 87.44 107.00 C 89.65 107.00 91.30 105.25 91.80 103.38 L 93.15 103.40 L 93.16 101.87 L 91.83 101.83 C 91.25 99.90 89.65 98.23 87.47 98.23 C 85.25 98.23 83.45 99.85 82.86 101.72 L 73.97 101.54 Z";
 
-// MDST TWR boundary. The circular joins remain at UNION 3 and UNION 6 and keep the
-// supplied 1.50 NM arcs. The western extension is a true straight corridor: both
-// sides are parallel to the SGO radial and the outer cap is perpendicular to that
-// radial at 5.00 NM from VOR SGO.
+// MDST TWR corridor is centered on the calibrated RWY 11/29 centerline
+// (67.19,92.42 -> 69.56,93.45). UNION 3/6 are repositioned symmetrically about
+// that axis; both long sides are parallel to the runway and the 5 NM outer cap is
+// exactly perpendicular to them (90°/90°). The two circular joins are recalculated
+// so they still pass through CIRCULO 1 (69.80,89.82) and CIRCULO 2 (67.15,95.86).
 const MDST_TWR_PATH =
-  "M 70.79 95.09 L 71.70 93.08 A 3.24791575 3.24791575 0 0 0 65.49 91.48 L 58.26991 88.78799 L 57.83077 89.96577 L 65.03 92.65 A 3.36161385 3.36161385 0 0 0 70.79 95.09 Z";
+  "M 70.79 95.09 L 71.70 93.08 A 3.25369060 3.25369060 0 0 0 65.68723607 91.08194226 L 58.60554768 88.00424646 L 58.10476883 89.15652401 L 65.18645722 92.23421980 A 3.27959577 3.27959577 0 0 0 70.79 95.09 Z";
 
 // TWR styling is shared by MDPC, MDST, MDAB and MDCR.
 const TWR_STROKE = "#176997";
