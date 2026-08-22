@@ -19,7 +19,7 @@ function scheduleTone(context: AudioContext, frequency: number, start: number, d
   oscillator.type = "sine";
   oscillator.frequency.setValueAtTime(frequency, start);
   gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(0.055, start + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.085, start + 0.012);
   gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
   oscillator.connect(gain);
