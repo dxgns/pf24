@@ -7,6 +7,7 @@ type FilterKey = "ctrs" | "tmas" | "atzs" | "waypoints" | "terrain" | "taxiLette
 type FilterState = Record<FilterKey, boolean>;
 
 const STORAGE_KEY = "pf24_scope_map_display_filters_v1";
+const FILTER_BUTTON_WIDTH = 22;
 
 const DEFAULT_FILTERS: FilterState = {
   ctrs: true,
@@ -89,10 +90,17 @@ function classifyAirportLabels(root: ParentNode) {
 
 function FilterGlyph() {
   return (
-    <svg width="47" height="20" viewBox="0 0 100 44" aria-hidden="true">
-      <text x="77" y="13" fill="#e2e2e2" fontFamily="monospace" fontSize="13" textAnchor="middle">FL</text>
+    <svg width="22" height="21" viewBox="0 0 46 44" aria-hidden="true">
+      <text
+        x="35"
+        y="10"
+        fill="#e2e2e2"
+        fontFamily="monospace"
+        fontSize="9"
+        textAnchor="middle"
+      >FL</text>
       <path
-        d="M8 20 L26 11 L48 11 L65 20 L65 27 L47 41 L47 44 L29 44 L29 34 L10 24 Z M14 21 L29 15 L46 15 L59 21 L59 24 L46 29 L29 29 L14 24 Z"
+        d="M4 18 L11 12 L27 12 L34 18 L34 22 L24 30 L24 42 L16 42 L16 30 L4 22 Z M8 19 L13 15 L25 15 L30 19 L30 20 L23 25 L16 25 L8 20 Z"
         fill="#e2e2e2"
         fillRule="evenodd"
       />
@@ -125,6 +133,8 @@ export default function ScopeMapDisplayFilters() {
       const existing = row.querySelector<HTMLElement>(":scope > [data-pf24-map-filter-host='true']");
       if (existing) {
         host = existing as HTMLDivElement;
+        existing.style.width = `${FILTER_BUTTON_WIDTH}px`;
+        existing.style.flexBasis = `${FILTER_BUTTON_WIDTH}px`;
         setToolbarHost(existing);
         return true;
       }
@@ -136,7 +146,9 @@ export default function ScopeMapDisplayFilters() {
 
       host = document.createElement("div");
       host.dataset.pf24MapFilterHost = "true";
-      host.className = "scopeTopCell relative h-[21px] w-[48px] shrink-0";
+      host.className = "scopeTopCell relative h-[21px] shrink-0";
+      host.style.width = `${FILTER_BUTTON_WIDTH}px`;
+      host.style.flexBasis = `${FILTER_BUTTON_WIDTH}px`;
       row.insertBefore(host, firstExistingTool);
       setToolbarHost(host);
       return true;
@@ -170,7 +182,7 @@ export default function ScopeMapDisplayFilters() {
       if (!button || !main) return;
       const buttonRect = button.getBoundingClientRect();
       const mainRect = main.getBoundingClientRect();
-      const logicalWidth = button.offsetWidth || 48;
+      const logicalWidth = button.offsetWidth || FILTER_BUTTON_WIDTH;
       const scale = logicalWidth > 0 ? buttonRect.width / logicalWidth : 1;
       setMenuPosition({
         left: (buttonRect.left - mainRect.left) / Math.max(scale, 0.001),
