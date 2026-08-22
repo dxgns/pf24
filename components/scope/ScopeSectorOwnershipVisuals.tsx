@@ -45,6 +45,17 @@ function rowCallsign(wrapper: HTMLElement) {
   return row.firstElementChild?.textContent?.trim().toUpperCase() ?? "";
 }
 
+function mutationTouchesSectorList(mutations: MutationRecord[]) {
+  return mutations.some((mutation) => {
+    const target = mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
+    if (target?.closest(LIST_SELECTOR)) return true;
+    return Array.from(mutation.addedNodes).some((node) => {
+      if (!(node instanceof Element)) return false;
+      return node.matches(LIST_SELECTOR) || Boolean(node.querySelector(LIST_SELECTOR));
+    });
+  });
+}
+
 export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
@@ -180,9 +191,15 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
 
     sync();
     const timer = window.setInterval(sync, 100);
+    const observer = new MutationObserver((mutations) => {
+      if (mutationTouchesSectorList(mutations)) sync();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
     return () => {
       style.remove();
       window.clearInterval(timer);
+      observer.disconnect();
     };
   }, [sync]);
 
