@@ -19,6 +19,18 @@ function syncChatTabLabels() {
   }
 }
 
+function syncRunwaySelectorScroller() {
+  for (const dialog of Array.from(document.querySelectorAll<HTMLElement>("div.absolute"))) {
+    const title = dialog.firstElementChild?.textContent?.trim() ?? "";
+    if (!title.includes("Runway selector dialog")) continue;
+
+    const scroller = Array.from(dialog.querySelectorAll<HTMLElement>("div")).find(
+      (candidate) => candidate.classList.contains("overflow-y-auto") && candidate.classList.contains("max-h-[520px]"),
+    );
+    if (scroller) scroller.dataset.pf24RunwaySelectorScroll = "true";
+  }
+}
+
 function runwayActiveInfo(button: HTMLButtonElement) {
   const row = button.parentElement;
   if (!row || row.children.length !== 5 || row.children[1] !== button) return null;
@@ -52,6 +64,15 @@ export default function ScopeInterfaceCorrections() {
         overflow-y: hidden !important;
       }
       [data-pf24-keyboard-scroll-only='true']::-webkit-scrollbar {
+        width: 0 !important;
+        height: 0 !important;
+        display: none !important;
+      }
+      [data-pf24-runway-selector-scroll='true'] {
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+      }
+      [data-pf24-runway-selector-scroll='true']::-webkit-scrollbar {
         width: 0 !important;
         height: 0 !important;
         display: none !important;
@@ -113,8 +134,13 @@ export default function ScopeInterfaceCorrections() {
       event.stopImmediatePropagation();
     };
 
-    syncChatTabLabels();
-    const timer = window.setInterval(syncChatTabLabels, 180);
+    const syncUi = () => {
+      syncChatTabLabels();
+      syncRunwaySelectorScroller();
+    };
+
+    syncUi();
+    const timer = window.setInterval(syncUi, 180);
 
     document.addEventListener("click", onClickCapture, true);
     document.addEventListener("wheel", onWheelCapture, { capture: true, passive: false });
