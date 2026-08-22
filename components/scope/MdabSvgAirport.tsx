@@ -38,7 +38,7 @@ const MDAB_MAP_SCALE = Math.hypot(MDAB_MAP_MATRIX.a, MDAB_MAP_MATRIX.b);
 const MDAB_LABELS: readonly MdabLabel[] = [
   { text: "29", x: -295.375, y: 258.03086, transform: "matrix(0.07291631,0,0,0.07660707,790.15647,295.64675)", fill: "#f1f1f1" },
   { text: "11", x: -295.375, y: 258.03086, transform: "matrix(0.07291631,0,0,0.07660707,164.38494,305.00547)", fill: "#f1f1f1" },
-  { text: "A", x: -295.375, y: 258.03086, transform: "translate(580.94982,26.402513)", fill: "#c9c9c9" },
+  { text: "A", x: -295.375, y: 258.03086, transform: "translate(575.47272,26.402513)", fill: "#c9c9c9" },
 ] as const;
 
 function readViewport(): Viewport {
