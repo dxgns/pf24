@@ -49,6 +49,15 @@ function bearingFromDelta(dx: number, dy: number) {
   return Math.round(degrees) % 360;
 }
 
+function readableLineAngle(dx: number, dy: number) {
+  let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  // Keep the text following the exact line axis while avoiding upside-down text.
+  // A vertical QDM therefore remains fully vertical at +/-90 degrees.
+  if (angle > 90) angle -= 180;
+  if (angle < -90) angle += 180;
+  return angle;
+}
+
 export default function ScopeQdmTool() {
   const [radar, setRadar] = useState<HTMLElement | null>(null);
   const [viewport, setViewport] = useState<Viewport>({ zoom: 1, panX: 0, panY: 0 });
@@ -210,18 +219,19 @@ export default function ScopeQdmTool() {
     const length = Math.hypot(dx, dy);
     const distanceNm = scopeDistanceNmFromScreenDelta(dx, dy, rect.width, rect.height, viewport.zoom);
     const bearing = bearingFromDelta(dx, dy);
+    const angle = readableLineAngle(dx, dy);
     const mid = { x: (origin.x + endpoint.x) / 2, y: (origin.y + endpoint.y) / 2 };
     const labelText = `${Math.max(0, distanceNm).toFixed(1)}nm ${String(bearing).padStart(3, "0")}°`;
     const labelWidth = labelText.length * 7.2;
-    const halfLabelHeight = 7;
 
     const unit = length > 0.001 ? { x: dx / length, y: dy / length } : { x: 1, y: 0 };
-    const projectedHalfLabel = Math.abs(unit.x) * (labelWidth / 2) + Math.abs(unit.y) * halfLabelHeight;
-    const halfGap = Math.min(projectedHalfLabel + 5, Math.max(0, length * 0.42));
+    // Because the text now follows the line itself, the gap only needs to cover
+    // the text width along that same axis.
+    const halfGap = Math.min(labelWidth / 2 + 5, Math.max(0, length * 0.42));
     const gapStart = { x: mid.x - unit.x * halfGap, y: mid.y - unit.y * halfGap };
     const gapEnd = { x: mid.x + unit.x * halfGap, y: mid.y + unit.y * halfGap };
 
-    return { origin, endpoint, distanceNm, bearing, mid, labelText, gapStart, gapEnd };
+    return { origin, endpoint, distanceNm, bearing, angle, mid, labelText, gapStart, gapEnd };
   }, [cursor, frozenEndBase, originBase, radar, sizeTick, viewport]);
 
   if (!radar || !rendered) return null;
@@ -277,6 +287,7 @@ export default function ScopeQdmTool() {
       <text
         x={rendered.mid.x}
         y={rendered.mid.y}
+        transform={`rotate(${rendered.angle} ${rendered.mid.x} ${rendered.mid.y})`}
         fill={LINE_COLOR}
         stroke="#0b0b0b"
         strokeWidth="2"
