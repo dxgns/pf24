@@ -11,16 +11,6 @@ const AIRPORT_DETAIL_MIN_ZOOM = 2.35;
 
 const MDCR_TRANSFORM = "matrix(0.002654293298 0.001479223615 -0.001479223615 0.002654293298 56.73970455 108.85993827)";
 
-// MDCR labels are rendered outside the rotated airport SVG so they remain upright
-// on the Scope. The runway label at the far threshold is intentionally 11 per the
-// supplied reference image.
-const MDCR_LABELS = [
-  { text: "A", x: 56.819, y: 109.018, fontSize: 0.052, fill: "#c9c9c9" },
-  { text: "B", x: 56.949, y: 109.090, fontSize: 0.052, fill: "#c9c9c9" },
-  { text: "12", x: 56.800, y: 109.068, fontSize: 0.012, fill: "#f1f1f1" },
-  { text: "11", x: 58.748, y: 110.154, fontSize: 0.012, fill: "#f1f1f1" },
-] as const;
-
 // Calibrated from the actual MTCA runway geometry in the supplied SVG.
 // The whole SVG is rendered so its green background, runway markings and
 // small runway numbers keep exactly the proportions and placement authored there.
@@ -101,26 +91,6 @@ export default function MdcrMtcaSvgAirport() {
           preserveAspectRatio="none"
           opacity={showAirportDetail ? 1 : 0}
         />
-
-        {showAirportDetail && (
-          <g data-map-layer="mdcr-upright-labels">
-            {MDCR_LABELS.map((label) => (
-              <text
-                key={label.text}
-                x={label.x}
-                y={label.y}
-                fill={label.fill}
-                fontFamily="'B612 Mono', monospace"
-                fontSize={label.fontSize}
-                fontWeight={400}
-                textAnchor="middle"
-                dominantBaseline="middle"
-              >
-                {label.text}
-              </text>
-            ))}
-          </g>
-        )}
 
         <image
           href="/scope/mtca-ground.svg"
