@@ -73,7 +73,7 @@ export async function adminEndAtcSession(
   });
 
   revalidatePath("/admin");
-  revalidatePath("/atc");
+  revalidatePath("/scope");
   revalidatePath("/piloto");
 }
 
@@ -104,7 +104,7 @@ export async function adminFinishFlightPlan(flightPlanId: string) {
   });
 
   revalidatePath("/admin");
-  revalidatePath("/atc");
+  revalidatePath("/scope");
   revalidatePath("/piloto");
 }
 
@@ -124,6 +124,6 @@ export async function adminDeleteAtis(atisId: string, label?: string) {
   });
 
   revalidatePath("/admin");
-  revalidatePath("/atc");
+  revalidatePath("/scope");
   revalidatePath("/piloto");
 }
