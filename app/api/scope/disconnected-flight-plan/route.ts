@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { auth } from "@/auth";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { getGameCallsignFromNotes, normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 
 function planKeys(plan: { callsign?: string | null; notes?: string | null }) {
   const keys = new Set<string>();
@@ -25,16 +20,20 @@ export async function POST(request: Request) {
 
   let body: { planId?: unknown; callsign?: unknown };
   try {
-    body = await request.json() as { planId?: unknown; callsign?: unknown };
+    body = (await request.json()) as { planId?: unknown; callsign?: unknown };
   } catch {
     return NextResponse.json({ ok: false, error: "Solicitud inválida." }, { status: 400 });
   }
 
   const planId = typeof body.planId === "string" ? body.planId.trim() : "";
-  const callsign = normalizeGameCallsign(typeof body.callsign === "string" ? body.callsign : "");
+  const callsign = normalizeGameCallsign(
+    typeof body.callsign === "string" ? body.callsign : ""
+  );
   if (!planId || !callsign) {
     return NextResponse.json({ ok: false, error: "Faltan datos del tránsito." }, { status: 400 });
   }
+
+  const supabaseAdmin = getSupabaseAdmin();
 
   const { data: plan, error: lookupError } = await supabaseAdmin
     .from("flight_plans")
