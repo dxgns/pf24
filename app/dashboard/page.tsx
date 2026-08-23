@@ -53,19 +53,12 @@ export default async function DashboardPage() {
           <InfoCard label="Sistema" value="ONLINE" accent="green" />
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-8 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
           <PortalCard
             href="/piloto"
             eyebrow="Pilot Operations"
             title="Portal Piloto"
             text="Crear, modificar y finalizar planes de vuelo. Consulta ATCs online y estados operativos."
-          />
-
-          <PortalCard
-            href="/atc"
-            eyebrow="ATC Operations"
-            title="Portal ATC"
-            text="Sector List, control de tráfico, posiciones activas, transponder y estados en tiempo real."
           />
 
           {canAccessATC && (
