@@ -34,9 +34,9 @@ export default async function PilotPage() {
 
   const pilotId = session.user?.email ?? session.user?.name ?? "unknown";
 
-  let flightPlans;
-  let atcSessions;
-  let atisMessages;
+  let flightPlans: any[] = [];
+  let atcSessions: any[] = [];
+  let atisMessages: any[] = [];
 
   try {
     const result = await supabase
@@ -49,7 +49,7 @@ export default async function PilotPage() {
     if (result.error) {
       console.error("PF24 Pilot flight plan load error:", result.error);
     } else {
-      flightPlans = result.data;
+      flightPlans = result.data ?? [];
     }
   } catch (error) {
     console.error("PF24 Pilot flight plan query exception:", error);
@@ -65,7 +65,7 @@ export default async function PilotPage() {
     if (result.error) {
       console.error("PF24 Pilot ATC session load error:", result.error);
     } else {
-      atcSessions = result.data;
+      atcSessions = result.data ?? [];
     }
   } catch (error) {
     console.error("PF24 Pilot ATC session query exception:", error);
@@ -81,14 +81,14 @@ export default async function PilotPage() {
     if (result.error) {
       console.error("PF24 Pilot ATIS load error:", result.error);
     } else {
-      atisMessages = result.data;
+      atisMessages = result.data ?? [];
     }
   } catch (error) {
     console.error("PF24 Pilot ATIS query exception:", error);
   }
 
   const latestAtisByAirport = Object.values(
-    (atisMessages ?? []).reduce<Record<string, any>>((acc, atis) => {
+    atisMessages.reduce<Record<string, any>>((acc, atis) => {
       if (!acc[atis.airport_icao]) {
         acc[atis.airport_icao] = atis;
       }
@@ -154,13 +154,13 @@ export default async function PilotPage() {
             <PilotFlightPlanForm />
 
             <PilotFlightPlans
-              initialPlans={flightPlans ?? []}
+              initialPlans={flightPlans}
               pilotId={pilotId}
             />
           </div>
 
           <aside>
-            <OnlineATCPanel initialSessions={atcSessions ?? []} />
+            <OnlineATCPanel initialSessions={atcSessions} />
             <LatestAtisPanel showAlerts={true} />
           </aside>
         </div>
