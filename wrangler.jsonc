@@ -1,0 +1,19 @@
+{
+  "main": ".open-next/worker.js",
+  "name": "pf24",
+  "compatibility_date": "2026-08-23",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "pf24"
+    }
+  ]
+}
