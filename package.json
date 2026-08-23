@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "preview": "npx --yes @opennextjs/cloudflare@latest build && npx --yes @opennextjs/cloudflare@latest preview",
-    "deploy": "npx --yes @opennextjs/cloudflare@latest build && npx --yes @opennextjs/cloudflare@latest deploy -- --keep-vars",
-    "upload": "npx --yes @opennextjs/cloudflare@latest build && npx --yes @opennextjs/cloudflare@latest upload -- --keep-vars",
+    "build": "npx --yes @opennextjs/cloudflare@latest build",
+    "preview": "npx --yes @opennextjs/cloudflare@latest preview",
+    "deploy": "npx --yes @opennextjs/cloudflare@latest deploy -- --keep-vars",
+    "upload": "npx --yes @opennextjs/cloudflare@latest upload -- --keep-vars",
     "build:cloudflare": "npx --yes @opennextjs/cloudflare@latest build",
     "start": "next start",
     "lint": "eslint"
