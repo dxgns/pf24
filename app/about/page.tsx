@@ -92,7 +92,7 @@ export default function AboutPage() {
                 <Feature text="Autenticación mediante Discord" />
                 <Feature text="Sistema de roles y permisos" />
                 <Feature text="Portal Piloto" />
-                <Feature text="Portal ATC" />
+                <Feature text="Scope ATC" />
                 <Feature text="Planes de vuelo" />
                 <Feature text="Sector List" />
                 <Feature text="Sistema ATIS" />
