@@ -4,7 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 // With Next.js 15, the supported runtime identifier is `experimental-edge`.
 export const runtime = "experimental-edge";
 
-const MAINTENANCE_ENABLED = process.env.MAINTENANCE_MODE !== "false";
+// Maintenance is OFF by default. It is enabled only when the environment
+// variable is explicitly set to "true".
+const MAINTENANCE_ENABLED = process.env.MAINTENANCE_MODE === "true";
 
 const PUBLIC_DURING_MAINTENANCE = [
   "/maintenance",
