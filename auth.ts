@@ -4,7 +4,10 @@ import { DISCORD_GUILD_ID } from "@/lib/discordRoles";
 import { getPermissionsFromRoles } from "@/lib/permissions";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
+const AUTH_SECRET = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  secret: AUTH_SECRET,
   trustHost: true,
   providers: [
     Discord({
