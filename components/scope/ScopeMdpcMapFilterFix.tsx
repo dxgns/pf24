@@ -3,7 +3,13 @@
 import { useEffect } from "react";
 
 const MDPC_LABEL_GROUP = "[data-map-layer='mdpc-svg-labels-upright']";
+const FILTER_STORAGE_KEY = "pf24_scope_map_display_filters_v1";
 const RUNWAY_LABELS = new Set(["08", "09", "26", "27"]);
+
+type StoredFilters = {
+  taxiLetters?: boolean;
+  gateNumbers?: boolean;
+};
 
 function labelKind(text: string): "taxi" | "gate" | "runway" {
   const value = text.trim().toUpperCase();
@@ -12,32 +18,57 @@ function labelKind(text: string): "taxi" | "gate" | "runway" {
   return "gate";
 }
 
+function readStoredFilters(): StoredFilters {
+  try {
+    const value = JSON.parse(localStorage.getItem(FILTER_STORAGE_KEY) ?? "{}") as StoredFilters;
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function filterVisibility(radar: HTMLElement | null) {
+  const stored = readStoredFilters();
+  return {
+    taxiVisible: radar?.dataset.pf24MapFilterTaxiLetters
+      ? radar.dataset.pf24MapFilterTaxiLetters !== "off"
+      : stored.taxiLetters !== false,
+    gatesVisible: radar?.dataset.pf24MapFilterGateNumbers
+      ? radar.dataset.pf24MapFilterGateNumbers !== "off"
+      : stored.gateNumbers !== false,
+  };
+}
+
 export default function ScopeMdpcMapFilterFix() {
   useEffect(() => {
-    const radar = document.querySelector<HTMLElement>("main.fixed > section");
-    if (!radar) return;
-
     let frame = 0;
 
     const sync = () => {
       frame = 0;
-      const taxiVisible = radar.dataset.pf24MapFilterTaxiLetters !== "off";
-      const gatesVisible = radar.dataset.pf24MapFilterGateNumbers !== "off";
-      const group = radar.querySelector<SVGGElement>(MDPC_LABEL_GROUP);
-      if (!group) return;
+      const radar = document.querySelector<HTMLElement>("main.fixed > section");
+      const { taxiVisible, gatesVisible } = filterVisibility(radar);
+      const root: ParentNode = radar ?? document;
+      const groups = Array.from(root.querySelectorAll<SVGGElement>(MDPC_LABEL_GROUP));
 
-      for (const text of Array.from(group.querySelectorAll<SVGTextElement>("text"))) {
-        const kind = labelKind(text.textContent ?? "");
-        text.dataset.pf24MapLabelKind = kind;
+      for (const group of groups) {
+        for (const text of Array.from(group.querySelectorAll<SVGTextElement>("text"))) {
+          const kind = labelKind(text.textContent ?? "");
+          text.dataset.pf24MapLabelKind = kind;
 
-        const visible = kind === "taxi"
-          ? taxiVisible
-          : kind === "gate"
-            ? gatesVisible
-            : true;
+          const visible = kind === "taxi"
+            ? taxiVisible
+            : kind === "gate"
+              ? gatesVisible
+              : true;
 
-        if (visible) text.style.removeProperty("display");
-        else text.style.setProperty("display", "none", "important");
+          if (visible) {
+            text.style.removeProperty("display");
+            text.style.removeProperty("visibility");
+          } else {
+            text.style.setProperty("display", "none", "important");
+            text.style.setProperty("visibility", "hidden", "important");
+          }
+        }
       }
     };
 
@@ -46,8 +77,11 @@ export default function ScopeMdpcMapFilterFix() {
       frame = window.requestAnimationFrame(sync);
     };
 
+    // Observe the whole Scope lifecycle. MDPC labels are mounted only after the
+    // radar/map portals and can be recreated when zooming, so a one-shot lookup is
+    // not reliable.
     const observer = new MutationObserver(queueSync);
-    observer.observe(radar, {
+    observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
@@ -57,16 +91,23 @@ export default function ScopeMdpcMapFilterFix() {
       ],
     });
 
+    const onPointer = () => window.setTimeout(queueSync, 0);
+    document.addEventListener("click", onPointer, true);
+    window.addEventListener("storage", queueSync);
+
     sync();
-    const timer = window.setInterval(sync, 500);
+    const timer = window.setInterval(sync, 150);
 
     return () => {
       observer.disconnect();
+      document.removeEventListener("click", onPointer, true);
+      window.removeEventListener("storage", queueSync);
       window.clearInterval(timer);
       if (frame) window.cancelAnimationFrame(frame);
-      const group = radar.querySelector<SVGGElement>(MDPC_LABEL_GROUP);
-      for (const text of Array.from(group?.querySelectorAll<SVGTextElement>("text") ?? [])) {
+
+      for (const text of Array.from(document.querySelectorAll<SVGTextElement>(`${MDPC_LABEL_GROUP} text`))) {
         text.style.removeProperty("display");
+        text.style.removeProperty("visibility");
       }
     };
   }, []);
