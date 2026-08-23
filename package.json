@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && npx --yes @opennextjs/cloudflare@latest build --skipNextBuild",
-    "preview": "npx --yes @opennextjs/cloudflare@latest build --skipNextBuild && npx --yes @opennextjs/cloudflare@latest preview",
-    "deploy": "npx --yes @opennextjs/cloudflare@latest build --skipNextBuild && npx --yes @opennextjs/cloudflare@latest deploy -- --keep-vars",
-    "upload": "npx --yes @opennextjs/cloudflare@latest build --skipNextBuild && npx --yes @opennextjs/cloudflare@latest upload -- --keep-vars",
-    "build:cloudflare": "npx --yes @opennextjs/cloudflare@latest build --skipNextBuild",
+    "build": "npm install --no-save --package-lock=false @opennextjs/cloudflare@latest && next build && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild",
+    "preview": "npm install --no-save --package-lock=false @opennextjs/cloudflare@latest && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && ./node_modules/.bin/opennextjs-cloudflare preview",
+    "deploy": "npm install --no-save --package-lock=false @opennextjs/cloudflare@latest && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && npx wrangler deploy --keep-vars",
+    "upload": "npm install --no-save --package-lock=false @opennextjs/cloudflare@latest && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && npx wrangler versions upload --keep-vars",
+    "build:cloudflare": "npm install --no-save --package-lock=false @opennextjs/cloudflare@latest && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild",
     "start": "next start",
     "lint": "eslint"
   },
