@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import { createFlightPlan } from "@/app/actions/createFlightPlan";
-import { normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
+import {
+  normalizeAircraftRegistration,
+  normalizeCruiseSpeed,
+  normalizeGameCallsign,
+} from "@/lib/flightPlanGameCallsign";
 
 const AIRCRAFT_TYPES = [
   "A220", "A320", "A330", "A350", "B717", "B727", "B737",
@@ -14,6 +18,12 @@ const AIRPORTS = [
   "LCLK", "LCPH", "LCRA", "MDAB", "MDCR", "MDST", "MDPC",
   "EFKT", "MTCA", "GCLP", "LEMH", "EGKK", "EGHI",
 ];
+
+function formatFuelDuration(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+}
 
 export default function PilotFlightPlanForm() {
   const [error, setError] = useState("");
@@ -155,6 +165,70 @@ export default function PilotFlightPlanForm() {
             </option>
           ))}
         </select>
+
+        <div>
+          <select
+            name="alternate"
+            className="input-control w-full rounded-xl p-3"
+            required
+          >
+            <option value="">Alternativo</option>
+            {AIRPORTS.map((airport) => (
+              <option key={airport} value={airport}>
+                {airport}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            Aeropuerto alternativo en formato ICAO, usando la misma lista de salida y llegada.
+          </p>
+        </div>
+
+        <div>
+          <input
+            name="cruiseSpeed"
+            placeholder="Velocidad crucero (KT)"
+            inputMode="numeric"
+            maxLength={3}
+            pattern="[0-9]{1,3}"
+            onChange={(e) => {
+              e.target.value = normalizeCruiseSpeed(e.target.value);
+            }}
+            className="input-control w-full rounded-xl p-3"
+            required
+          />
+          <p className="mt-1 text-xs text-amber-300/80">
+            Recordatorio: por debajo de 10.000 ft la velocidad máxima es 250 kt.
+          </p>
+        </div>
+
+        <div>
+          <input
+            name="fuelDuration"
+            placeholder="Duración combustible (99.99) · opcional"
+            inputMode="numeric"
+            maxLength={5}
+            pattern="[0-9]{2}\.[0-9]{2}"
+            onChange={(e) => {
+              e.target.value = formatFuelDuration(e.target.value);
+            }}
+            className="input-control w-full rounded-xl p-3"
+          />
+          <p className="mt-1 text-xs text-slate-500">Formato 99.99.</p>
+        </div>
+
+        <div>
+          <input
+            name="registration"
+            placeholder="Matrícula de aeronave · opcional"
+            maxLength={10}
+            onChange={(e) => {
+              e.target.value = normalizeAircraftRegistration(e.target.value);
+            }}
+            className="input-control w-full rounded-xl p-3"
+          />
+          <p className="mt-1 text-xs text-slate-500">Máximo 10 caracteres.</p>
+        </div>
 
         <input
           name="route"
