@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:cloudflare": "npx --yes @opennextjs/cloudflare@1.20.2 build",
+    "preview:cloudflare": "npx --yes @opennextjs/cloudflare@1.20.2 build && npx --yes wrangler@4.125.0 dev",
+    "deploy:cloudflare": "npx --yes @opennextjs/cloudflare@1.20.2 build && npx --yes @opennextjs/cloudflare@1.20.2 deploy -- --keep-vars",
     "start": "next start",
     "lint": "eslint"
   },
