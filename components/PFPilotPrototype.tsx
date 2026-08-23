@@ -1,15 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PilotFlightPlanForm from "@/components/PilotFlightPlanForm";
 import PilotFlightPlans from "@/components/PilotFlightPlans";
 import { supabase } from "@/lib/supabase";
 import { ATC_FREQUENCIES, ATC_SECTOR_NAMES } from "@/lib/atcFrequencies";
+import {
+  getTransponderModeFromNotes,
+  setTransponderModeInNotes,
+} from "@/lib/flightPlanGameCallsign";
 
 type ToolId = "cabin" | "flightplan" | "atis" | "frequencies" | "chat";
 type CabinTab = "xpdr" | "altimeter" | "autopilot" | "warning";
 type TransponderMode = "OFF" | "STBY" | "ON" | "ALT";
 type WarningTest = "NONE" | "TA" | "RA" | "TERRAIN";
+type PressureUnit = "HPA" | "INHG";
 
 type ATCSession = {
   id: string;
@@ -48,6 +53,15 @@ type ChatMessage = {
   time: string;
 };
 
+type PilotPlan = {
+  id: string;
+  transponder: string;
+  notes: string | null;
+  status: string;
+  created_by: string | null;
+  [key: string]: unknown;
+};
+
 const TOOLS: Array<{ id: ToolId; label: string; subtitle: string }> = [
   { id: "cabin", label: "CABIN", subtitle: "Herramientas de vuelo" },
   { id: "flightplan", label: "FLIGHT PLAN", subtitle: "Plan operacional" },
@@ -79,6 +93,21 @@ function formatUtc(date = new Date()) {
   return `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}Z`;
 }
 
+function normalizeXpdr(value: string) {
+  return value.replace(/[^0-7]/g, "").slice(0, 4);
+}
+
+function stdPressure(unit: PressureUnit) {
+  return unit === "INHG" ? "29.92" : "1013";
+}
+
+function convertPressure(value: string, from: PressureUnit, to: PressureUnit) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0 || from === to) return value;
+  if (from === "HPA" && to === "INHG") return (numeric * 0.0295299830714).toFixed(2);
+  return String(Math.round(numeric / 0.0295299830714));
+}
+
 export default function PFPilotPrototype({
   pilotId,
   pilotName,
@@ -92,16 +121,21 @@ export default function PFPilotPrototype({
   initialSessions: ATCSession[];
   initialAtis: AtisMessage[];
 }) {
+  const initialActivePlan = (initialPlans.find((plan) => plan.status !== "FINISHED") ?? null) as PilotPlan | null;
+
   const [activeTool, setActiveTool] = useState<ToolId>("cabin");
   const [cabinTab, setCabinTab] = useState<CabinTab>("xpdr");
   const [sessions, setSessions] = useState(initialSessions);
   const [atis, setAtis] = useState(() => latestAtisByAirport(initialAtis));
   const [openAtisId, setOpenAtisId] = useState<string | null>(null);
+  const [pilotPlan, setPilotPlan] = useState<PilotPlan | null>(initialActivePlan);
 
-  const [xpdrCode, setXpdrCode] = useState("2000");
-  const [xpdrMode, setXpdrMode] = useState<TransponderMode>("STBY");
+  const [xpdrCode, setXpdrCode] = useState(() => normalizeXpdr(initialActivePlan?.transponder ?? "2000") || "2000");
+  const [xpdrMode, setXpdrMode] = useState<TransponderMode>(() => getTransponderModeFromNotes(initialActivePlan?.notes));
+  const xpdrCodeSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [qnh, setQnh] = useState("1013");
-  const [qnhUnit, setQnhUnit] = useState<"HPA" | "INHG">("HPA");
+  const [qnhUnit, setQnhUnit] = useState<PressureUnit>("HPA");
   const [isStd, setIsStd] = useState(true);
 
   const [apEnabled, setApEnabled] = useState(false);
@@ -175,6 +209,100 @@ export default function PFPilotPrototype({
       supabase.removeChannel(atisChannel);
     };
   }, []);
+
+  useEffect(() => {
+    async function refreshPilotPlan() {
+      const { data, error } = await supabase
+        .from("flight_plans")
+        .select("*")
+        .eq("created_by", pilotId)
+        .neq("status", "FINISHED")
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error("PFPilot active flight refresh failed:", error);
+        return;
+      }
+
+      setPilotPlan(((data ?? [])[0] ?? null) as PilotPlan | null);
+    }
+
+    const channel = supabase
+      .channel(`pfpilot-active-flight-${pilotId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "flight_plans" },
+        refreshPilotPlan,
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [pilotId]);
+
+  useEffect(() => {
+    if (!pilotPlan) return;
+    const nextCode = normalizeXpdr(pilotPlan.transponder ?? "");
+    if (nextCode.length === 4) setXpdrCode(nextCode);
+    setXpdrMode(getTransponderModeFromNotes(pilotPlan.notes));
+  }, [pilotPlan?.id, pilotPlan?.transponder, pilotPlan?.notes]);
+
+  useEffect(() => {
+    if (!pilotPlan?.id || xpdrCode.length !== 4) return;
+    if (xpdrCodeSaveTimer.current) clearTimeout(xpdrCodeSaveTimer.current);
+
+    xpdrCodeSaveTimer.current = setTimeout(async () => {
+      const { error } = await supabase
+        .from("flight_plans")
+        .update({ transponder: xpdrCode, updated_at: new Date().toISOString() })
+        .eq("id", pilotPlan.id)
+        .eq("created_by", pilotId)
+        .neq("status", "FINISHED");
+
+      if (error) console.error("PFPilot transponder code save failed:", error);
+    }, 250);
+
+    return () => {
+      if (xpdrCodeSaveTimer.current) clearTimeout(xpdrCodeSaveTimer.current);
+    };
+  }, [pilotId, pilotPlan?.id, xpdrCode]);
+
+  useEffect(() => {
+    if (!pilotPlan?.id) return;
+
+    let cancelled = false;
+    const saveMode = async () => {
+      const { data, error: readError } = await supabase
+        .from("flight_plans")
+        .select("notes")
+        .eq("id", pilotPlan.id)
+        .eq("created_by", pilotId)
+        .neq("status", "FINISHED")
+        .maybeSingle();
+
+      if (cancelled || readError || !data) {
+        if (readError) console.error("PFPilot transponder mode read failed:", readError);
+        return;
+      }
+
+      const notes = setTransponderModeInNotes(data.notes, xpdrMode);
+      const { error } = await supabase
+        .from("flight_plans")
+        .update({ notes, updated_at: new Date().toISOString() })
+        .eq("id", pilotPlan.id)
+        .eq("created_by", pilotId)
+        .neq("status", "FINISHED");
+
+      if (error) console.error("PFPilot transponder mode save failed:", error);
+    };
+
+    void saveMode();
+    return () => {
+      cancelled = true;
+    };
+  }, [pilotId, pilotPlan?.id, xpdrMode]);
 
   const radioChannels = useMemo(() => {
     const atcChannels: RadioChannel[] = sessions
@@ -251,7 +379,7 @@ export default function PFPilotPrototype({
           </div>
           <div className="mt-5 grid gap-2 text-xs text-slate-400">
             <div className="flex justify-between"><span>XPDR</span><span className="mono text-slate-200">{xpdrCode} {xpdrMode}</span></div>
-            <div className="flex justify-between"><span>ALT</span><span className="mono text-slate-200">{isStd ? "STD 1013" : `${qnh} ${qnhUnit}`}</span></div>
+            <div className="flex justify-between"><span>ALT</span><span className="mono text-slate-200">{isStd ? `STD ${qnh} ${qnhUnit}` : `${qnh} ${qnhUnit}`}</span></div>
             <div className="flex justify-between"><span>RADIO</span><span className="mono text-sky-300">{activeRadio.frequency}</span></div>
             <div className="flex justify-between"><span>WARNING</span><span className={warningTest === "NONE" ? "mono text-green-300" : "mono text-amber-300"}>{warningTest === "NONE" ? "NORMAL" : warningTest}</span></div>
           </div>
@@ -307,15 +435,12 @@ export default function PFPilotPrototype({
                   <p className="mono text-xs text-slate-500">SQUAWK CODE</p>
                   <input
                     value={xpdrCode}
-                    onChange={(event) => {
-                      const value = event.target.value.replace(/[^0-7]/g, "").slice(0, 4);
-                      setXpdrCode(value);
-                    }}
+                    onChange={(event) => setXpdrCode(normalizeXpdr(event.target.value))}
                     inputMode="numeric"
                     maxLength={4}
                     className="mono mt-3 w-full rounded-xl border border-sky-400/30 bg-[#020617] px-4 py-4 text-center text-4xl font-bold tracking-[0.35em] text-sky-200 outline-none focus:border-sky-400"
                   />
-                  <p className="mt-3 text-xs text-slate-500">Solo dígitos octales 0–7.</p>
+                  <p className="mt-3 text-xs text-slate-500">Solo dígitos octales 0–7. El código se sincroniza con el plan de vuelo activo.</p>
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-slate-950 p-5">
@@ -352,8 +477,7 @@ export default function PFPilotPrototype({
                       type="button"
                       onClick={() => {
                         setIsStd(true);
-                        setQnh("1013");
-                        setQnhUnit("HPA");
+                        setQnh(stdPressure(qnhUnit));
                       }}
                       className={`rounded-lg border px-3 py-1.5 mono text-xs ${isStd ? "border-green-400/60 bg-green-400/10 text-green-300" : "border-white/10 text-slate-400"}`}
                     >
@@ -372,8 +496,9 @@ export default function PFPilotPrototype({
                     <button
                       type="button"
                       onClick={() => {
-                        setIsStd(false);
-                        setQnhUnit((current) => (current === "HPA" ? "INHG" : "HPA"));
+                        const nextUnit: PressureUnit = qnhUnit === "HPA" ? "INHG" : "HPA";
+                        setQnh((current) => isStd ? stdPressure(nextUnit) : convertPressure(current, qnhUnit, nextUnit));
+                        setQnhUnit(nextUnit);
                       }}
                       className="rounded-xl border border-white/10 bg-[#020617] px-4 mono text-xs font-bold text-slate-300"
                     >
