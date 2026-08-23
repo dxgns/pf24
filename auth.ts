@@ -1,13 +1,8 @@
 import NextAuth from "next-auth";
 import Discord from "next-auth/providers/discord";
-import { createClient } from "@supabase/supabase-js";
 import { DISCORD_GUILD_ID } from "@/lib/discordRoles";
 import { getPermissionsFromRoles } from "@/lib/permissions";
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -55,7 +50,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                   }
                 | undefined;
 
-              await supabaseAdmin.from("login_logs").insert({
+              await getSupabaseAdmin().from("login_logs").insert({
                 discord_id: discordProfile?.id ?? token.sub ?? "unknown",
                 username:
                   discordProfile?.username ??
@@ -72,9 +67,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           } else {
             console.error("No se pudieron obtener roles Discord:", response.status);
           }
-
         } catch (error) {
-           console.error("Discord role fetch/login log error:", error);
+          console.error("Discord role fetch/login log error:", error);
         }
       }
 
