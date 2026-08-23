@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// OpenNext/Cloudflare does not currently support Node.js Middleware.
-// Keep this legacy middleware explicitly on the Edge runtime.
-export const runtime = "edge";
+// OpenNext/Cloudflare requires Edge Middleware rather than Node.js Middleware.
+// With Next.js 15, the supported runtime identifier is `experimental-edge`.
+export const runtime = "experimental-edge";
 
 const MAINTENANCE_ENABLED = process.env.MAINTENANCE_MODE !== "false";
 
