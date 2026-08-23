@@ -1,10 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-
-const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
-const ATIS_CONFIG_STORAGE_KEY = "pf24_scope_atis_configs_v1";
 
 const ATIS_AIRPORTS = new Set([
   "MDPC",
@@ -18,57 +15,18 @@ const ATIS_AIRPORTS = new Set([
   "EFKT",
 ]);
 
-type StoredConnection = { callsign?: string };
-type StoredAtisConfig = { active?: boolean; dep?: string; arr?: string; approach?: string; remarks?: string };
-type StoredAtisConfigs = Record<string, StoredAtisConfig>;
 type PublishedAtis = { airport_icao: string; created_by: string | null; created_at: string };
 
-function readPosition() {
-  try {
-    const parsed = JSON.parse(sessionStorage.getItem(CONNECTION_STORAGE_KEY) ?? "null") as StoredConnection | null;
-    return parsed?.callsign?.trim().toUpperCase() ?? "";
-  } catch {
-    return "";
-  }
+function topConnectButton() {
+  const top = document.querySelector<HTMLElement>("main.fixed header > div:first-child");
+  return Array.from(top?.querySelectorAll<HTMLButtonElement>(":scope > button") ?? []).find((button) => {
+    const value = button.textContent?.trim().toUpperCase();
+    return value === "CONNECT" || value === "DISCONNECT";
+  }) ?? null;
 }
 
-function jurisdiction(position: string) {
-  const upper = position.trim().toUpperCase();
-  if (!upper) return new Set<string>();
-
-  const airport = upper.slice(0, 4);
-  const facility = upper.split("_").at(-1) ?? "";
-
-  // ATIS is airport-local: only that airport's APP or TWR may create/update it.
-  if ((facility === "APP" || facility === "TWR") && ATIS_AIRPORTS.has(airport)) {
-    return new Set([airport]);
-  }
-
-  return new Set<string>();
-}
-
-function readConfigs(): StoredAtisConfigs {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(ATIS_CONFIG_STORAGE_KEY) ?? "{}") as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as StoredAtisConfigs : {};
-  } catch {
-    return {};
-  }
-}
-
-function disableUnauthorizedConfigs(allowed: Set<string>) {
-  const configs = readConfigs();
-  let changed = false;
-  const next: StoredAtisConfigs = { ...configs };
-
-  for (const [icao, config] of Object.entries(configs)) {
-    const upper = icao.toUpperCase();
-    if (!config?.active || allowed.has(upper)) continue;
-    next[icao] = { ...config, active: false };
-    changed = true;
-  }
-
-  if (changed) localStorage.setItem(ATIS_CONFIG_STORAGE_KEY, JSON.stringify(next));
+function scopeConnected() {
+  return topConnectButton()?.textContent?.trim().toUpperCase() === "DISCONNECT";
 }
 
 function airportSelect(dialog: HTMLElement) {
@@ -76,12 +34,6 @@ function airportSelect(dialog: HTMLElement) {
     const row = select.closest("div");
     return row?.textContent?.toUpperCase().includes("AIRPORT") ?? false;
   }) ?? null;
-}
-
-function setReactSelectValue(select: HTMLSelectElement, value: string) {
-  const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
-  descriptor?.set?.call(select, value);
-  select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function findAtisDialog() {
@@ -136,77 +88,42 @@ function setSendVisibility(dialog: HTMLElement, visible: boolean) {
 }
 
 export default function ScopeAtisJurisdictionGuard({ controllerName }: { controllerName: string }) {
-  const [position, setPosition] = useState("");
-
-  const enforce = useCallback(async (nextPosition = position) => {
-    const currentPosition = nextPosition || readPosition();
-    const allowed = jurisdiction(currentPosition);
-    disableUnauthorizedConfigs(allowed);
-
+  const enforce = useCallback(async () => {
+    const connected = scopeConnected();
     const dialog = findAtisDialog();
+    if (!dialog) return;
+
+    const select = airportSelect(dialog);
+    if (select) {
+      // Connection, not facility type, controls ATIS availability. Any connected
+      // ATC position may use the configured ATIS airports; disconnected users may not.
+      Array.from(select.options).forEach((option) => {
+        const validAirport = ATIS_AIRPORTS.has(option.value.trim().toUpperCase());
+        option.disabled = !connected || !validAirport;
+        option.hidden = !validAirport;
+      });
+    }
+
+    const selected = select?.value?.trim().toUpperCase() ?? "";
     const published = await loadPublished();
+    const owner = selected ? published.get(selected)?.created_by?.trim() ?? "" : "";
+    const lockedByOther = Boolean(selected && owner && owner !== controllerName);
+    const unavailable = !connected || !selected || !ATIS_AIRPORTS.has(selected);
 
-    if (dialog) {
-      const select = airportSelect(dialog);
-      if (select) {
-        Array.from(select.options).forEach((option) => {
-          const icao = option.value.trim().toUpperCase();
-          const enabled = ATIS_AIRPORTS.has(icao) && allowed.has(icao);
-          option.disabled = !enabled;
-          option.hidden = !enabled;
-        });
-
-        if (!allowed.has(select.value.trim().toUpperCase())) {
-          const firstAllowed = Array.from(select.options).find((option) => {
-            const icao = option.value.trim().toUpperCase();
-            return ATIS_AIRPORTS.has(icao) && allowed.has(icao);
-          });
-          if (firstAllowed) setReactSelectValue(select, firstAllowed.value);
-        }
-      }
-
-      const selected = select?.value?.trim().toUpperCase() ?? "";
-      const owner = selected ? published.get(selected)?.created_by?.trim() ?? "" : "";
-      const lockedByOther = Boolean(selected && owner && owner !== controllerName);
-      const unauthorized = !selected || !allowed.has(selected);
-
-      setDialogLocked(dialog, lockedByOther || unauthorized);
-      setSendVisibility(dialog, !lockedByOther && !unauthorized);
-    }
-
-    // Remove stale/invalid ATIS publications owned by this controller. Never touch another controller's valid ATIS.
-    const { data: ownAtis } = await supabase
-      .from("atis_messages")
-      .select("id,airport_icao")
-      .eq("created_by", controllerName);
-
-    const unauthorizedIds = (ownAtis ?? [])
-      .filter((row) => !allowed.has(String(row.airport_icao ?? "").trim().toUpperCase()))
-      .map((row) => row.id)
-      .filter(Boolean);
-
-    if (unauthorizedIds.length) {
-      await supabase.from("atis_messages").delete().in("id", unauthorizedIds);
-    }
-  }, [controllerName, position]);
+    setDialogLocked(dialog, lockedByOther || unavailable);
+    setSendVisibility(dialog, !lockedByOther && !unavailable);
+  }, [controllerName]);
 
   useEffect(() => {
-    const initial = readPosition();
-    setPosition(initial);
-    void enforce(initial);
-
-    const onConnection = (event: Event) => {
-      const detail = (event as CustomEvent<{ connected?: boolean; callsign?: string }>).detail;
-      const next = detail?.connected ? (detail.callsign?.trim().toUpperCase() || readPosition()) : "";
-      setPosition(next);
-      void enforce(next);
-    };
+    void enforce();
 
     const schedule = () => {
-      window.setTimeout(() => void enforce(position || readPosition()), 0);
-      window.setTimeout(() => void enforce(position || readPosition()), 100);
-      window.setTimeout(() => void enforce(position || readPosition()), 350);
+      window.setTimeout(() => void enforce(), 0);
+      window.setTimeout(() => void enforce(), 100);
+      window.setTimeout(() => void enforce(), 350);
     };
+
+    const onConnection = () => schedule();
 
     const blockUnauthorizedSend = async (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
@@ -217,11 +134,14 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
       if (button?.textContent?.trim().toUpperCase() !== "SEND") return;
 
       const selected = airportSelect(dialog)?.value?.trim().toUpperCase() ?? "";
-      const allowed = jurisdiction(position || readPosition());
       const published = await loadPublished();
       const owner = selected ? published.get(selected)?.created_by?.trim() ?? "" : "";
+      const allowed = scopeConnected()
+        && Boolean(selected)
+        && ATIS_AIRPORTS.has(selected)
+        && (!owner || owner === controllerName);
 
-      if (selected && allowed.has(selected) && (!owner || owner === controllerName)) return;
+      if (allowed) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -230,11 +150,11 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
       setDialogLocked(dialog, true);
     };
 
-    const observer = new MutationObserver(() => schedule());
+    const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true });
 
     const channel = supabase
-      .channel("scope-atis-jurisdiction-v4")
+      .channel("scope-atis-connection-guard-v5")
       .on("postgres_changes", { event: "*", schema: "public", table: "atis_messages" }, schedule)
       .subscribe();
 
@@ -252,7 +172,7 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
       document.removeEventListener("click", schedule, true);
       document.removeEventListener("click", blockUnauthorizedSend, true);
     };
-  }, [enforce, position, controllerName]);
+  }, [enforce, controllerName]);
 
   return null;
 }
