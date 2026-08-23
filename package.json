@@ -5,9 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:cloudflare": "npx --yes @opennextjs/cloudflare@1.20.2 build",
-    "preview:cloudflare": "npx --yes @opennextjs/cloudflare@1.20.2 build && npx --yes wrangler@4.125.0 dev",
-    "deploy:cloudflare": "npx --yes @opennextjs/cloudflare@1.20.2 build && npx --yes @opennextjs/cloudflare@1.20.2 deploy -- --keep-vars",
+    "preview": "npx --yes @opennextjs/cloudflare@latest build && npx --yes @opennextjs/cloudflare@latest preview",
+    "deploy": "npx --yes @opennextjs/cloudflare@latest build && npx --yes @opennextjs/cloudflare@latest deploy -- --keep-vars",
+    "upload": "npx --yes @opennextjs/cloudflare@latest build && npx --yes @opennextjs/cloudflare@latest upload -- --keep-vars",
+    "build:cloudflare": "npx --yes @opennextjs/cloudflare@latest build",
     "start": "next start",
     "lint": "eslint"
   },
