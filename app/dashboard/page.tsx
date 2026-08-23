@@ -66,6 +66,15 @@ export default async function DashboardPage() {
         <div className="mt-8 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
           {canAccessPilot && (
             <PortalCard
+              href="/pfpilot"
+              eyebrow="PFPilot Beta"
+              title="PFPilot"
+              text="Herramientas modulares de vuelo: cabina, plan de vuelo, ATIS, frecuencias, chat y asistencia al piloto."
+            />
+          )}
+
+          {canAccessPilot && (
+            <PortalCard
               href="/piloto"
               eyebrow="Pilot Operations"
               title="Portal Piloto"
