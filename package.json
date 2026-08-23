@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm install --no-save --package-lock=false --legacy-peer-deps next@16.2.11 eslint-config-next@16.2.11 @opennextjs/cloudflare@1.20.2 wrangler@4 && next build && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild",
-    "preview": "npm install --no-save --package-lock=false --legacy-peer-deps next@16.2.11 eslint-config-next@16.2.11 @opennextjs/cloudflare@1.20.2 wrangler@4 && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && ./node_modules/.bin/opennextjs-cloudflare preview",
-    "deploy": "npm install --no-save --package-lock=false --legacy-peer-deps next@16.2.11 eslint-config-next@16.2.11 @opennextjs/cloudflare@1.20.2 wrangler@4 && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && npx wrangler deploy --keep-vars",
-    "upload": "npm install --no-save --package-lock=false --legacy-peer-deps next@16.2.11 eslint-config-next@16.2.11 @opennextjs/cloudflare@1.20.2 wrangler@4 && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && npx wrangler versions upload --keep-vars",
-    "build:cloudflare": "npm install --no-save --package-lock=false --legacy-peer-deps next@16.2.11 eslint-config-next@16.2.11 @opennextjs/cloudflare@1.20.2 wrangler@4 && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild",
+    "build": "npm install --no-save --package-lock=false --legacy-peer-deps next@15.5.21 eslint-config-next@15.5.21 @opennextjs/cloudflare@1.20.2 wrangler@4 && next build && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild",
+    "preview": "npm install --no-save --package-lock=false --legacy-peer-deps next@15.5.21 eslint-config-next@15.5.21 @opennextjs/cloudflare@1.20.2 wrangler@4 && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && ./node_modules/.bin/opennextjs-cloudflare preview",
+    "deploy": "npm install --no-save --package-lock=false --legacy-peer-deps next@15.5.21 eslint-config-next@15.5.21 @opennextjs/cloudflare@1.20.2 wrangler@4 && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && npx wrangler deploy --keep-vars",
+    "upload": "npm install --no-save --package-lock=false --legacy-peer-deps next@15.5.21 eslint-config-next@15.5.21 @opennextjs/cloudflare@1.20.2 wrangler@4 && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && npx wrangler versions upload --keep-vars",
+    "build:cloudflare": "npm install --no-save --package-lock=false --legacy-peer-deps next@15.5.21 eslint-config-next@15.5.21 @opennextjs/cloudflare@1.20.2 wrangler@4 && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild",
     "start": "next start",
     "lint": "eslint"
   },
