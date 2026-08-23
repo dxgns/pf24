@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/LogoutButton";
 import UserAvatar from "@/components/UserAvatar";
@@ -10,25 +11,34 @@ export const metadata: Metadata = {
 };
 
 export default async function DashboardPage() {
-  const session = await auth();
+  let session;
+
+  try {
+    session = await auth();
+  } catch (error) {
+    console.error("PF24 Dashboard auth error:", error);
+    redirect("/login");
+  }
 
   if (!session) {
     redirect("/login");
   }
 
+  const canAccessPilot = session.user?.permissions?.canAccessPilot;
   const canAccessATC = session.user?.permissions?.canAccessATC;
+  const canAccessAdmin = session.user?.permissions?.canAccessAdmin;
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
       <section className="section-container max-w-7xl">
         <div className="panel rounded-3xl p-8">
           <div className="mb-6 flex items-center justify-between">
-            <a
+            <Link
               href="/"
               className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300"
             >
               ← Inicio
-            </a>
+            </Link>
 
             <div className="mono text-sm tracking-[0.25em] text-slate-400">PF24</div>
           </div>
@@ -54,12 +64,14 @@ export default async function DashboardPage() {
         </div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-          <PortalCard
-            href="/piloto"
-            eyebrow="Pilot Operations"
-            title="Portal Piloto"
-            text="Crear, modificar y finalizar planes de vuelo. Consulta ATCs online y estados operativos."
-          />
+          {canAccessPilot && (
+            <PortalCard
+              href="/piloto"
+              eyebrow="Pilot Operations"
+              title="Portal Piloto"
+              text="Crear, modificar y finalizar planes de vuelo. Consulta ATCs online y estados operativos."
+            />
+          )}
 
           {canAccessATC && (
             <PortalCard
@@ -70,12 +82,14 @@ export default async function DashboardPage() {
             />
           )}
 
-          <PortalCard
-            href="/admin"
-            eyebrow="Administration"
-            title="Panel Admin"
-            text="Configuración, roles, aeropuertos, posiciones ATC, auditoría y mantenimiento del sistema."
-          />
+          {canAccessAdmin && (
+            <PortalCard
+              href="/admin"
+              eyebrow="Administration"
+              title="Panel Admin"
+              text="Configuración, roles, aeropuertos, posiciones ATC, auditoría y mantenimiento del sistema."
+            />
+          )}
         </div>
       </section>
     </main>
@@ -113,7 +127,7 @@ function PortalCard({
   text: string;
 }) {
   return (
-    <a
+    <Link
       href={href}
       className="panel group rounded-3xl p-8 transition hover:-translate-y-1 hover:border-sky-400/60"
     >
@@ -121,6 +135,6 @@ function PortalCard({
       <h2 className="mt-4 text-2xl font-extrabold text-white group-hover:text-sky-300">{title}</h2>
       <p className="mt-4 leading-7 text-slate-400">{text}</p>
       <p className="mt-6 mono text-sm text-sky-300">Abrir módulo →</p>
-    </a>
+    </Link>
   );
 }

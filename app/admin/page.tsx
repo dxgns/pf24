@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { Metadata } from "next";
@@ -13,7 +14,14 @@ export const metadata: Metadata = {
 };
 
 export default async function AdminPage() {
-  const session = await auth();
+  let session;
+
+  try {
+    session = await auth();
+  } catch (error) {
+    console.error("PF24 Admin auth error:", error);
+    redirect("/login");
+  }
 
   if (!session) redirect("/login");
 
@@ -21,46 +29,102 @@ export default async function AdminPage() {
     redirect("/access-denied");
   }
 
-  const { data: adminLogs } = await supabase
-    .from("admin_logs")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(30);
+  let adminLogs;
+  let loginLogs;
+  let atcSessions;
+  let activeFlights;
+  let activeAtis;
 
-  const { data: loginLogs } = await supabase
-    .from("login_logs")
-    .select("*")
-    .order("login_at", { ascending: false })
-    .limit(50);
+  try {
+    const result = await supabase
+      .from("admin_logs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(30);
 
-  const { data: atcSessions } = await supabase
-    .from("atc_sessions")
-    .select("*")
-    .eq("is_active", true)
-    .order("started_at", { ascending: false });
+    if (result.error) {
+      console.error("PF24 Admin log load error:", result.error);
+    } else {
+      adminLogs = result.data;
+    }
+  } catch (error) {
+    console.error("PF24 Admin log query exception:", error);
+  }
 
-  const { data: activeFlights } = await supabase
-    .from("flight_plans")
-    .select("*")
-    .neq("status", "FINISHED")
-    .order("created_at", { ascending: false });
+  try {
+    const result = await supabase
+      .from("login_logs")
+      .select("*")
+      .order("login_at", { ascending: false })
+      .limit(50);
 
-  const { data: activeAtis } = await supabase
-    .from("atis_messages")
-    .select("*")
-    .order("created_at", { ascending: false });
+    if (result.error) {
+      console.error("PF24 Admin login log load error:", result.error);
+    } else {
+      loginLogs = result.data;
+    }
+  } catch (error) {
+    console.error("PF24 Admin login log query exception:", error);
+  }
+
+  try {
+    const result = await supabase
+      .from("atc_sessions")
+      .select("*")
+      .eq("is_active", true)
+      .order("started_at", { ascending: false });
+
+    if (result.error) {
+      console.error("PF24 Admin ATC session load error:", result.error);
+    } else {
+      atcSessions = result.data;
+    }
+  } catch (error) {
+    console.error("PF24 Admin ATC session query exception:", error);
+  }
+
+  try {
+    const result = await supabase
+      .from("flight_plans")
+      .select("*")
+      .neq("status", "FINISHED")
+      .order("created_at", { ascending: false });
+
+    if (result.error) {
+      console.error("PF24 Admin flight load error:", result.error);
+    } else {
+      activeFlights = result.data;
+    }
+  } catch (error) {
+    console.error("PF24 Admin flight query exception:", error);
+  }
+
+  try {
+    const result = await supabase
+      .from("atis_messages")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (result.error) {
+      console.error("PF24 Admin ATIS load error:", result.error);
+    } else {
+      activeAtis = result.data;
+    }
+  } catch (error) {
+    console.error("PF24 Admin ATIS query exception:", error);
+  }
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
       <section className="section-container max-w-7xl">
         <div className="panel rounded-3xl p-8">
           <div className="mb-6 flex items-center justify-between">
-            <a
+            <Link
               href="/dashboard"
               className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300"
             >
               ← Regresar
-            </a>
+            </Link>
 
             <div className="mono text-sm tracking-[0.25em] text-slate-400">
               PF24
@@ -98,7 +162,7 @@ export default async function AdminPage() {
               </thead>
 
               <tbody>
-                {loginLogs?.map((log) => (
+                {(loginLogs ?? []).map((log) => (
                   <tr key={log.id} className="border-t border-white/10">
                     <td className="p-3 font-semibold text-white">
                       {log.display_name ?? log.username}
