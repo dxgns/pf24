@@ -150,7 +150,7 @@ export default function TermsPage() {
                 Los permisos dentro de PF24 se determinan según los roles
                 del usuario en el servidor de Discord. Estos roles pueden
                 habilitar o restringir funciones como acceso al Portal Piloto,
-                Portal ATC, publicación de ATIS, envío de Contact Me,
+                Scope ATC, publicación de ATIS, envío de Contact Me,
                 modificación de planes de vuelo, administración y mantenimiento.
               </p>
               <p className="mt-4">
@@ -207,9 +207,9 @@ export default function TermsPage() {
             </section>
 
             <section>
-              <h2 className="text-2xl font-bold text-white">9. Portal ATC</h2>
+              <h2 className="text-2xl font-bold text-white">9. Scope ATC</h2>
               <p>
-                El Portal ATC está reservado para usuarios autorizados mediante
+                El Scope ATC está reservado para usuarios autorizados mediante
                 roles específicos. Los controladores pueden seleccionar sectores,
                 asumir tráfico, modificar información operativa, enviar Contact
                 Me, publicar ATIS y realizar acciones propias de control virtual.
@@ -217,7 +217,7 @@ export default function TermsPage() {
               <p className="mt-4">
                 Un usuario ATC es responsable de utilizar sus permisos con
                 prudencia y conforme a las normas internas de la comunidad. El
-                uso abusivo del Portal ATC podrá dar lugar a restricciones,
+                uso abusivo del Scope ATC podrá dar lugar a restricciones,
                 suspensión de permisos o revisión administrativa.
               </p>
             </section>
