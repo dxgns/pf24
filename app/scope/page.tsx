@@ -42,6 +42,7 @@ import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
 import ScopeQdmTool from "@/components/scope/ScopeQdmTool";
 import ScopePlannedRouteTool from "@/components/scope/ScopePlannedRouteTool";
 import ScopeMapDisplayFilters from "@/components/scope/ScopeMapDisplayFilters";
+import ScopeMdpcMapFilterFix from "@/components/scope/ScopeMdpcMapFilterFix";
 import ScopeConflictDetectionV2 from "@/components/scope/ScopeConflictDetectionV2";
 import ScopeConflictColorGuard from "@/components/scope/ScopeConflictColorGuard";
 import ScopeRatingAccess from "@/components/scope/ScopeRatingAccess";
@@ -82,7 +83,7 @@ export default async function ScopePage() {
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficLabelSeparatorSpacing /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedPlanOwnershipBridge initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
     <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} /><ScopeTrafficOwnershipColorGuard /><ScopeSectorOwnershipVisuals initialPlans={plans} />
-    <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras /><ScopeQdmTool /><ScopeMapDisplayFilters /><ScopePlannedRouteTool initialPlans={plans} /><ScopeConflictDetectionV2 initialPlans={plans} /><ScopeConflictColorGuard />
+    <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras /><ScopeQdmTool /><ScopeMapDisplayFilters /><ScopeMdpcMapFilterFix /><ScopePlannedRouteTool initialPlans={plans} /><ScopeConflictDetectionV2 initialPlans={plans} /><ScopeConflictColorGuard />
     <ScopeRatingAccess roles={session.user?.discordRoles ?? []} /><ScopeUiRefinements /><ScopeUiConsistencyFixes />
     <ScopeChromeAdditions /><ScopeInterfaceCorrections /><ScopeAtisDialogV2 controllerName={controllerName} />
     <ScopeAtisJurisdictionGuard controllerName={controllerName} /><ScopeAtisDisconnectCleanup controllerName={controllerName} />
