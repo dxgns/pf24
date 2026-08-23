@@ -195,7 +195,6 @@ export async function createFlightPlan(
   }
 
   revalidatePath("/piloto");
-  revalidatePath("/atc");
   revalidatePath("/scope");
 
   return { ok: true };
