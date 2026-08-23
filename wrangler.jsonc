@@ -7,14 +7,6 @@
     "global_fetch_strictly_public"
   ],
   "keep_vars": true,
-  "secrets": {
-    "required": [
-      "AUTH_SECRET",
-      "AUTH_DISCORD_SECRET",
-      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-      "SUPABASE_SERVICE_ROLE_KEY"
-    ]
-  },
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
