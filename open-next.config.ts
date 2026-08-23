@@ -1,6 +1,4 @@
-import { defineCloudflareConfig } from "@opennextjs/cloudflare";
-
-export default defineCloudflareConfig({
+export default {
   enableCacheInterception: false,
   routePreloadingBehavior: "none",
-});
+};
