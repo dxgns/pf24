@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import PilotFlightPlanForm from "@/components/PilotFlightPlanForm";
@@ -14,36 +15,77 @@ export const metadata: Metadata = {
 };
 
 export default async function PilotPage() {
-  const session = await auth();
+  let session;
 
-  if (!session?.user?.permissions?.canAccessPilot) {
-    redirect("/access-denied");
+  try {
+    session = await auth();
+  } catch (error) {
+    console.error("PF24 Pilot auth error:", error);
+    redirect("/login");
   }
 
   if (!session) {
     redirect("/login");
   }
 
+  if (!session.user?.permissions?.canAccessPilot) {
+    redirect("/access-denied");
+  }
+
   const pilotId = session.user?.email ?? session.user?.name ?? "unknown";
 
-  const { data: flightPlans } = await supabase
-    .from("flight_plans")
-    .select("*")
-    .eq("created_by", pilotId)
-    .neq("status", "FINISHED")
-    .order("created_at", { ascending: false });
+  let flightPlans;
+  let atcSessions;
+  let atisMessages;
 
-  const { data: atcSessions } = await supabase
-    .from("atc_sessions")
-    .select("*")
-    .eq("is_active", true)
-    .order("started_at", { ascending: false });
+  try {
+    const result = await supabase
+      .from("flight_plans")
+      .select("*")
+      .eq("created_by", pilotId)
+      .neq("status", "FINISHED")
+      .order("created_at", { ascending: false });
 
-  const { data: atisMessages } = await supabase
-    .from("atis_messages")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(20);
+    if (result.error) {
+      console.error("PF24 Pilot flight plan load error:", result.error);
+    } else {
+      flightPlans = result.data;
+    }
+  } catch (error) {
+    console.error("PF24 Pilot flight plan query exception:", error);
+  }
+
+  try {
+    const result = await supabase
+      .from("atc_sessions")
+      .select("*")
+      .eq("is_active", true)
+      .order("started_at", { ascending: false });
+
+    if (result.error) {
+      console.error("PF24 Pilot ATC session load error:", result.error);
+    } else {
+      atcSessions = result.data;
+    }
+  } catch (error) {
+    console.error("PF24 Pilot ATC session query exception:", error);
+  }
+
+  try {
+    const result = await supabase
+      .from("atis_messages")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (result.error) {
+      console.error("PF24 Pilot ATIS load error:", result.error);
+    } else {
+      atisMessages = result.data;
+    }
+  } catch (error) {
+    console.error("PF24 Pilot ATIS query exception:", error);
+  }
 
   const latestAtisByAirport = Object.values(
     (atisMessages ?? []).reduce<Record<string, any>>((acc, atis) => {
@@ -58,20 +100,18 @@ export default async function PilotPage() {
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-24 text-white">
       <section className="section-container max-w-6xl">
-
         <ContactMeReceiver pilotId={pilotId} />
 
         <div className="panel rounded-3xl p-8">
-
           <div className="mb-6 flex items-center justify-between">
-            <a
+            <Link
               href="/dashboard"
               className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300"
             >
               ← Regresar
-            </a>
+            </Link>
 
-            <div className="mono text-sm tracking-[0.25em] text-slate-400"> 
+            <div className="mono text-sm tracking-[0.25em] text-slate-400">
               PF24
             </div>
           </div>
@@ -107,7 +147,6 @@ export default async function PilotPage() {
               ONLINE
             </p>
           </div>
-
         </div>
 
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">
