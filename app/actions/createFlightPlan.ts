@@ -4,7 +4,14 @@ import { auth } from "@/auth";
 import { supabase } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 import { getDefaultTransponder } from "@/lib/flightRules";
-import { normalizeGameCallsign, setGameCallsignInNotes } from "@/lib/flightPlanGameCallsign";
+import {
+  normalizeAircraftRegistration,
+  normalizeAirportIcao,
+  normalizeCruiseSpeed,
+  normalizeFuelDuration,
+  normalizeGameCallsign,
+  setFlightPlanMetadataInNotes,
+} from "@/lib/flightPlanGameCallsign";
 
 type CreateFlightPlanResult = {
   ok: boolean;
@@ -39,6 +46,11 @@ export async function createFlightPlan(
     .toUpperCase()
     .trim();
 
+  const alternate = normalizeAirportIcao(String(formData.get("alternate") ?? ""));
+  const cruiseSpeed = normalizeCruiseSpeed(String(formData.get("cruiseSpeed") ?? ""));
+  const fuelDuration = normalizeFuelDuration(String(formData.get("fuelDuration") ?? ""));
+  const registration = normalizeAircraftRegistration(String(formData.get("registration") ?? ""));
+
   const route = String(formData.get("route") ?? "")
     .toUpperCase()
     .replace(/\s+/g, " ")
@@ -49,7 +61,14 @@ export async function createFlightPlan(
     .slice(0, 3);
 
   const visibleNotes = String(formData.get("notes") ?? "");
-  const notes = setGameCallsignInNotes(visibleNotes, gameCallsign);
+  const notes = setFlightPlanMetadataInNotes(visibleNotes, {
+    gameCallsign,
+    transponderMode: "STBY",
+    alternate,
+    cruiseSpeed,
+    fuelDuration,
+    registration,
+  });
 
   if (
     !callsign ||
@@ -58,6 +77,8 @@ export async function createFlightPlan(
     !flightRules ||
     !departure ||
     !arrival ||
+    !alternate ||
+    !cruiseSpeed ||
     !route ||
     !flightLevel
   ) {
@@ -79,6 +100,22 @@ export async function createFlightPlan(
       ok: false,
       error: "Los callsigns no pueden superar los 12 caracteres.",
     };
+  }
+
+  if (!/^[A-Z0-9]{4}$/.test(alternate)) {
+    return { ok: false, error: "El aeropuerto alternativo debe ser un ICAO válido de 4 caracteres." };
+  }
+
+  if (!/^\d{1,3}$/.test(cruiseSpeed)) {
+    return { ok: false, error: "La velocidad de crucero debe contener entre 1 y 3 números." };
+  }
+
+  if (fuelDuration && !/^\d{2}\.\d{2}$/.test(fuelDuration)) {
+    return { ok: false, error: "La duración de combustible debe usar el formato 99.99." };
+  }
+
+  if (registration && registration.length > 10) {
+    return { ok: false, error: "La matrícula de aeronave no puede superar 10 caracteres." };
   }
 
   if (flightLevel.length < 1 || flightLevel.length > 3) {
@@ -195,6 +232,7 @@ export async function createFlightPlan(
   }
 
   revalidatePath("/piloto");
+  revalidatePath("/pfpilot");
   revalidatePath("/scope");
 
   return { ok: true };
