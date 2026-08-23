@@ -66,13 +66,35 @@ import type { ScopeFlightPlan } from "@/lib/scope/types";
 export const metadata: Metadata = { title: "PF24 Scope | PF24", description: "Entorno operativo ATC de PF24." };
 
 export default async function ScopePage() {
-  const session = await auth();
+  let session;
+  try {
+    session = await auth();
+  } catch (error) {
+    console.error("PF24 Scope auth error:", error);
+    redirect("/login");
+  }
+
   if (!session) redirect("/login");
   if (!session.user?.permissions?.canAccessATC) redirect("/access-denied");
-  const { data, error } = await supabase.from("flight_plans").select("*").neq("status", "FINISHED").order("created_at", { ascending: false });
-  if (error) console.error("PF24 Scope flight plan load error:", error);
+
+  let plans: ScopeFlightPlan[] = [];
+  try {
+    const { data, error } = await supabase
+      .from("flight_plans")
+      .select("*")
+      .neq("status", "FINISHED")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("PF24 Scope flight plan load error:", error);
+    } else {
+      plans = (data ?? []) as ScopeFlightPlan[];
+    }
+  } catch (error) {
+    console.error("PF24 Scope flight plan query exception:", error);
+  }
+
   const controllerName = session.user?.name ?? "ATC";
-  const plans = (data ?? []) as ScopeFlightPlan[];
   const projectFlightServerId = (process.env.PROJECT_FLIGHT_SERVER_ID ?? "2ykygVZiX5").trim();
 
   return <>
