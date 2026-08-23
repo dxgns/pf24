@@ -5,6 +5,7 @@ import { getPermissionsFromRoles } from "@/lib/permissions";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
   providers: [
     Discord({
       clientId: process.env.AUTH_DISCORD_ID!,
