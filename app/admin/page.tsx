@@ -29,11 +29,11 @@ export default async function AdminPage() {
     redirect("/access-denied");
   }
 
-  let adminLogs;
-  let loginLogs;
-  let atcSessions;
-  let activeFlights;
-  let activeAtis;
+  let adminLogs: any[] = [];
+  let loginLogs: any[] = [];
+  let atcSessions: any[] = [];
+  let activeFlights: any[] = [];
+  let activeAtis: any[] = [];
 
   try {
     const result = await supabase
@@ -45,7 +45,7 @@ export default async function AdminPage() {
     if (result.error) {
       console.error("PF24 Admin log load error:", result.error);
     } else {
-      adminLogs = result.data;
+      adminLogs = result.data ?? [];
     }
   } catch (error) {
     console.error("PF24 Admin log query exception:", error);
@@ -61,7 +61,7 @@ export default async function AdminPage() {
     if (result.error) {
       console.error("PF24 Admin login log load error:", result.error);
     } else {
-      loginLogs = result.data;
+      loginLogs = result.data ?? [];
     }
   } catch (error) {
     console.error("PF24 Admin login log query exception:", error);
@@ -77,7 +77,7 @@ export default async function AdminPage() {
     if (result.error) {
       console.error("PF24 Admin ATC session load error:", result.error);
     } else {
-      atcSessions = result.data;
+      atcSessions = result.data ?? [];
     }
   } catch (error) {
     console.error("PF24 Admin ATC session query exception:", error);
@@ -93,7 +93,7 @@ export default async function AdminPage() {
     if (result.error) {
       console.error("PF24 Admin flight load error:", result.error);
     } else {
-      activeFlights = result.data;
+      activeFlights = result.data ?? [];
     }
   } catch (error) {
     console.error("PF24 Admin flight query exception:", error);
@@ -108,7 +108,7 @@ export default async function AdminPage() {
     if (result.error) {
       console.error("PF24 Admin ATIS load error:", result.error);
     } else {
-      activeAtis = result.data;
+      activeAtis = result.data ?? [];
     }
   } catch (error) {
     console.error("PF24 Admin ATIS query exception:", error);
@@ -139,11 +139,11 @@ export default async function AdminPage() {
         </div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-2">
-          <AdminATCSessions initialSessions={atcSessions ?? []} />
-          <AdminActiveFlights initialFlights={activeFlights ?? []} />
+          <AdminATCSessions initialSessions={atcSessions} />
+          <AdminActiveFlights initialFlights={activeFlights} />
         </div>
 
-        <AdminActiveAtis initialAtis={activeAtis ?? []} />
+        <AdminActiveAtis initialAtis={activeAtis} />
 
         <section className="panel mt-8 rounded-3xl p-6">
           <h2 className="text-2xl font-bold text-sky-300">
@@ -162,7 +162,7 @@ export default async function AdminPage() {
               </thead>
 
               <tbody>
-                {(loginLogs ?? []).map((log) => (
+                {loginLogs.map((log) => (
                   <tr key={log.id} className="border-t border-white/10">
                     <td className="p-3 font-semibold text-white">
                       {log.display_name ?? log.username}
@@ -207,7 +207,7 @@ export default async function AdminPage() {
               </thead>
 
               <tbody>
-                {adminLogs?.length ? (
+                {adminLogs.length ? (
                   adminLogs.map((log) => (
                     <tr key={log.id} className="border-t border-white/10">
                       <td className="p-3 font-semibold text-white">
