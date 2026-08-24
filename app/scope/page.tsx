@@ -32,6 +32,7 @@ import ScopeTrafficFooterPlacement from "@/components/scope/ScopeTrafficFooterPl
 import ScopePersonalization from "@/components/scope/ScopePersonalization";
 import RadarViewport from "@/components/scope/RadarViewport";
 import ScopeRadarMap from "@/components/scope/ScopeRadarMap";
+import ScopeMenorcaIsland from "@/components/scope/ScopeMenorcaIsland";
 import ScopeGlidePath from "@/components/scope/ScopeGlidePath";
 import ScopeAirspaceBoundaryDedup from "@/components/scope/ScopeAirspaceBoundaryDedup";
 import ScopeTwrGeometryCorrection from "@/components/scope/ScopeTwrGeometryCorrection";
@@ -102,7 +103,7 @@ export default async function ScopePage() {
   return <>
     <ScopeNativeListCss /><PF24Scope initialPlans={plans} controllerName={controllerName} />
     <ScopeConnectionPersistence /><ScopeConnectDialogPersistence /><ScopeOwnedTrafficLifecycle /><ScopeTrafficAutoRelease />
-    <ScopeLayoutGuards /><ScopeStartupWindowOverlapGuard /><WeatherPanelV2 /><ScopeRadarMap /><ScopeGlidePath /><ScopeAirspaceBoundaryDedup /><ScopeTwrGeometryCorrection /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport /><LemhSvgAirport />
+    <ScopeLayoutGuards /><ScopeStartupWindowOverlapGuard /><WeatherPanelV2 /><ScopeRadarMap /><ScopeMenorcaIsland /><ScopeGlidePath /><ScopeAirspaceBoundaryDedup /><ScopeTwrGeometryCorrection /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport /><LemhSvgAirport />
     <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} /><ScopeDisconnectedFlightPlanCleanup initialPlans={plans} />
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficLabelSeparatorSpacing /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedPlanOwnershipBridge initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
