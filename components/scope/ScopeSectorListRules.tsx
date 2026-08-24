@@ -11,6 +11,7 @@ type Props = { initialPlans: ScopeFlightPlan[] };
 type OwnershipHintDetail = { key?: string; owner?: string | null };
 type OptimisticOwner = { owner: string | null; expiresAt: number };
 type UnplannedOwners = Record<string, string>;
+type OwnerMatch = { matched: boolean; owner: string | null };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const LIST_SELECTOR = "[data-pf24-live-sector-list='true']";
@@ -70,23 +71,31 @@ function planSuffixes(plan: ScopeFlightPlan) {
   return suffixes;
 }
 
-function ownerFromMapForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>) {
-  const exactOwners = new Set<string>();
+function ownerMatchForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>): OwnerMatch {
+  const exactValues: Array<string | null> = [];
   for (const key of planKeys(plan)) {
-    const owner = normalizeOwner(owners[key]);
-    if (owner) exactOwners.add(owner);
+    if (!Object.prototype.hasOwnProperty.call(owners, key)) continue;
+    exactValues.push(normalizeOwner(owners[key]));
   }
-  if (exactOwners.size === 1) return Array.from(exactOwners)[0];
-  if (exactOwners.size > 1) return null;
+  if (exactValues.length > 0) {
+    const unique = new Set(exactValues.map((owner) => owner ?? "__FREE__"));
+    if (unique.size === 1) return { matched: true, owner: exactValues[0] };
+    return { matched: false, owner: null };
+  }
 
   const suffixes = planSuffixes(plan);
-  if (suffixes.size === 0) return null;
+  if (suffixes.size === 0) return { matched: false, owner: null };
   const matches = Object.keys(owners).filter((key) => {
     const suffix = flightSuffix(key);
-    return Boolean(suffix && suffixes.has(suffix) && normalizeOwner(owners[key]));
+    return Boolean(suffix && suffixes.has(suffix));
   });
-  if (matches.length !== 1) return null;
-  return normalizeOwner(owners[matches[0]]);
+  if (matches.length !== 1) return { matched: false, owner: null };
+  return { matched: true, owner: normalizeOwner(owners[matches[0]]) };
+}
+
+function ownerFromMapForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>) {
+  const match = ownerMatchForPlan(plan, owners);
+  return match.matched ? match.owner : null;
 }
 
 function readPosition() {
@@ -154,15 +163,15 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
   }, []);
 
   const effectiveOwner = useCallback((plan: ScopeFlightPlan, now: number) => {
-    const persisted = normalizeOwner(plan.assumed_by);
-    if (persisted) return persisted;
-
     const activeOptimistic: Record<string, string | null | undefined> = {};
     for (const [key, value] of Object.entries(optimisticOwners)) {
       if (value.expiresAt > now) activeOptimistic[key] = value.owner;
     }
-    const optimistic = ownerFromMapForPlan(plan, activeOptimistic);
-    if (optimistic) return optimistic;
+    const optimistic = ownerMatchForPlan(plan, activeOptimistic);
+    if (optimistic.matched) return optimistic.owner;
+
+    const persisted = normalizeOwner(plan.assumed_by);
+    if (persisted) return persisted;
 
     return ownerFromMapForPlan(plan, unplannedOwners);
   }, [optimisticOwners, unplannedOwners]);
@@ -258,7 +267,7 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-sector-list-rules-v3")
+      .channel("scope-sector-list-rules-v4")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
