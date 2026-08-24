@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import ContactMeReceiver from "@/components/ContactMeReceiver";
 import UtcClock from "@/components/UtcClock";
 import PFPilotPrototype from "@/components/PFPilotPrototype";
+import PFPilotAltimeterStdToggle from "@/components/PFPilotAltimeterStdToggle";
 
 export const metadata: Metadata = {
   title: "PFPilot Beta | PF24",
@@ -72,6 +73,7 @@ export default async function PFPilotPage() {
     <main className="radar-grid min-h-screen bg-[#020617] px-4 py-12 text-white sm:px-6 sm:py-16">
       <section className="section-container max-w-7xl">
         <ContactMeReceiver pilotId={pilotId} />
+        <PFPilotAltimeterStdToggle />
 
         <div className="panel rounded-3xl p-6 sm:p-8">
           <div className="flex flex-wrap items-center justify-between gap-4">
