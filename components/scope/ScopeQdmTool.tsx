@@ -4,6 +4,10 @@ import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { scopeDistanceNmFromScreenDelta } from "@/lib/scope/distanceScale";
 import { MAP_BOUNDS } from "@/lib/scope/mapData";
+import {
+  scopeClientPointToLocal,
+  scopeElementLocalSize,
+} from "@/lib/scope/domCoordinates";
 
 type Point = { x: number; y: number };
 type Viewport = { zoom: number; panX: number; panY: number };
@@ -101,17 +105,17 @@ function labelBelowLine(dx: number, dy: number) {
   return { x: normal.x * LABEL_OFFSET_PX, y: normal.y * LABEL_OFFSET_PX };
 }
 
-function mapCoordinatesFromScreen(point: Point, rect: DOMRect, viewport: Viewport) {
+function mapCoordinatesFromScreen(point: Point, size: Point, viewport: Viewport) {
   const zoom = Math.max(0.01, viewport.zoom);
   const baseX = (point.x - viewport.panX) / zoom;
   const baseY = (point.y - viewport.panY) / zoom;
   const mapWidth = MAP_BOUNDS.maxX - MAP_BOUNDS.minX;
   const mapHeight = MAP_BOUNDS.maxY - MAP_BOUNDS.minY;
-  const fitScale = Math.min(rect.width / mapWidth, rect.height / mapHeight);
+  const fitScale = Math.min(size.x / mapWidth, size.y / mapHeight);
   if (!(fitScale > 0)) return null;
 
-  const offsetX = (rect.width - mapWidth * fitScale) / 2;
-  const offsetY = (rect.height - mapHeight * fitScale) / 2;
+  const offsetX = (size.x - mapWidth * fitScale) / 2;
+  const offsetY = (size.y - mapHeight * fitScale) / 2;
   return {
     x: MAP_BOUNDS.minX + (baseX - offsetX) / fitScale,
     y: MAP_BOUNDS.minY + (baseY - offsetY) / fitScale,
@@ -194,10 +198,7 @@ export default function ScopeQdmTool() {
       return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
     };
 
-    const radarPoint = (event: MouseEvent) => {
-      const rect = radar.getBoundingClientRect();
-      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    };
+    const radarPoint = (event: MouseEvent) => scopeClientPointToLocal(radar, event.clientX, event.clientY);
 
     const onMouseDown = (event: MouseEvent) => {
       if (event.button === 2 && insideRadar(event) && !blocksMapContextMenu(event.target)) {
@@ -306,12 +307,11 @@ export default function ScopeQdmTool() {
         return;
       }
 
-      const rect = radar.getBoundingClientRect();
-      const rawX = event.clientX - rect.left;
-      const rawY = event.clientY - rect.top;
+      const point = radarPoint(event);
+      const size = scopeElementLocalSize(radar);
       setContextMenu({
-        x: Math.max(2, Math.min(rawX, rect.width - CONTEXT_MENU_WIDTH - 2)),
-        y: Math.max(2, Math.min(rawY, rect.height - CONTEXT_MENU_HEIGHT - 2)),
+        x: Math.max(2, Math.min(point.x, size.x - CONTEXT_MENU_WIDTH - 2)),
+        y: Math.max(2, Math.min(point.y, size.y - CONTEXT_MENU_HEIGHT - 2)),
       });
       rightDownRef.current = null;
     };
@@ -324,6 +324,8 @@ export default function ScopeQdmTool() {
     };
 
     const onResize = () => setSizeTick((value) => value + 1);
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(onResize) : null;
+    resizeObserver?.observe(radar);
 
     radar.addEventListener("mousedown", onMouseDown, true);
     radar.addEventListener("dblclick", onDoubleClick, true);
@@ -334,6 +336,7 @@ export default function ScopeQdmTool() {
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("resize", onResize);
     return () => {
+      resizeObserver?.disconnect();
       radar.removeEventListener("mousedown", onMouseDown, true);
       radar.removeEventListener("dblclick", onDoubleClick, true);
       radar.removeEventListener("contextmenu", onContextMenu, true);
@@ -348,13 +351,12 @@ export default function ScopeQdmTool() {
   const renderQdm = useMemo(() => {
     void sizeTick;
     if (!radar) return null;
-    const rect = radar.getBoundingClientRect();
-    if (!(rect.width > 0) || !(rect.height > 0)) return null;
+    const size = scopeElementLocalSize(radar);
 
     return (origin: Point, endpoint: Point, id?: number): RenderedQdm => {
       const dx = endpoint.x - origin.x;
       const dy = endpoint.y - origin.y;
-      const distanceNm = scopeDistanceNmFromScreenDelta(dx, dy, rect.width, rect.height, viewport.zoom);
+      const distanceNm = scopeDistanceNmFromScreenDelta(dx, dy, size.x, size.y, viewport.zoom);
       const bearing = bearingFromDelta(dx, dy);
       const angle = readableLineAngle(dx, dy);
       const mid = { x: (origin.x + endpoint.x) / 2, y: (origin.y + endpoint.y) / 2 };
@@ -397,8 +399,7 @@ export default function ScopeQdmTool() {
   const crd = useMemo(() => {
     void sizeTick;
     if (!radar || !showCrd || !crdCursor) return null;
-    const rect = radar.getBoundingClientRect();
-    const coordinates = mapCoordinatesFromScreen(crdCursor, rect, viewport);
+    const coordinates = mapCoordinatesFromScreen(crdCursor, scopeElementLocalSize(radar), viewport);
     if (!coordinates) return null;
     return {
       point: crdCursor,
