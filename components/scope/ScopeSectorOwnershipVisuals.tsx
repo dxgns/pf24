@@ -11,6 +11,7 @@ type StoredConnection = { callsign?: string };
 type OwnershipHintDetail = { key?: string; owner?: string | null };
 type OptimisticOwner = { owner: string | null; expiresAt: number };
 type UnplannedOwners = Record<string, string>;
+type OwnerMatch = { matched: boolean; owner: string | null };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const LIST_SELECTOR = "[data-pf24-live-sector-list='true']";
@@ -86,23 +87,31 @@ function mutationTouchesSectorList(mutations: MutationRecord[]) {
   });
 }
 
-function ownerFromMapForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>) {
-  const exactOwners = new Set<string>();
+function ownerMatchForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>): OwnerMatch {
+  const exactValues: Array<string | null> = [];
   for (const key of planKeys(plan)) {
-    const owner = normalizeOwner(owners[key]);
-    if (owner) exactOwners.add(owner);
+    if (!Object.prototype.hasOwnProperty.call(owners, key)) continue;
+    exactValues.push(normalizeOwner(owners[key]));
   }
-  if (exactOwners.size === 1) return Array.from(exactOwners)[0];
-  if (exactOwners.size > 1) return null;
+  if (exactValues.length > 0) {
+    const unique = new Set(exactValues.map((owner) => owner ?? "__FREE__"));
+    if (unique.size === 1) return { matched: true, owner: exactValues[0] };
+    return { matched: false, owner: null };
+  }
 
   const suffixes = planSuffixes(plan);
-  if (suffixes.size === 0) return null;
+  if (suffixes.size === 0) return { matched: false, owner: null };
   const matchingKeys = Object.keys(owners).filter((key) => {
     const suffix = flightSuffix(key);
-    return Boolean(suffix && suffixes.has(suffix) && normalizeOwner(owners[key]));
+    return Boolean(suffix && suffixes.has(suffix));
   });
-  if (matchingKeys.length !== 1) return null;
-  return normalizeOwner(owners[matchingKeys[0]]);
+  if (matchingKeys.length !== 1) return { matched: false, owner: null };
+  return { matched: true, owner: normalizeOwner(owners[matchingKeys[0]]) };
+}
+
+function ownerFromMapForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>) {
+  const match = ownerMatchForPlan(plan, owners);
+  return match.matched ? match.owner : null;
 }
 
 export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
@@ -141,7 +150,7 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
     for (const [key, value] of Object.entries(optimisticOwners)) {
       if (value.expiresAt > now) active[key] = value.owner;
     }
-    return ownerFromMapForPlan(plan, active);
+    return ownerMatchForPlan(plan, active);
   }, [optimisticOwners]);
 
   const sync = useCallback(() => {
@@ -159,8 +168,8 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
       const plan = planByKey.get(key);
       if (!plan) continue;
 
-      const optimisticOwner = optimisticOwnerForPlan(plan, now);
-      const owner = optimisticOwner ?? effectiveOwner(plan);
+      const optimistic = optimisticOwnerForPlan(plan, now);
+      const owner = optimistic.matched ? optimistic.owner : effectiveOwner(plan);
       const state = position && owner === position ? "mine" : owner ? "other" : "free";
       wrapper.dataset.pf24SectorOwnership = state;
     }
@@ -233,7 +242,7 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-sector-ownership-visuals-v4")
+      .channel("scope-sector-ownership-visuals-v5")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -241,7 +250,7 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
 
   useEffect(() => {
     const style = document.createElement("style");
-    style.dataset.pf24SectorOwnershipVisuals = "v4";
+    style.dataset.pf24SectorOwnershipVisuals = "v5";
     style.textContent = `
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child span,
