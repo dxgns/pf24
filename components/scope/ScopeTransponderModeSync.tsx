@@ -7,6 +7,7 @@ import {
   normalizeGameCallsign,
   type FlightPlanTransponderMode,
 } from "@/lib/flightPlanGameCallsign";
+import { normalizeAirlineCallsign } from "@/lib/scope/airlines";
 import { supabase } from "@/lib/supabase";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
@@ -25,12 +26,21 @@ function norm(value: string | null | undefined) {
   return normalizeGameCallsign(String(value ?? ""));
 }
 
+function callsignVariants(value: string | null | undefined) {
+  const raw = String(value ?? "");
+  const variants = new Set<string>();
+  const basic = norm(raw);
+  const airline = norm(normalizeAirlineCallsign(raw));
+  if (basic) variants.add(basic);
+  if (airline) variants.add(airline);
+  return Array.from(variants);
+}
+
 function planKeys(plan: ScopeFlightPlan) {
   const keys = new Set<string>();
-  const filed = norm(plan.callsign);
-  const game = norm(getGameCallsignFromNotes(plan.notes));
-  if (filed) keys.add(filed);
-  if (game) keys.add(game);
+  for (const value of [plan.callsign, getGameCallsignFromNotes(plan.notes)]) {
+    for (const key of callsignVariants(value)) keys.add(key);
+  }
   return Array.from(keys);
 }
 
@@ -39,12 +49,12 @@ function normalizeTransponder(value: string | null | undefined) {
   return digits ? digits.padStart(4, "0") : "9999";
 }
 
-function trafficCallsign(label: HTMLElement) {
+function trafficCallsigns(label: HTMLElement) {
   const button = Array.from(label.querySelectorAll<HTMLButtonElement>("button")).find((candidate) => {
     if (candidate.closest("[data-pf24-callsign-menu='true']")) return false;
     return /^[A-Z0-9-]{2,12}$/.test(candidate.textContent?.trim().toUpperCase() ?? "");
   });
-  return norm(button?.textContent);
+  return callsignVariants(button?.textContent);
 }
 
 function sectorRowCallsign(row: HTMLElement) {
@@ -123,13 +133,20 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
       const labels = Array.from(root.querySelectorAll<HTMLElement>("[data-pf24-traffic-label='true']"));
 
       for (const label of labels) {
-        const key = trafficCallsign(label);
-        const state = key ? stateByCallsign.get(key) : undefined;
+        const keys = trafficCallsigns(label);
+        const matchedKey = keys.find((key) => stateByCallsign.has(key)) ?? "";
+        const state = matchedKey ? stateByCallsign.get(matchedKey) : undefined;
         const target = label.parentElement?.querySelector<HTMLElement>(":scope > [data-pf24-traffic-select='true']") ?? null;
 
         if (!state) {
           delete label.dataset.pf24XpdrOff;
           if (target) delete target.dataset.pf24XpdrOff;
+          const oldCodeNode = transponderNode(label);
+          if (oldCodeNode) {
+            delete oldCodeNode.dataset.pf24XpdrCode;
+            delete oldCodeNode.dataset.pf24XpdrMode;
+            oldCodeNode.style.removeProperty("--pf24-xpdr-code-color");
+          }
           continue;
         }
 
@@ -141,9 +158,14 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
         const codeNode = transponderNode(label);
         if (codeNode) {
           const desiredText = `A${state.transponder}`;
+          codeNode.dataset.pf24XpdrCode = desiredText;
+          codeNode.dataset.pf24XpdrMode = state.mode;
+          codeNode.style.setProperty(
+            "--pf24-xpdr-code-color",
+            state.mode === "STBY" ? STBY_COLOR : ACTIVE_COLOR,
+          );
           if (codeNode.textContent !== desiredText) codeNode.textContent = desiredText;
           important(codeNode, "color", state.mode === "STBY" ? STBY_COLOR : ACTIVE_COLOR);
-          codeNode.dataset.pf24XpdrMode = state.mode;
         }
 
         const altNode = altitudeNode(label);
@@ -155,15 +177,16 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
           continue;
         }
 
-        const stored = groundAltitudeRef.current.get(key);
+        const altitudeKey = matchedKey || keys[0] || "";
+        const stored = groundAltitudeRef.current.get(altitudeKey);
         if (!stored && liveAltitude) {
-          groundAltitudeRef.current.set(key, liveAltitude);
+          groundAltitudeRef.current.set(altitudeKey, liveAltitude);
         } else if (stored && liveAltitude && Number(liveAltitude) < Number(stored)) {
           // Keep the lowest observed altitude as the ground/reference altitude.
-          groundAltitudeRef.current.set(key, liveAltitude);
+          groundAltitudeRef.current.set(altitudeKey, liveAltitude);
         }
 
-        const groundAltitude = groundAltitudeRef.current.get(key);
+        const groundAltitude = groundAltitudeRef.current.get(altitudeKey);
         if (groundAltitude && altNode.textContent !== groundAltitude) {
           altNode.textContent = groundAltitude;
         }
@@ -193,14 +216,27 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
       ${SECTOR_LIST} > [data-pf24-xpdr-off='true'] {
         display: none !important;
       }
+      ${LIVE_ROOT} [data-pf24-xpdr-code] {
+        font-size: 0 !important;
+      }
+      ${LIVE_ROOT} [data-pf24-xpdr-code]::before {
+        content: attr(data-pf24-xpdr-code);
+        display: inline-block;
+        font-size: 9px !important;
+        line-height: 8px !important;
+        color: var(--pf24-xpdr-code-color, #00e000) !important;
+      }
     `;
     document.head.appendChild(style);
     return () => style.remove();
   }, []);
 
   useEffect(() => {
+    void loadPlans();
+    const poll = window.setInterval(() => void loadPlans(), 1000);
+
     const channel = supabase
-      .channel("scope-transponder-mode-sync-v1")
+      .channel("scope-transponder-mode-sync-v2")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "flight_plans" },
@@ -209,10 +245,11 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
       .subscribe();
 
     return () => {
+      window.clearInterval(poll);
       void supabase.removeChannel(channel);
       if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
     };
-  }, [scheduleRefresh]);
+  }, [loadPlans, scheduleRefresh]);
 
   useEffect(() => {
     sync();
