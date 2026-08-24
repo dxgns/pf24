@@ -3,6 +3,10 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  scopeClientPointToLocal,
+  scopeElementLocalSize,
+} from "@/lib/scope/domCoordinates";
 
 type MetarValue = { raw: string | null; loading: boolean; error: boolean; sourceStation?: string };
 type RunwaySelection = { active?: boolean };
@@ -206,21 +210,47 @@ export default function WeatherPanelV2() {
     return () => document.removeEventListener("click", onOutsideClick, true);
   }, []);
   useEffect(() => {
-    const onMove = (event: MouseEvent) => {
-      if (!dragRef.current || !radar) return;
-      const rect = radar.getBoundingClientRect();
-      const maxX = Math.max(2, rect.width - totalWidth - 2);
+    if (!radar) return;
+
+    const clampCurrentPosition = () => {
+      const size = scopeElementLocalSize(radar);
       const totalHeight = collapsed ? HEADER_HEIGHT : HEADER_HEIGHT + Math.max(1, airports.length) * ROW_HEIGHT;
-      const maxY = Math.max(2, rect.height - totalHeight - 2);
-      setPosition({ x: clamp(event.clientX - rect.left - dragRef.current.dx, 2, maxX), y: clamp(event.clientY - rect.top - dragRef.current.dy, 2, maxY) });
+      const maxX = Math.max(2, size.x - totalWidth - 2);
+      const maxY = Math.max(2, size.y - totalHeight - 2);
+      setPosition((current) => ({
+        x: clamp(current.x, 2, maxX),
+        y: clamp(current.y, 2, maxY),
+      }));
+    };
+
+    const onMove = (event: MouseEvent) => {
+      if (!dragRef.current) return;
+      const cursor = scopeClientPointToLocal(radar, event.clientX, event.clientY);
+      const size = scopeElementLocalSize(radar);
+      const maxX = Math.max(2, size.x - totalWidth - 2);
+      const totalHeight = collapsed ? HEADER_HEIGHT : HEADER_HEIGHT + Math.max(1, airports.length) * ROW_HEIGHT;
+      const maxY = Math.max(2, size.y - totalHeight - 2);
+      setPosition({
+        x: clamp(cursor.x - dragRef.current.dx, 2, maxX),
+        y: clamp(cursor.y - dragRef.current.dy, 2, maxY),
+      });
     };
     const onUp = () => {
       if (!dragRef.current) return;
       dragRef.current = null;
       setPosition((current) => { localStorage.setItem(WINDOW_STORAGE_KEY, JSON.stringify(current)); return current; });
     };
-    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(clampCurrentPosition) : null;
+    resizeObserver?.observe(radar);
+    clampCurrentPosition();
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
   }, [airports.length, collapsed, radar, totalWidth]);
 
   const deleteAtis = async (station: string) => {
@@ -234,12 +264,20 @@ export default function WeatherPanelV2() {
 
   if (!radar || (!visible.metar && !visible.atis)) return null;
 
+  const startDrag = (event: React.MouseEvent) => {
+    const cursor = scopeClientPointToLocal(radar, event.clientX, event.clientY);
+    dragRef.current = {
+      dx: cursor.x - position.x,
+      dy: cursor.y - position.y,
+    };
+  };
+
   const weatherWindow = createPortal(
     <div data-pf24-weather-window="true" className="pointer-events-auto absolute z-[31] overflow-visible bg-transparent font-mono" style={{ left: position.x, top: position.y, width: totalWidth, minWidth: totalWidth, maxWidth: totalWidth }}>
       <div className="flex h-[17px] overflow-hidden bg-[#064a40] text-[#e9e9e9]">
-        {visible.atis && <div className="flex shrink-0 items-center justify-center border border-[#173d38] text-[8px] tracking-[.5px]" style={{ width: ATIS_WIDTH }} onMouseDown={(event) => { const rect = radar.getBoundingClientRect(); dragRef.current = { dx: event.clientX - rect.left - position.x, dy: event.clientY - rect.top - position.y }; }}>ATIS</div>}
+        {visible.atis && <div className="flex shrink-0 items-center justify-center border border-[#173d38] text-[8px] tracking-[.5px]" style={{ width: ATIS_WIDTH }} onMouseDown={startDrag}>ATIS</div>}
         {visible.metar && <div className="flex shrink-0" style={{ width: METAR_PANEL_WIDTH }}>
-          <div className="flex items-center justify-center border-y border-l border-[#173d38] text-[8px] tracking-[.5px]" style={{ width: metarTitleWidth }} onMouseDown={(event) => { const rect = radar.getBoundingClientRect(); dragRef.current = { dx: event.clientX - rect.left - position.x, dy: event.clientY - rect.top - position.y }; }}>Metars</div>
+          <div className="flex items-center justify-center border-y border-l border-[#173d38] text-[8px] tracking-[.5px]" style={{ width: metarTitleWidth }} onMouseDown={startDrag}>Metars</div>
           <button type="button" className="flex w-[13px] items-center justify-center border border-[#173d38]"><ListIcon/></button>
           <button type="button" onClick={() => setCollapsed((value) => !value)} className="flex w-[13px] items-center justify-center border-y border-r border-[#173d38]"><CollapseIcon collapsed={collapsed}/></button>
           <button type="button" onClick={() => setVisible({ metar: false, atis: false })} className="flex w-[13px] items-center justify-center border-y border-r border-[#173d38]"><CloseIcon/></button>
