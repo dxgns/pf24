@@ -105,6 +105,11 @@ function planMatchesTrafficKey(plan: ScopeFlightPlan, rawKey: string) {
   return Boolean(suffix && planSuffixes(plan).has(suffix));
 }
 
+function matchingPlans(plans: ScopeFlightPlan[], key: string) {
+  const exact = plans.filter((plan) => planKeys(plan).includes(key));
+  return exact.length > 0 ? exact : plans.filter((plan) => planMatchesTrafficKey(plan, key));
+}
+
 function publishHint(keys: string[], owner: string) {
   for (const key of keys) {
     window.dispatchEvent(new CustomEvent(OWNERSHIP_HINT_EVENT, {
@@ -116,6 +121,7 @@ function publishHint(keys: string[], owner: string) {
 
 export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
   const migratingRef = useRef(new Set<string>());
+  const assumingRef = useRef(new Set<string>());
   const releasingRef = useRef(new Set<string>());
   const ownersRef = useRef<Owners>({});
   const recentOwnersRef = useRef(new Map<string, RecentOwner>());
@@ -255,6 +261,57 @@ export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
     if (data?.assumed_by) publishHint(keys, normalizeOwner(data.assumed_by));
   }, [ownerForPlan, planIsReleaseGuarded]);
 
+  const loadActivePlans = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("flight_plans")
+      .select("*")
+      .neq("status", "FINISHED");
+    if (error) return { plans: [] as ScopeFlightPlan[], error };
+    return { plans: (data ?? []) as ScopeFlightPlan[], error: null };
+  }, []);
+
+  const persistAssumeForTrafficKey = useCallback(async (rawKey: string, rawOwner: string) => {
+    const key = norm(rawKey);
+    const owner = normalizeOwner(rawOwner);
+    if (!key || !owner || assumingRef.current.has(key)) return;
+
+    assumingRef.current.add(key);
+    try {
+      const { plans, error } = await loadActivePlans();
+      if (error) {
+        console.error("PF24 Scope planned ASSUME lookup failed:", error);
+        return;
+      }
+
+      const candidates = matchingPlans(plans, key);
+      if (candidates.length !== 1) return;
+      const plan = candidates[0];
+      const currentOwner = normalizeOwner(plan.assumed_by);
+      if (currentOwner === owner) return;
+      if (currentOwner && currentOwner !== owner) return;
+
+      const { data: assumed, error: assumeError } = await supabase
+        .from("flight_plans")
+        .update({ assumed_by: owner, updated_at: new Date().toISOString() })
+        .eq("id", plan.id)
+        .is("assumed_by", null)
+        .select("id,assumed_by")
+        .maybeSingle();
+
+      if (assumeError) {
+        console.error("PF24 Scope aliased planned ASSUME failed:", assumeError);
+        return;
+      }
+
+      if (normalizeOwner(assumed?.assumed_by) === owner) {
+        for (const planKey of planKeys(plan)) clearReleaseGuard(planKey);
+        window.dispatchEvent(new Event(OWNERSHIP_EVENT));
+      }
+    } finally {
+      assumingRef.current.delete(key);
+    }
+  }, [clearReleaseGuard, loadActivePlans]);
+
   const persistReleaseForTrafficKey = useCallback(async (rawKey: string, previousOwner?: string | null) => {
     const key = norm(rawKey);
     const expectedOwner = normalizeOwner(previousOwner) || readPosition();
@@ -262,23 +319,13 @@ export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
 
     releasingRef.current.add(key);
     try {
-      const { data, error } = await supabase
-        .from("flight_plans")
-        .select("*")
-        .neq("status", "FINISHED");
-
+      const { plans, error } = await loadActivePlans();
       if (error) {
         console.error("PF24 Scope planned FREE lookup failed:", error);
         return;
       }
 
-      const plans = (data ?? []) as ScopeFlightPlan[];
-      const exact = plans.filter((plan) => planKeys(plan).includes(key));
-      const candidates = exact.length > 0
-        ? exact
-        : plans.filter((plan) => planMatchesTrafficKey(plan, key));
-
-      // A suffix fallback is valid only when it identifies exactly one active plan.
+      const candidates = matchingPlans(plans, key);
       if (candidates.length !== 1) return;
       const plan = candidates[0];
       if (normalizeOwner(plan.assumed_by) !== expectedOwner) return;
@@ -303,7 +350,7 @@ export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
     } finally {
       releasingRef.current.delete(key);
     }
-  }, [guardRelease]);
+  }, [guardRelease, loadActivePlans]);
 
   useEffect(() => {
     const pendingTimers = new Set<number>();
@@ -323,20 +370,22 @@ export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
         void persistReleaseForTrafficKey(key, detail?.previousOwner);
         return;
       }
+
       clearReleaseGuard(key);
       recentOwnersRef.current.set(key, { owner, expiresAt: Date.now() + OWNER_GRACE_MS });
+      void persistAssumeForTrafficKey(key, owner);
     };
 
     window.addEventListener(OWNERS_EVENT, onOwners);
     window.addEventListener(OWNERSHIP_HINT_EVENT, onHint);
 
-    // We only need the current unplanned Presence snapshot so a NEW flight plan
-    // can inherit an existing radar ASSUME. Existing plans are never re-promoted
-    // during page load, which prevents a refresh from resurrecting a FREE plan.
+    // Existing plans are never promoted from Presence during page load. Only a
+    // newly inserted plan can inherit an unplanned radar ASSUME. This prevents
+    // refresh from resurrecting ownership after FREE.
     window.dispatchEvent(new Event(OWNERS_REQUEST_EVENT));
 
     const channel = supabase
-      .channel("scope-unplanned-plan-ownership-bridge-v5")
+      .channel("scope-unplanned-plan-ownership-bridge-v6")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "flight_plans" },
@@ -361,7 +410,7 @@ export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
       window.removeEventListener(OWNERSHIP_HINT_EVENT, onHint);
       void supabase.removeChannel(channel);
     };
-  }, [clearReleaseGuard, guardRelease, migrate, persistReleaseForTrafficKey, rememberOwners]);
+  }, [clearReleaseGuard, guardRelease, migrate, persistAssumeForTrafficKey, persistReleaseForTrafficKey, rememberOwners]);
 
   return null;
 }
