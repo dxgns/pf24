@@ -77,6 +77,18 @@ const CABIN_TABS: Array<{ id: CabinTab; label: string }> = [
   { id: "warning", label: "WARNING" },
 ];
 
+const ATIS_FREQUENCIES: Record<string, string> = {
+  MDST: "132.850",
+  MDPC: "132.800",
+  LCLK: "126.550",
+  LCPH: "127.325",
+  GCLP: "118.600",
+  LEMH: "129.155",
+  EGKK: "136.525",
+  EGHI: "130.880",
+  EFKT: "133.850",
+};
+
 function latestAtisByAirport(items: AtisMessage[]) {
   const sorted = [...items].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -729,9 +741,10 @@ export default function PFPilotPrototype({
                   ) : (
                     <div className="grid gap-2 sm:grid-cols-2">
                       {atis.map((item) => {
+                        const frequency = ATIS_FREQUENCIES[item.airport_icao] ?? "---.---";
                         const channel: RadioChannel = {
                           label: `${item.airport_icao} ATIS`,
-                          frequency: "ATIS",
+                          frequency,
                           kind: "ATIS",
                         };
                         return (
@@ -745,13 +758,12 @@ export default function PFPilotPrototype({
                               <p className="mono text-xs font-bold text-slate-200">{item.airport_icao} ATIS</p>
                               <p className="mt-1 text-[10px] text-slate-500">INFO {item.info_letter}</p>
                             </div>
-                            <span className="mono text-xs font-bold text-sky-300">DATA</span>
+                            <span className="mono text-sm font-bold text-sky-300">{frequency}</span>
                           </button>
                         );
                       })}
                     </div>
                   )}
-                  <p className="mt-2 text-[11px] text-slate-500">Las frecuencias numéricas ATIS quedan pendientes de la tabla oficial de PF24; no se inventan valores en este prototipo.</p>
                 </div>
               </div>
             </div>
