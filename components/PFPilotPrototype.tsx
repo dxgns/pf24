@@ -6,8 +6,9 @@ import PilotFlightPlans from "@/components/PilotFlightPlans";
 import { supabase } from "@/lib/supabase";
 import { ATC_FREQUENCIES, ATC_SECTOR_NAMES } from "@/lib/atcFrequencies";
 import {
+  getPilotTransponderFromNotes,
   getTransponderModeFromNotes,
-  setTransponderModeInNotes,
+  setPilotTransponderStateInNotes,
 } from "@/lib/flightPlanGameCallsign";
 
 type ToolId = "cabin" | "flightplan" | "atis" | "frequencies" | "chat";
@@ -134,6 +135,7 @@ export default function PFPilotPrototype({
   initialAtis: AtisMessage[];
 }) {
   const initialActivePlan = (initialPlans.find((plan) => plan.status !== "FINISHED") ?? null) as PilotPlan | null;
+  const initialPilotXpdr = getPilotTransponderFromNotes(initialActivePlan?.notes);
 
   const [activeTool, setActiveTool] = useState<ToolId>("cabin");
   const [cabinTab, setCabinTab] = useState<CabinTab>("xpdr");
@@ -142,7 +144,7 @@ export default function PFPilotPrototype({
   const [openAtisId, setOpenAtisId] = useState<string | null>(null);
   const [pilotPlan, setPilotPlan] = useState<PilotPlan | null>(initialActivePlan);
 
-  const [xpdrCode, setXpdrCode] = useState(() => normalizeXpdr(initialActivePlan?.transponder ?? "2000") || "2000");
+  const [xpdrCode, setXpdrCode] = useState(() => normalizeXpdr(initialPilotXpdr || initialActivePlan?.transponder || "2000") || "2000");
   const [xpdrMode, setXpdrMode] = useState<TransponderMode>(() => getTransponderModeFromNotes(initialActivePlan?.notes));
   const xpdrCodeSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -256,7 +258,8 @@ export default function PFPilotPrototype({
 
   useEffect(() => {
     if (!pilotPlan) return;
-    const nextCode = normalizeXpdr(pilotPlan.transponder ?? "");
+    const storedPilotCode = normalizeXpdr(getPilotTransponderFromNotes(pilotPlan.notes));
+    const nextCode = storedPilotCode || normalizeXpdr(pilotPlan.transponder ?? "");
     if (nextCode.length === 4) setXpdrCode(nextCode);
     setXpdrMode(getTransponderModeFromNotes(pilotPlan.notes));
   }, [pilotPlan?.id, pilotPlan?.transponder, pilotPlan?.notes]);
@@ -265,27 +268,8 @@ export default function PFPilotPrototype({
     if (!pilotPlan?.id || xpdrCode.length !== 4) return;
     if (xpdrCodeSaveTimer.current) clearTimeout(xpdrCodeSaveTimer.current);
 
-    xpdrCodeSaveTimer.current = setTimeout(async () => {
-      const { error } = await supabase
-        .from("flight_plans")
-        .update({ transponder: xpdrCode, updated_at: new Date().toISOString() })
-        .eq("id", pilotPlan.id)
-        .eq("created_by", pilotId)
-        .neq("status", "FINISHED");
-
-      if (error) console.error("PFPilot transponder code save failed:", error);
-    }, 250);
-
-    return () => {
-      if (xpdrCodeSaveTimer.current) clearTimeout(xpdrCodeSaveTimer.current);
-    };
-  }, [pilotId, pilotPlan?.id, xpdrCode]);
-
-  useEffect(() => {
-    if (!pilotPlan?.id) return;
-
     let cancelled = false;
-    const saveMode = async () => {
+    xpdrCodeSaveTimer.current = setTimeout(async () => {
       const { data, error: readError } = await supabase
         .from("flight_plans")
         .select("notes")
@@ -295,11 +279,11 @@ export default function PFPilotPrototype({
         .maybeSingle();
 
       if (cancelled || readError || !data) {
-        if (readError) console.error("PFPilot transponder mode read failed:", readError);
+        if (readError) console.error("PFPilot transponder state read failed:", readError);
         return;
       }
 
-      const notes = setTransponderModeInNotes(data.notes, xpdrMode);
+      const notes = setPilotTransponderStateInNotes(data.notes, xpdrCode, xpdrMode);
       const { error } = await supabase
         .from("flight_plans")
         .update({ notes, updated_at: new Date().toISOString() })
@@ -307,14 +291,14 @@ export default function PFPilotPrototype({
         .eq("created_by", pilotId)
         .neq("status", "FINISHED");
 
-      if (error) console.error("PFPilot transponder mode save failed:", error);
-    };
+      if (error) console.error("PFPilot transponder state save failed:", error);
+    }, 250);
 
-    void saveMode();
     return () => {
       cancelled = true;
+      if (xpdrCodeSaveTimer.current) clearTimeout(xpdrCodeSaveTimer.current);
     };
-  }, [pilotId, pilotPlan?.id, xpdrMode]);
+  }, [pilotId, pilotPlan?.id, xpdrCode, xpdrMode]);
 
   const radioChannels = useMemo(() => {
     const atcChannels: RadioChannel[] = sessions
