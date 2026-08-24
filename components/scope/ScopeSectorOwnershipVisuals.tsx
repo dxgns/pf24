@@ -9,9 +9,12 @@ type Props = { initialPlans: ScopeFlightPlan[] };
 type StoredConnection = { callsign?: string };
 type OwnershipHintDetail = { key?: string; owner?: string | null };
 type OptimisticOwner = { owner: string | null; expiresAt: number };
+type UnplannedOwners = Record<string, string>;
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const LIST_SELECTOR = "[data-pf24-live-sector-list='true']";
+const OWNERS_EVENT = "pf24-unplanned-ownership-sync";
+const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
 const OPTIMISTIC_TTL_MS = 5000;
 
 function norm(value: string) {
@@ -56,10 +59,20 @@ function mutationTouchesSectorList(mutations: MutationRecord[]) {
   });
 }
 
+function unplannedOwnerForPlan(plan: ScopeFlightPlan, owners: UnplannedOwners) {
+  const matches = new Set<string>();
+  for (const key of planKeys(plan)) {
+    const owner = normalizeOwner(owners[key]);
+    if (owner) matches.add(owner);
+  }
+  return matches.size === 1 ? Array.from(matches)[0] : null;
+}
+
 export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
   const [optimisticOwners, setOptimisticOwners] = useState<Record<string, OptimisticOwner>>({});
+  const [unplannedOwners, setUnplannedOwners] = useState<UnplannedOwners>({});
 
   const planByKey = useMemo(() => {
     const map = new Map<string, ScopeFlightPlan>();
@@ -82,6 +95,10 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
     setPlans((data ?? []) as ScopeFlightPlan[]);
   }, []);
 
+  const effectiveOwner = useCallback((plan: ScopeFlightPlan) => {
+    return normalizeOwner(plan.assumed_by) ?? unplannedOwnerForPlan(plan, unplannedOwners);
+  }, [unplannedOwners]);
+
   const sync = useCallback(() => {
     const list = document.querySelector<HTMLElement>(LIST_SELECTOR);
     if (!list) return;
@@ -100,11 +117,11 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
       const optimistic = optimisticOwners[key];
       const owner = optimistic && optimistic.expiresAt > now
         ? optimistic.owner
-        : normalizeOwner(plan.assumed_by);
+        : effectiveOwner(plan);
       const state = position && owner === position ? "mine" : owner ? "other" : "free";
       wrapper.dataset.pf24SectorOwnership = state;
     }
-  }, [optimisticOwners, planByKey, position]);
+  }, [effectiveOwner, optimisticOwners, planByKey, position]);
 
   useEffect(() => {
     setPosition(readPosition());
@@ -128,6 +145,15 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
       }));
     };
 
+    const onUnplannedOwners = (event: Event) => {
+      const owners = (event as CustomEvent<{ owners?: UnplannedOwners }>).detail?.owners ?? {};
+      setUnplannedOwners(Object.fromEntries(
+        Object.entries(owners)
+          .map(([key, owner]) => [norm(key), normalizeOwner(owner) ?? ""] as const)
+          .filter(([key, owner]) => Boolean(key && owner)),
+      ));
+    };
+
     const onOwnershipChange = () => {
       void loadPlans();
       window.setTimeout(() => void loadPlans(), 160);
@@ -136,10 +162,14 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
     window.addEventListener("pf24-scope-connection-change", onConnection);
     window.addEventListener("pf24-traffic-ownership-hint", onHint);
     window.addEventListener("pf24-traffic-ownership-change", onOwnershipChange);
+    window.addEventListener(OWNERS_EVENT, onUnplannedOwners);
+    window.dispatchEvent(new Event(OWNERS_REQUEST_EVENT));
+
     return () => {
       window.removeEventListener("pf24-scope-connection-change", onConnection);
       window.removeEventListener("pf24-traffic-ownership-hint", onHint);
       window.removeEventListener("pf24-traffic-ownership-change", onOwnershipChange);
+      window.removeEventListener(OWNERS_EVENT, onUnplannedOwners);
     };
   }, [loadPlans]);
 
@@ -150,7 +180,7 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
       let changed = false;
       for (const [key, optimistic] of Object.entries(current)) {
         const plan = planByKey.get(key);
-        const actual = normalizeOwner(plan?.assumed_by);
+        const actual = plan ? effectiveOwner(plan) : null;
         if (optimistic.expiresAt <= now || (plan && actual === optimistic.owner)) {
           delete next[key];
           changed = true;
@@ -158,11 +188,11 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
       }
       return changed ? next : current;
     });
-  }, [planByKey]);
+  }, [effectiveOwner, planByKey]);
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-sector-ownership-visuals-v2")
+      .channel("scope-sector-ownership-visuals-v3")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -170,7 +200,7 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
 
   useEffect(() => {
     const style = document.createElement("style");
-    style.dataset.pf24SectorOwnershipVisuals = "v2";
+    style.dataset.pf24SectorOwnershipVisuals = "v3";
     style.textContent = `
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child span,
