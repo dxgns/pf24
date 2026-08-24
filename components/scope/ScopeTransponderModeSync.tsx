@@ -97,7 +97,7 @@ function transponderNode(label: HTMLElement) {
 }
 
 function altitudeNode(label: HTMLElement) {
-  const candidates = Array.from(label.querySelectorAll<HTMLElement>>("span"));
+  const candidates = Array.from(label.querySelectorAll<HTMLElement>("span"));
   return candidates.find((node) => {
     const text = node.textContent?.trim() ?? "";
     if (!/^\d{3}[↑↓]?$/.test(text)) return false;
