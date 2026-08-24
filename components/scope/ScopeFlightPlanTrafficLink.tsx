@@ -85,15 +85,19 @@ function callsignButton(label: HTMLElement) {
   }) ?? null;
 }
 
+function setTextIfChanged(element: Element | null | undefined, value: string) {
+  if (!(element instanceof HTMLElement)) return;
+  if (element.textContent === value) return;
+  element.textContent = value;
+}
+
 function paintImmediatePlanData(label: HTMLElement, plan: ScopeFlightPlan) {
+  const callsign = plan.callsign.toUpperCase();
   const button = callsignButton(label);
-  if (button && button.textContent?.trim().toUpperCase() !== plan.callsign.toUpperCase()) {
-    button.textContent = plan.callsign.toUpperCase();
-  }
+  setTextIfChanged(button, callsign);
 
   const menu = label.querySelector<HTMLElement>("[data-pf24-callsign-menu='true']");
-  const menuHeader = menu?.firstElementChild;
-  if (menuHeader instanceof HTMLElement) menuHeader.textContent = plan.callsign.toUpperCase();
+  setTextIfChanged(menu?.firstElementChild, callsign);
 
   const arrival = plan.arrival_icao?.trim().toUpperCase();
   if (!arrival) return;
@@ -103,15 +107,13 @@ function paintImmediatePlanData(label: HTMLElement, plan: ScopeFlightPlan) {
 
   // Detailed label: third direct grid contains AFL / RFL / DEST.
   if (grids.length >= 3) {
-    const destination = grids[2].lastElementChild;
-    if (destination instanceof HTMLElement) destination.textContent = arrival;
+    setTextIfChanged(grids[2].lastElementChild, arrival);
     return;
   }
 
   // Simple label: the final direct non-drag span is DEST.
   const spans = directChildren.filter((child) => child.tagName === "SPAN" && !child.dataset.pf24TrafficDragEdge);
-  const destination = spans.at(-1);
-  if (destination) destination.textContent = arrival;
+  setTextIfChanged(spans.at(-1), arrival);
 }
 
 export default function ScopeFlightPlanTrafficLink({ initialPlans }: Props) {
@@ -202,13 +204,28 @@ export default function ScopeFlightPlanTrafficLink({ initialPlans }: Props) {
   }, [loadPlans]);
 
   useEffect(() => {
+    let frame: number | null = null;
+
+    const queueSync = () => {
+      if (frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        sync();
+      });
+    };
+
     sync();
-    const timer = window.setInterval(sync, 100);
-    const observer = new MutationObserver(() => sync());
+    // Slow fallback poll. Normal updates are driven by the DOM observer and
+    // flight-plan realtime channel. Keeping this coarse prevents unnecessary
+    // work while live traffic is moving.
+    const timer = window.setInterval(queueSync, 1000);
+    const observer = new MutationObserver(queueSync);
     observer.observe(document.body, { childList: true, subtree: true });
+
     return () => {
       window.clearInterval(timer);
       observer.disconnect();
+      if (frame !== null) window.cancelAnimationFrame(frame);
     };
   }, [sync]);
 
