@@ -9,10 +9,12 @@ type Viewport = { zoom: number; panX: number; panY: number };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 
-// Menorca is normalized to the Scope scale and anchored so LEMH sits in the
-// southeast portion of the island. The runway midpoint from the calibrated
-// pavement ends is approximately (126.435, 65.79).
-const MENORCA_SVG_TRANSFORM = "matrix(0.105 0 0 0.105 90.42 34.92)";
+// Recalibrated from the supplied PFTracker reference using SARGO, MEROS,
+// MORSS, GINRE and ELTAN as map anchors. The visible Menorca coastline in
+// that reference occupies approximately x=119.7..127.5 / y=60.5..67.1.
+// A uniform scale preserves the authored island shape while placing LEMH in
+// the southeast portion of the island, matching the reference.
+const MENORCA_SVG_TRANSFORM = "matrix(0.0177 0 0 0.0177 119.70 60.50)";
 const MENORCA_SVG_WIDTH = 439.45059;
 const MENORCA_SVG_HEIGHT = 371.6109;
 
