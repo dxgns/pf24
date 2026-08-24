@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getGameCallsignFromNotes,
+  getPilotTransponderFromNotes,
   getTransponderModeFromNotes,
   normalizeGameCallsign,
   type FlightPlanTransponderMode,
@@ -127,9 +128,14 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
 
     for (const plan of plans) {
       if (plan.status === "FINISHED") continue;
+      const pilotTransponder = getPilotTransponderFromNotes(plan.notes);
       const state: PlanTransponderState = {
         mode: getTransponderModeFromNotes(plan.notes),
-        transponder: normalizeTransponder(plan.transponder),
+        // The radar label shows what the pilot has selected in PFPilot. The
+        // flight_plans.transponder column remains the ATC-assigned SSR used by
+        // Sector List. Falling back keeps older active plans readable until
+        // PFPilot stores its independent code marker.
+        transponder: normalizeTransponder(pilotTransponder || plan.transponder),
       };
       for (const key of planKeys(plan)) map.set(key, state);
 
