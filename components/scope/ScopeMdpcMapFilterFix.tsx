@@ -2,20 +2,34 @@
 
 import { useEffect } from "react";
 
-const MDPC_LABEL_GROUP = "[data-map-layer='mdpc-svg-labels-upright']";
+const MDPC_LABEL_GROUPS = [
+  "[data-map-layer='mdpc-svg-labels-upright']",
+  "[data-map-layer='mdpc-svg-labels-upright-low']",
+].join(", ");
+const LEMH_LABEL_GROUP = "[data-map-layer='lemh-upright-labels']";
 const FILTER_STORAGE_KEY = "pf24_scope_map_display_filters_v1";
-const RUNWAY_LABELS = new Set(["08", "09", "26", "27"]);
+const MDPC_RUNWAY_LABELS = new Set(["08", "09", "26", "27"]);
+const LEMH_RUNWAY_LABELS = new Set(["19", "01"]);
 
 type StoredFilters = {
   taxiLetters?: boolean;
   gateNumbers?: boolean;
 };
 
-function labelKind(text: string): "taxi" | "gate" | "runway" {
+type LabelKind = "taxi" | "gate" | "runway";
+
+function mdpcLabelKind(text: string): LabelKind {
   const value = text.trim().toUpperCase();
   if (/^[A-Z]$/.test(value)) return "taxi";
-  if (RUNWAY_LABELS.has(value)) return "runway";
+  if (MDPC_RUNWAY_LABELS.has(value)) return "runway";
   return "gate";
+}
+
+function lemhLabelKind(text: SVGTextElement): LabelKind {
+  const explicit = text.dataset.pf24MapLabelKind;
+  if (explicit === "taxi" || explicit === "gate" || explicit === "runway") return explicit;
+  const value = (text.textContent ?? "").trim().toUpperCase();
+  return LEMH_RUNWAY_LABELS.has(value) ? "runway" : "taxi";
 }
 
 function readStoredFilters(): StoredFilters {
@@ -39,6 +53,24 @@ function filterVisibility(radar: HTMLElement | null) {
   };
 }
 
+function applyVisibility(text: SVGTextElement, kind: LabelKind, taxiVisible: boolean, gatesVisible: boolean) {
+  text.dataset.pf24MapLabelKind = kind;
+
+  const visible = kind === "taxi"
+    ? taxiVisible
+    : kind === "gate"
+      ? gatesVisible
+      : true;
+
+  if (visible) {
+    text.style.removeProperty("display");
+    text.style.removeProperty("visibility");
+  } else {
+    text.style.setProperty("display", "none", "important");
+    text.style.setProperty("visibility", "hidden", "important");
+  }
+}
+
 export default function ScopeMdpcMapFilterFix() {
   useEffect(() => {
     let frame = 0;
@@ -48,26 +80,21 @@ export default function ScopeMdpcMapFilterFix() {
       const radar = document.querySelector<HTMLElement>("main.fixed > section");
       const { taxiVisible, gatesVisible } = filterVisibility(radar);
       const root: ParentNode = radar ?? document;
-      const groups = Array.from(root.querySelectorAll<SVGGElement>(MDPC_LABEL_GROUP));
 
-      for (const group of groups) {
+      // MDPC is rendered in two places: the original vector-map copy and the
+      // low airport layer used for the final stacking order. The latter is the
+      // visible one, so both groups must always receive the same filter state.
+      for (const group of Array.from(root.querySelectorAll<SVGGElement>(MDPC_LABEL_GROUPS))) {
         for (const text of Array.from(group.querySelectorAll<SVGTextElement>("text"))) {
-          const kind = labelKind(text.textContent ?? "");
-          text.dataset.pf24MapLabelKind = kind;
+          applyVisibility(text, mdpcLabelKind(text.textContent ?? ""), taxiVisible, gatesVisible);
+        }
+      }
 
-          const visible = kind === "taxi"
-            ? taxiVisible
-            : kind === "gate"
-              ? gatesVisible
-              : true;
-
-          if (visible) {
-            text.style.removeProperty("display");
-            text.style.removeProperty("visibility");
-          } else {
-            text.style.setProperty("display", "none", "important");
-            text.style.setProperty("visibility", "hidden", "important");
-          }
+      // LEMH labels are rendered outside the SVG to stay upright. Apply the
+      // same filter state directly so Taxi Ways Letters reliably hides them.
+      for (const group of Array.from(root.querySelectorAll<SVGGElement>(LEMH_LABEL_GROUP))) {
+        for (const text of Array.from(group.querySelectorAll<SVGTextElement>("text"))) {
+          applyVisibility(text, lemhLabelKind(text), taxiVisible, gatesVisible);
         }
       }
     };
@@ -77,9 +104,6 @@ export default function ScopeMdpcMapFilterFix() {
       frame = window.requestAnimationFrame(sync);
     };
 
-    // Observe the whole Scope lifecycle. MDPC labels are mounted only after the
-    // radar/map portals and can be recreated when zooming, so a one-shot lookup is
-    // not reliable.
     const observer = new MutationObserver(queueSync);
     observer.observe(document.documentElement, {
       childList: true,
@@ -105,7 +129,8 @@ export default function ScopeMdpcMapFilterFix() {
       window.clearInterval(timer);
       if (frame) window.cancelAnimationFrame(frame);
 
-      for (const text of Array.from(document.querySelectorAll<SVGTextElement>(`${MDPC_LABEL_GROUP} text`))) {
+      const selectors = `${MDPC_LABEL_GROUPS} text, ${LEMH_LABEL_GROUP} text`;
+      for (const text of Array.from(document.querySelectorAll<SVGTextElement>(selectors))) {
         text.style.removeProperty("display");
         text.style.removeProperty("visibility");
       }
