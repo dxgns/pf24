@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getGameCallsignFromNotes, normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
+import { getGameCallsignFromNotes, getPilotTransponderFromNotes, normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
 import { supabase } from "@/lib/supabase";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
@@ -100,7 +100,11 @@ export default function ScopeTrafficOwnershipVisuals({ initialPlans }: Props) {
   const plannedMeta = useMemo(() => {
     const map = new Map<string, PlannedMeta>();
     for (const plan of plans) {
-      const meta = { owner: normalizeOwner(plan.assumed_by), transponder: normalizeTransponder(plan.transponder) };
+      const pilotTransponder = getPilotTransponderFromNotes(plan.notes);
+      const meta = {
+        owner: normalizeOwner(plan.assumed_by),
+        transponder: normalizeTransponder(pilotTransponder || plan.transponder),
+      };
       for (const key of planKeys(plan)) map.set(key, meta);
     }
     return map;
