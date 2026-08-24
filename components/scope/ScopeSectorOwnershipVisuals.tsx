@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getGameCallsignFromNotes, normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
+import { normalizeAirlineCallsign } from "@/lib/scope/airlines";
 import { supabase } from "@/lib/supabase";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
@@ -25,6 +26,24 @@ function normalizeOwner(value: string | null | undefined) {
   return value?.trim().toUpperCase() || null;
 }
 
+function flightSuffix(value: string | null | undefined) {
+  const compact = norm(String(value ?? ""));
+  return compact.match(/(\d{1,4}[A-Z]?)$/)?.[1] ?? "";
+}
+
+function callsignVariants(value: string | null | undefined) {
+  const raw = String(value ?? "");
+  const variants = new Set<string>();
+  const basic = norm(raw);
+  const airline = norm(normalizeAirlineCallsign(raw));
+  if (basic) variants.add(basic);
+  if (airline) variants.add(airline);
+
+  const lanChile = basic.match(/^LAN(?:CHILE|CHILEAIRLINES)(\d{1,4}[A-Z]?)$/);
+  if (lanChile) variants.add(`LAN${lanChile[1]}`);
+  return Array.from(variants);
+}
+
 function readPosition() {
   try {
     const parsed = JSON.parse(sessionStorage.getItem(CONNECTION_STORAGE_KEY) ?? "null") as StoredConnection | null;
@@ -36,11 +55,19 @@ function readPosition() {
 
 function planKeys(plan: ScopeFlightPlan) {
   const keys = new Set<string>();
-  const displayed = norm(plan.callsign);
-  const game = norm(getGameCallsignFromNotes(plan.notes));
-  if (displayed) keys.add(displayed);
-  if (game) keys.add(game);
+  for (const value of [plan.callsign, getGameCallsignFromNotes(plan.notes)]) {
+    for (const key of callsignVariants(value)) keys.add(key);
+  }
   return keys;
+}
+
+function planSuffixes(plan: ScopeFlightPlan) {
+  const suffixes = new Set<string>();
+  for (const value of [plan.callsign, getGameCallsignFromNotes(plan.notes)]) {
+    const suffix = flightSuffix(value);
+    if (suffix) suffixes.add(suffix);
+  }
+  return suffixes;
 }
 
 function rowCallsign(wrapper: HTMLElement) {
@@ -59,13 +86,23 @@ function mutationTouchesSectorList(mutations: MutationRecord[]) {
   });
 }
 
-function unplannedOwnerForPlan(plan: ScopeFlightPlan, owners: UnplannedOwners) {
-  const matches = new Set<string>();
+function ownerFromMapForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>) {
+  const exactOwners = new Set<string>();
   for (const key of planKeys(plan)) {
     const owner = normalizeOwner(owners[key]);
-    if (owner) matches.add(owner);
+    if (owner) exactOwners.add(owner);
   }
-  return matches.size === 1 ? Array.from(matches)[0] : null;
+  if (exactOwners.size === 1) return Array.from(exactOwners)[0];
+  if (exactOwners.size > 1) return null;
+
+  const suffixes = planSuffixes(plan);
+  if (suffixes.size === 0) return null;
+  const matchingKeys = Object.keys(owners).filter((key) => {
+    const suffix = flightSuffix(key);
+    return Boolean(suffix && suffixes.has(suffix) && normalizeOwner(owners[key]));
+  });
+  if (matchingKeys.length !== 1) return null;
+  return normalizeOwner(owners[matchingKeys[0]]);
 }
 
 export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
@@ -96,8 +133,16 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
   }, []);
 
   const effectiveOwner = useCallback((plan: ScopeFlightPlan) => {
-    return normalizeOwner(plan.assumed_by) ?? unplannedOwnerForPlan(plan, unplannedOwners);
+    return normalizeOwner(plan.assumed_by) ?? ownerFromMapForPlan(plan, unplannedOwners);
   }, [unplannedOwners]);
+
+  const optimisticOwnerForPlan = useCallback((plan: ScopeFlightPlan, now: number) => {
+    const active: Record<string, string | null | undefined> = {};
+    for (const [key, value] of Object.entries(optimisticOwners)) {
+      if (value.expiresAt > now) active[key] = value.owner;
+    }
+    return ownerFromMapForPlan(plan, active);
+  }, [optimisticOwners]);
 
   const sync = useCallback(() => {
     const list = document.querySelector<HTMLElement>(LIST_SELECTOR);
@@ -114,14 +159,12 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
       const plan = planByKey.get(key);
       if (!plan) continue;
 
-      const optimistic = optimisticOwners[key];
-      const owner = optimistic && optimistic.expiresAt > now
-        ? optimistic.owner
-        : effectiveOwner(plan);
+      const optimisticOwner = optimisticOwnerForPlan(plan, now);
+      const owner = optimisticOwner ?? effectiveOwner(plan);
       const state = position && owner === position ? "mine" : owner ? "other" : "free";
       wrapper.dataset.pf24SectorOwnership = state;
     }
-  }, [effectiveOwner, optimisticOwners, planByKey, position]);
+  }, [effectiveOwner, optimisticOwnerForPlan, planByKey, position]);
 
   useEffect(() => {
     setPosition(readPosition());
@@ -179,20 +222,18 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
       const next = { ...current };
       let changed = false;
       for (const [key, optimistic] of Object.entries(current)) {
-        const plan = planByKey.get(key);
-        const actual = plan ? effectiveOwner(plan) : null;
-        if (optimistic.expiresAt <= now || (plan && actual === optimistic.owner)) {
+        if (optimistic.expiresAt <= now) {
           delete next[key];
           changed = true;
         }
       }
       return changed ? next : current;
     });
-  }, [effectiveOwner, planByKey]);
+  }, [plans, unplannedOwners]);
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-sector-ownership-visuals-v3")
+      .channel("scope-sector-ownership-visuals-v4")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -200,7 +241,7 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
 
   useEffect(() => {
     const style = document.createElement("style");
-    style.dataset.pf24SectorOwnershipVisuals = "v3";
+    style.dataset.pf24SectorOwnershipVisuals = "v4";
     style.textContent = `
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child span,
