@@ -10,9 +10,10 @@ export type FlightPlanExtraFields = {
 type HiddenFlightPlanMetadata = FlightPlanExtraFields & {
   gameCallsign: string;
   transponderMode: FlightPlanTransponderMode | "";
+  pilotTransponder: string;
 };
 
-const KNOWN_METADATA_PATTERN = /\[\[PF24_(?:GAME_CALLSIGN|XPDR_MODE|ALTERNATE|CRUISE_SPEED|FUEL_DURATION|REGISTRATION):[^\]\r\n]*\]\]\s*/gi;
+const KNOWN_METADATA_PATTERN = /\[\[PF24_(?:GAME_CALLSIGN|XPDR_MODE|PILOT_XPDR|ALTERNATE|CRUISE_SPEED|FUEL_DURATION|REGISTRATION):[^\]\r\n]*\]\]\s*/gi;
 
 function readMarker(notes: string | null | undefined, key: string) {
   const pattern = new RegExp(`\\[\\[PF24_${key}:([^\\]\\r\\n]*)\\]\\]`, "i");
@@ -50,6 +51,10 @@ export function normalizeAircraftRegistration(value: string) {
     .slice(0, 10);
 }
 
+export function normalizePilotTransponder(value: string) {
+  return value.replace(/[^0-7]/g, "").slice(0, 4);
+}
+
 function readMetadata(notes: string | null | undefined): HiddenFlightPlanMetadata {
   const rawMode = readMarker(notes, "XPDR_MODE").toUpperCase();
   const transponderMode: FlightPlanTransponderMode | "" =
@@ -60,6 +65,7 @@ function readMetadata(notes: string | null | undefined): HiddenFlightPlanMetadat
   return {
     gameCallsign: normalizeGameCallsign(readMarker(notes, "GAME_CALLSIGN")),
     transponderMode,
+    pilotTransponder: normalizePilotTransponder(readMarker(notes, "PILOT_XPDR")),
     alternate: normalizeAirportIcao(readMarker(notes, "ALTERNATE")),
     cruiseSpeed: normalizeCruiseSpeed(readMarker(notes, "CRUISE_SPEED")),
     fuelDuration: normalizeFuelDuration(readMarker(notes, "FUEL_DURATION")),
@@ -71,6 +77,7 @@ function buildNotes(metadata: HiddenFlightPlanMetadata, visibleNotes: string) {
   const markers: string[] = [];
   if (metadata.gameCallsign) markers.push(`[[PF24_GAME_CALLSIGN:${metadata.gameCallsign}]]`);
   if (metadata.transponderMode) markers.push(`[[PF24_XPDR_MODE:${metadata.transponderMode}]]`);
+  if (metadata.pilotTransponder) markers.push(`[[PF24_PILOT_XPDR:${metadata.pilotTransponder}]]`);
   if (metadata.alternate) markers.push(`[[PF24_ALTERNATE:${metadata.alternate}]]`);
   if (metadata.cruiseSpeed) markers.push(`[[PF24_CRUISE_SPEED:${metadata.cruiseSpeed}]]`);
   if (metadata.fuelDuration) markers.push(`[[PF24_FUEL_DURATION:${metadata.fuelDuration}]]`);
@@ -88,6 +95,10 @@ export function getTransponderModeFromNotes(
   notes: string | null | undefined,
 ): FlightPlanTransponderMode {
   return readMetadata(notes).transponderMode || "STBY";
+}
+
+export function getPilotTransponderFromNotes(notes: string | null | undefined) {
+  return readMetadata(notes).pilotTransponder;
 }
 
 export function getFlightPlanExtraFieldsFromNotes(
@@ -118,6 +129,10 @@ export function setFlightPlanMetadataInNotes(
       patch.gameCallsign === undefined
         ? current.gameCallsign
         : normalizeGameCallsign(patch.gameCallsign),
+    pilotTransponder:
+      patch.pilotTransponder === undefined
+        ? current.pilotTransponder
+        : normalizePilotTransponder(patch.pilotTransponder),
     alternate:
       patch.alternate === undefined
         ? current.alternate
@@ -151,6 +166,21 @@ export function setTransponderModeInNotes(
   transponderMode: FlightPlanTransponderMode,
 ) {
   return setFlightPlanMetadataInNotes(notes, { transponderMode });
+}
+
+export function setPilotTransponderInNotes(
+  notes: string | null | undefined,
+  pilotTransponder: string,
+) {
+  return setFlightPlanMetadataInNotes(notes, { pilotTransponder });
+}
+
+export function setPilotTransponderStateInNotes(
+  notes: string | null | undefined,
+  pilotTransponder: string,
+  transponderMode: FlightPlanTransponderMode,
+) {
+  return setFlightPlanMetadataInNotes(notes, { pilotTransponder, transponderMode });
 }
 
 export function setFlightPlanExtraFieldsInNotes(
