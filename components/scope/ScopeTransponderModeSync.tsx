@@ -26,6 +26,11 @@ function norm(value: string | null | undefined) {
   return normalizeGameCallsign(String(value ?? ""));
 }
 
+function flightSuffix(value: string | null | undefined) {
+  const compact = norm(value);
+  return compact.match(/(\d{1,4}[A-Z]?)$/)?.[1] ?? "";
+}
+
 function callsignVariants(value: string | null | undefined) {
   const raw = String(value ?? "");
   const variants = new Set<string>();
@@ -33,15 +38,38 @@ function callsignVariants(value: string | null | undefined) {
   const airline = norm(normalizeAirlineCallsign(raw));
   if (basic) variants.add(basic);
   if (airline) variants.add(airline);
+
+  // Project Flight can expose airline names inside the live callsign while the
+  // filed PF24 plan uses the ICAO airline prefix (for example LANCHILE1900 vs
+  // LAN1900). Keep an explicit LAN Chile bridge and also expose the flight
+  // number as a secondary key. The number fallback is only used when it is
+  // unique among active plans, so two airlines using the same flight number do
+  // not get cross-linked.
+  const lanChile = basic.match(/^LAN(?:CHILE|CHILEAIRLINES)(\d{1,4}[A-Z]?)$/);
+  if (lanChile) variants.add(`LAN${lanChile[1]}`);
+
+  const suffix = flightSuffix(basic);
+  if (suffix) variants.add(`#${suffix}`);
   return Array.from(variants);
 }
 
 function planKeys(plan: ScopeFlightPlan) {
   const keys = new Set<string>();
   for (const value of [plan.callsign, getGameCallsignFromNotes(plan.notes)]) {
-    for (const key of callsignVariants(value)) keys.add(key);
+    for (const key of callsignVariants(value)) {
+      if (!key.startsWith("#")) keys.add(key);
+    }
   }
   return Array.from(keys);
+}
+
+function planFlightSuffixes(plan: ScopeFlightPlan) {
+  const suffixes = new Set<string>();
+  for (const value of [plan.callsign, getGameCallsignFromNotes(plan.notes)]) {
+    const suffix = flightSuffix(value);
+    if (suffix) suffixes.add(suffix);
+  }
+  return Array.from(suffixes);
 }
 
 function normalizeTransponder(value: string | null | undefined) {
@@ -69,7 +97,7 @@ function transponderNode(label: HTMLElement) {
 }
 
 function altitudeNode(label: HTMLElement) {
-  const candidates = Array.from(label.querySelectorAll<HTMLElement>("span"));
+  const candidates = Array.from(label.querySelectorAll<HTMLElement>>("span"));
   return candidates.find((node) => {
     const text = node.textContent?.trim() ?? "";
     if (!/^\d{3}[↑↓]?$/.test(text)) return false;
@@ -95,6 +123,8 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
 
   const stateByCallsign = useMemo(() => {
     const map = new Map<string, PlanTransponderState>();
+    const suffixOwners = new Map<string, PlanTransponderState | null>();
+
     for (const plan of plans) {
       if (plan.status === "FINISHED") continue;
       const state: PlanTransponderState = {
@@ -102,7 +132,17 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
         transponder: normalizeTransponder(plan.transponder),
       };
       for (const key of planKeys(plan)) map.set(key, state);
+
+      for (const suffix of planFlightSuffixes(plan)) {
+        if (!suffixOwners.has(suffix)) suffixOwners.set(suffix, state);
+        else suffixOwners.set(suffix, null);
+      }
     }
+
+    for (const [suffix, state] of suffixOwners) {
+      if (state) map.set(`#${suffix}`, state);
+    }
+
     return map;
   }, [plans]);
 
@@ -236,7 +276,7 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
     const poll = window.setInterval(() => void loadPlans(), 1000);
 
     const channel = supabase
-      .channel("scope-transponder-mode-sync-v2")
+      .channel("scope-transponder-mode-sync-v3")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "flight_plans" },
