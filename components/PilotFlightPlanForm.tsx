@@ -166,23 +166,18 @@ export default function PilotFlightPlanForm() {
           ))}
         </select>
 
-        <div>
-          <select
-            name="alternate"
-            className="input-control w-full rounded-xl p-3"
-            required
-          >
-            <option value="">Alternativo</option>
-            {AIRPORTS.map((airport) => (
-              <option key={airport} value={airport}>
-                {airport}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-slate-500">
-            Aeropuerto alternativo en formato ICAO, usando la misma lista de salida y llegada.
-          </p>
-        </div>
+        <select
+          name="alternate"
+          className="input-control rounded-xl p-3"
+          required
+        >
+          <option value="">Alternativo</option>
+          {AIRPORTS.map((airport) => (
+            <option key={airport} value={airport}>
+              {airport}
+            </option>
+          ))}
+        </select>
 
         <div>
           <input
@@ -202,33 +197,27 @@ export default function PilotFlightPlanForm() {
           </p>
         </div>
 
-        <div>
-          <input
-            name="fuelDuration"
-            placeholder="Duración combustible (99.99) · opcional"
-            inputMode="numeric"
-            maxLength={5}
-            pattern="[0-9]{2}\.[0-9]{2}"
-            onChange={(e) => {
-              e.target.value = formatFuelDuration(e.target.value);
-            }}
-            className="input-control w-full rounded-xl p-3"
-          />
-          <p className="mt-1 text-xs text-slate-500">Formato 99.99.</p>
-        </div>
+        <input
+          name="fuelDuration"
+          placeholder="Duración combustible · opcional"
+          inputMode="numeric"
+          maxLength={5}
+          pattern="[0-9]{2}\.[0-9]{2}"
+          onChange={(e) => {
+            e.target.value = formatFuelDuration(e.target.value);
+          }}
+          className="input-control rounded-xl p-3"
+        />
 
-        <div>
-          <input
-            name="registration"
-            placeholder="Matrícula de aeronave · opcional"
-            maxLength={10}
-            onChange={(e) => {
-              e.target.value = normalizeAircraftRegistration(e.target.value);
-            }}
-            className="input-control w-full rounded-xl p-3"
-          />
-          <p className="mt-1 text-xs text-slate-500">Máximo 10 caracteres.</p>
-        </div>
+        <input
+          name="registration"
+          placeholder="Matrícula de aeronave · opcional"
+          maxLength={10}
+          onChange={(e) => {
+            e.target.value = normalizeAircraftRegistration(e.target.value);
+          }}
+          className="input-control rounded-xl p-3"
+        />
 
         <input
           name="route"
