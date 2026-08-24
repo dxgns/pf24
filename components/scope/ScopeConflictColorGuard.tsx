@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { scopeClientPointToLocal } from "@/lib/scope/domCoordinates";
 
 const ORANGE = "#fd5f10";
 const SELECTOR = "[data-pf24-conflict-callsign='true']";
@@ -165,21 +166,21 @@ export default function ScopeConflictColorGuard() {
       if (!(header instanceof HTMLElement) || !header.contains(target)) return;
       if (target?.closest("button")) return;
 
-      const rect = win.getBoundingClientRect();
+      const cursor = scopeClientPointToLocal(radar, event.clientX, event.clientY);
       drag = {
         element: win,
-        dx: event.clientX - rect.left,
-        dy: event.clientY - rect.top,
+        dx: cursor.x - win.offsetLeft,
+        dy: cursor.y - win.offsetTop,
       };
       event.preventDefault();
     };
 
     const onMouseMove = (event: MouseEvent) => {
       if (!drag || !(event.buttons & 1)) return;
-      const radarRect = radar.getBoundingClientRect();
+      const cursor = scopeClientPointToLocal(radar, event.clientX, event.clientY);
       const next = clampPosition(drag.element, {
-        x: event.clientX - radarRect.left - drag.dx,
-        y: event.clientY - radarRect.top - drag.dy,
+        x: cursor.x - drag.dx,
+        y: cursor.y - drag.dy,
       });
       position = next;
       drag.element.style.left = `${next.x}px`;
@@ -193,6 +194,8 @@ export default function ScopeConflictColorGuard() {
 
     const observer = new MutationObserver(queueApply);
     observer.observe(radar, { childList: true, subtree: true });
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(queueApply) : null;
+    resizeObserver?.observe(radar);
     radar.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
@@ -201,6 +204,7 @@ export default function ScopeConflictColorGuard() {
 
     return () => {
       observer.disconnect();
+      resizeObserver?.disconnect();
       radar.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
