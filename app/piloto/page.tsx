@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import PilotFlightPlanForm from "@/components/PilotFlightPlanForm";
 import PilotFlightPlans from "@/components/PilotFlightPlans";
+import PilotFlightPlanReadOnlyGuard from "@/components/PilotFlightPlanReadOnlyGuard";
 import OnlineATCPanel from "@/components/OnlineATCPanel";
 import UtcClock from "@/components/UtcClock";
 import ContactMeReceiver from "@/components/ContactMeReceiver";
@@ -101,6 +102,7 @@ export default async function PilotPage() {
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-24 text-white">
       <section className="section-container max-w-6xl">
         <ContactMeReceiver pilotId={pilotId} />
+        <PilotFlightPlanReadOnlyGuard />
 
         <div className="panel rounded-3xl p-8">
           <div className="mb-6 flex items-center justify-between">
@@ -121,7 +123,7 @@ export default async function PilotPage() {
           </h1>
 
           <p className="mt-4 max-w-3xl text-slate-300">
-            Crea y gestiona tu plan de vuelo. Los cambios realizados por ATC se
+            Crea tu plan de vuelo. Los cambios realizados por ATC se
             sincronizan en tiempo real.
           </p>
         </div>
