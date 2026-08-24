@@ -3,6 +3,10 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { scopeDistanceNmFromScreenDelta } from "@/lib/scope/distanceScale";
+import {
+  scopeElementLocalSize,
+  scopeRectCenterToLocal,
+} from "@/lib/scope/domCoordinates";
 
 type Point = { x: number; y: number };
 type Measurement = { id: number; first: string; second: string };
@@ -43,11 +47,9 @@ function trafficCenter(callsign: string): Point | null {
   const target = hits.find((item) => (item.getAttribute("aria-label") ?? "").trim() === `Seleccionar ${callsign}`)
     ?? hits.find((item) => (item.getAttribute("aria-label") ?? "").endsWith(callsign));
   if (!target) return null;
-  const rect = target.getBoundingClientRect();
   const radar = document.querySelector<HTMLElement>("main.fixed > section");
   if (!radar) return null;
-  const radarRect = radar.getBoundingClientRect();
-  return { x: rect.left + rect.width / 2 - radarRect.left, y: rect.top + rect.height / 2 - radarRect.top };
+  return scopeRectCenterToLocal(radar, target.getBoundingClientRect());
 }
 
 function radarZoom() {
@@ -256,8 +258,8 @@ export default function ScopeFunctionalExtras() {
     void renderTick;
     const zoom = Math.max(0.01, radarZoom());
     const radar = radarHost ?? document.querySelector<HTMLElement>("main.fixed > section");
-    const radarRect = radar?.getBoundingClientRect();
-    if (!radarRect || radarRect.width <= 0 || radarRect.height <= 0) return [];
+    if (!radar) return [];
+    const size = scopeElementLocalSize(radar);
 
     return measurements.flatMap((measurement) => {
       const a = trafficCenter(measurement.first);
@@ -266,8 +268,8 @@ export default function ScopeFunctionalExtras() {
       const distanceNm = scopeDistanceNmFromScreenDelta(
         b.x - a.x,
         b.y - a.y,
-        radarRect.width,
-        radarRect.height,
+        size.x,
+        size.y,
         zoom,
       );
       return [{ ...measurement, a, b, distanceNm }];
