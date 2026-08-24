@@ -10,13 +10,12 @@ type StoredConnection = { callsign?: string };
 type Props = { initialPlans: ScopeFlightPlan[] };
 type OwnershipHintDetail = { key?: string; owner?: string | null };
 type OptimisticOwner = { owner: string | null; expiresAt: number };
-type UnplannedOwners = Record<string, string>;
 type OwnerMatch = { matched: boolean; owner: string | null };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const LIST_SELECTOR = "[data-pf24-live-sector-list='true']";
-const OWNERS_EVENT = "pf24-unplanned-ownership-sync";
-const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
+const OWNERSHIP_HINT_EVENT = "pf24-traffic-ownership-hint";
+const OWNERSHIP_EVENT = "pf24-traffic-ownership-change";
 const OPTIMISTIC_TTL_MS = 5000;
 
 const FIR_AIRPORTS: Record<string, string[]> = {
@@ -29,8 +28,8 @@ const FIR_AIRPORTS: Record<string, string[]> = {
   MTCA: ["MTCA"],
 };
 
-function norm(value: string) {
-  return normalizeGameCallsign(value);
+function norm(value: string | null | undefined) {
+  return normalizeGameCallsign(String(value ?? ""));
 }
 
 function normalizeOwner(value: string | null | undefined) {
@@ -38,8 +37,7 @@ function normalizeOwner(value: string | null | undefined) {
 }
 
 function flightSuffix(value: string | null | undefined) {
-  const compact = norm(String(value ?? ""));
-  return compact.match(/(\d{1,4}[A-Z]?)$/)?.[1] ?? "";
+  return norm(value).match(/(\d{1,4}[A-Z]?)$/)?.[1] ?? "";
 }
 
 function callsignVariants(value: string | null | undefined) {
@@ -72,30 +70,22 @@ function planSuffixes(plan: ScopeFlightPlan) {
 }
 
 function ownerMatchForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>): OwnerMatch {
-  const exactValues: Array<string | null> = [];
+  const exact: Array<string | null> = [];
   for (const key of planKeys(plan)) {
-    if (!Object.prototype.hasOwnProperty.call(owners, key)) continue;
-    exactValues.push(normalizeOwner(owners[key]));
+    if (Object.prototype.hasOwnProperty.call(owners, key)) exact.push(normalizeOwner(owners[key]));
   }
-  if (exactValues.length > 0) {
-    const unique = new Set(exactValues.map((owner) => owner ?? "__FREE__"));
-    if (unique.size === 1) return { matched: true, owner: exactValues[0] };
-    return { matched: false, owner: null };
+  if (exact.length > 0) {
+    const unique = new Set(exact.map((owner) => owner ?? "__FREE__"));
+    return unique.size === 1 ? { matched: true, owner: exact[0] } : { matched: false, owner: null };
   }
 
   const suffixes = planSuffixes(plan);
-  if (suffixes.size === 0) return { matched: false, owner: null };
   const matches = Object.keys(owners).filter((key) => {
     const suffix = flightSuffix(key);
     return Boolean(suffix && suffixes.has(suffix));
   });
   if (matches.length !== 1) return { matched: false, owner: null };
   return { matched: true, owner: normalizeOwner(owners[matches[0]]) };
-}
-
-function ownerFromMapForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>) {
-  const match = ownerMatchForPlan(plan, owners);
-  return match.matched ? match.owner : null;
 }
 
 function readPosition() {
@@ -117,7 +107,6 @@ function positionFir(position: string) {
   if (isApproach) {
     return Object.entries(FIR_AIRPORTS).find(([, airports]) => airports.includes(airport))?.[0] ?? null;
   }
-
   return Object.keys(FIR_AIRPORTS).find((fir) => upper.startsWith(fir)) ?? null;
 }
 
@@ -143,13 +132,10 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
   const [optimisticOwners, setOptimisticOwners] = useState<Record<string, OptimisticOwner>>({});
-  const [unplannedOwners, setUnplannedOwners] = useState<UnplannedOwners>({});
 
   const plansByCallsign = useMemo(() => {
     const map = new Map<string, ScopeFlightPlan>();
-    for (const plan of plans) {
-      for (const key of planKeys(plan)) map.set(key, plan);
-    }
+    for (const plan of plans) for (const key of planKeys(plan)) map.set(key, plan);
     return map;
   }, [plans]);
 
@@ -168,13 +154,8 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
       if (value.expiresAt > now) activeOptimistic[key] = value.owner;
     }
     const optimistic = ownerMatchForPlan(plan, activeOptimistic);
-    if (optimistic.matched) return optimistic.owner;
-
-    const persisted = normalizeOwner(plan.assumed_by);
-    if (persisted) return persisted;
-
-    return ownerFromMapForPlan(plan, unplannedOwners);
-  }, [optimisticOwners, unplannedOwners]);
+    return optimistic.matched ? optimistic.owner : normalizeOwner(plan.assumed_by);
+  }, [optimisticOwners]);
 
   const applyRules = useCallback(() => {
     const list = document.querySelector<HTMLElement>(LIST_SELECTOR);
@@ -184,14 +165,13 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
 
     for (const row of rows) {
       const key = norm(rowCallsign(row));
-      const plan = plansByCallsign.get(key);
+      const plan = key ? plansByCallsign.get(key) : undefined;
       const visible = Boolean(plan && visibleToPosition(plan, position));
       row.style.display = visible ? "" : "none";
       if (!plan || !visible) continue;
 
       const owner = effectiveOwner(plan, now);
       const mine = Boolean(position && owner === position);
-
       row.dataset.pf24Editable = mine ? "true" : "false";
       row.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
         button.disabled = !mine;
@@ -216,20 +196,8 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
       if (!key) return;
       setOptimisticOwners((current) => ({
         ...current,
-        [key]: {
-          owner: normalizeOwner(detail?.owner),
-          expiresAt: Date.now() + OPTIMISTIC_TTL_MS,
-        },
+        [key]: { owner: normalizeOwner(detail?.owner), expiresAt: Date.now() + OPTIMISTIC_TTL_MS },
       }));
-    };
-
-    const onUnplannedOwners = (event: Event) => {
-      const owners = (event as CustomEvent<{ owners?: UnplannedOwners }>).detail?.owners ?? {};
-      setUnplannedOwners(Object.fromEntries(
-        Object.entries(owners)
-          .map(([key, owner]) => [norm(key), normalizeOwner(owner) ?? ""] as const)
-          .filter(([key, owner]) => Boolean(key && owner)),
-      ));
     };
 
     const onOwnershipChange = () => {
@@ -238,36 +206,29 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
     };
 
     window.addEventListener("pf24-scope-connection-change", onConnection);
-    window.addEventListener("pf24-traffic-ownership-hint", onHint);
-    window.addEventListener("pf24-traffic-ownership-change", onOwnershipChange);
-    window.addEventListener(OWNERS_EVENT, onUnplannedOwners);
-    window.dispatchEvent(new Event(OWNERS_REQUEST_EVENT));
+    window.addEventListener(OWNERSHIP_HINT_EVENT, onHint);
+    window.addEventListener(OWNERSHIP_EVENT, onOwnershipChange);
     return () => {
       window.removeEventListener("pf24-scope-connection-change", onConnection);
-      window.removeEventListener("pf24-traffic-ownership-hint", onHint);
-      window.removeEventListener("pf24-traffic-ownership-change", onOwnershipChange);
-      window.removeEventListener(OWNERS_EVENT, onUnplannedOwners);
+      window.removeEventListener(OWNERSHIP_HINT_EVENT, onHint);
+      window.removeEventListener(OWNERSHIP_EVENT, onOwnershipChange);
     };
   }, [loadPlans]);
 
   useEffect(() => {
-    setOptimisticOwners((current) => {
-      const now = Date.now();
-      const next = { ...current };
-      let changed = false;
-      for (const [key, optimistic] of Object.entries(current)) {
-        if (optimistic.expiresAt <= now) {
-          delete next[key];
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-  }, [plans, unplannedOwners]);
+    const cleanup = window.setInterval(() => {
+      setOptimisticOwners((current) => {
+        const now = Date.now();
+        const next = Object.fromEntries(Object.entries(current).filter(([, value]) => value.expiresAt > now));
+        return Object.keys(next).length === Object.keys(current).length ? current : next;
+      });
+    }, 500);
+    return () => window.clearInterval(cleanup);
+  }, []);
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-sector-list-rules-v4")
+      .channel("scope-sector-list-rules-v5")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
