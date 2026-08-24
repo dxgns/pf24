@@ -9,21 +9,20 @@ import type { ScopeFlightPlan } from "@/lib/scope/types";
 type Props = { initialPlans: ScopeFlightPlan[] };
 type StoredConnection = { callsign?: string };
 type ClaimTimes = Record<string, number>;
-type Owners = Record<string, string>;
-type OwnershipHintDetail = { key?: string; owner?: string | null; previousOwner?: string | null };
-type RecentOwner = { owner: string; expiresAt: number };
+type OwnershipHintDetail = {
+  key?: string;
+  owner?: string | null;
+  previousOwner?: string | null;
+};
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const CLAIMS_STORAGE_KEY = "pf24_scope_unplanned_claims_v4";
-const OWNERS_EVENT = "pf24-unplanned-ownership-sync";
-const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
 const OWNERSHIP_HINT_EVENT = "pf24-traffic-ownership-hint";
 const OWNERSHIP_EVENT = "pf24-traffic-ownership-change";
-const OWNER_GRACE_MS = 5000;
-const RELEASE_GUARD_MS = 12_000;
+const CLAIM_PROMOTION_MAX_AGE_MS = 10 * 60 * 1000;
 
-function norm(value: string) {
-  return normalizeGameCallsign(value);
+function norm(value: string | null | undefined) {
+  return normalizeGameCallsign(String(value ?? ""));
 }
 
 function normalizeOwner(value: string | null | undefined) {
@@ -31,8 +30,7 @@ function normalizeOwner(value: string | null | undefined) {
 }
 
 function flightSuffix(value: string | null | undefined) {
-  const compact = norm(String(value ?? ""));
-  return compact.match(/(\d{1,4}[A-Z]?)$/)?.[1] ?? "";
+  return norm(value).match(/(\d{1,4}[A-Z]?)$/)?.[1] ?? "";
 }
 
 function callsignVariants(value: string | null | undefined) {
@@ -43,32 +41,11 @@ function callsignVariants(value: string | null | undefined) {
   if (basic) variants.add(basic);
   if (airline) variants.add(airline);
 
+  // Project Flight sometimes exposes the airline name instead of the ICAO
+  // prefix (for example LANCHILE1900 while the filed plan is LAN1900).
   const lanChile = basic.match(/^LAN(?:CHILE|CHILEAIRLINES)(\d{1,4}[A-Z]?)$/);
   if (lanChile) variants.add(`LAN${lanChile[1]}`);
   return Array.from(variants);
-}
-
-function readPosition() {
-  try {
-    const value = JSON.parse(sessionStorage.getItem(CONNECTION_STORAGE_KEY) ?? "null") as StoredConnection | null;
-    return value?.callsign?.trim().toUpperCase() ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function readClaims(): ClaimTimes {
-  try {
-    const parsed = JSON.parse(sessionStorage.getItem(CLAIMS_STORAGE_KEY) ?? "{}") as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed as Record<string, unknown>)
-        .filter(([, value]) => Number.isFinite(Number(value)))
-        .map(([key, value]) => [norm(key), Number(value)]),
-    );
-  } catch {
-    return {};
-  }
 }
 
 function planKeys(plan: ScopeFlightPlan) {
@@ -88,15 +65,6 @@ function planSuffixes(plan: ScopeFlightPlan) {
   return suffixes;
 }
 
-function suffixMatches(plan: ScopeFlightPlan, candidateKeys: string[]) {
-  const suffixes = planSuffixes(plan);
-  if (suffixes.size === 0) return [];
-  return candidateKeys.filter((key) => {
-    const suffix = flightSuffix(key);
-    return Boolean(suffix && suffixes.has(suffix));
-  });
-}
-
 function planMatchesTrafficKey(plan: ScopeFlightPlan, rawKey: string) {
   const key = norm(rawKey);
   if (!key) return false;
@@ -105,161 +73,63 @@ function planMatchesTrafficKey(plan: ScopeFlightPlan, rawKey: string) {
   return Boolean(suffix && planSuffixes(plan).has(suffix));
 }
 
-function matchingPlans(plans: ScopeFlightPlan[], key: string) {
+function matchingPlans(plans: ScopeFlightPlan[], rawKey: string) {
+  const key = norm(rawKey);
+  if (!key) return [];
   const exact = plans.filter((plan) => planKeys(plan).includes(key));
-  return exact.length > 0 ? exact : plans.filter((plan) => planMatchesTrafficKey(plan, key));
+  if (exact.length > 0) return exact;
+  return plans.filter((plan) => planMatchesTrafficKey(plan, key));
 }
 
-function publishHint(keys: string[], owner: string) {
-  for (const key of keys) {
-    window.dispatchEvent(new CustomEvent(OWNERSHIP_HINT_EVENT, {
-      detail: { key, owner, previousOwner: owner },
-    }));
+function readPosition() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(CONNECTION_STORAGE_KEY) ?? "null") as StoredConnection | null;
+    return value?.callsign?.trim().toUpperCase() ?? "";
+  } catch {
+    return "";
   }
-  window.dispatchEvent(new Event(OWNERSHIP_EVENT));
+}
+
+function readClaims(): ClaimTimes {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(CLAIMS_STORAGE_KEY) ?? "{}") as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>)
+        .map(([key, value]) => [norm(key), Number(value)] as const)
+        .filter(([key, value]) => Boolean(key) && Number.isFinite(value)),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function hasRecentExplicitClaim(plan: ScopeFlightPlan) {
+  const claims = readClaims();
+  const now = Date.now();
+  const recent = Object.fromEntries(
+    Object.entries(claims).filter(([, claimedAt]) =>
+      Number.isFinite(claimedAt) && claimedAt <= now && now - claimedAt <= CLAIM_PROMOTION_MAX_AGE_MS,
+    ),
+  );
+
+  if (planKeys(plan).some((key) => Object.prototype.hasOwnProperty.call(recent, key))) return true;
+
+  const suffixes = planSuffixes(plan);
+  if (suffixes.size === 0) return false;
+  const suffixMatches = Object.keys(recent).filter((key) => {
+    const suffix = flightSuffix(key);
+    return Boolean(suffix && suffixes.has(suffix));
+  });
+
+  // The fallback is deliberately unique so two flights using the same number
+  // can never acquire ownership from one another.
+  return suffixMatches.length === 1;
 }
 
 export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
-  const migratingRef = useRef(new Set<string>());
   const assumingRef = useRef(new Set<string>());
   const releasingRef = useRef(new Set<string>());
-  const ownersRef = useRef<Owners>({});
-  const recentOwnersRef = useRef(new Map<string, RecentOwner>());
-  const releasedKeysRef = useRef(new Map<string, number>());
-  const releasedSuffixesRef = useRef(new Map<string, number>());
-
-  const pruneReleaseGuards = useCallback(() => {
-    const now = Date.now();
-    for (const [key, expiresAt] of releasedKeysRef.current) {
-      if (expiresAt <= now) releasedKeysRef.current.delete(key);
-    }
-    for (const [suffix, expiresAt] of releasedSuffixesRef.current) {
-      if (expiresAt <= now) releasedSuffixesRef.current.delete(suffix);
-    }
-  }, []);
-
-  const guardRelease = useCallback((key: string) => {
-    if (!key) return;
-    const expiresAt = Date.now() + RELEASE_GUARD_MS;
-    releasedKeysRef.current.set(key, expiresAt);
-    const suffix = flightSuffix(key);
-    if (suffix) releasedSuffixesRef.current.set(suffix, expiresAt);
-
-    recentOwnersRef.current.delete(key);
-    for (const recentKey of Array.from(recentOwnersRef.current.keys())) {
-      if (suffix && flightSuffix(recentKey) === suffix) recentOwnersRef.current.delete(recentKey);
-    }
-  }, []);
-
-  const clearReleaseGuard = useCallback((key: string) => {
-    if (!key) return;
-    releasedKeysRef.current.delete(key);
-    const suffix = flightSuffix(key);
-    if (suffix) releasedSuffixesRef.current.delete(suffix);
-  }, []);
-
-  const planIsReleaseGuarded = useCallback((plan: ScopeFlightPlan) => {
-    pruneReleaseGuards();
-    const now = Date.now();
-    if (planKeys(plan).some((key) => (releasedKeysRef.current.get(key) ?? 0) > now)) return true;
-    return Array.from(planSuffixes(plan)).some((suffix) => (releasedSuffixesRef.current.get(suffix) ?? 0) > now);
-  }, [pruneReleaseGuards]);
-
-  const rememberOwners = useCallback((owners: Owners) => {
-    const now = Date.now();
-    pruneReleaseGuards();
-    ownersRef.current = Object.fromEntries(
-      Object.entries(owners)
-        .map(([key, owner]) => [norm(key), normalizeOwner(owner)] as const)
-        .filter(([key, owner]) => Boolean(key && owner)),
-    );
-
-    for (const [key, owner] of Object.entries(ownersRef.current)) {
-      const suffix = flightSuffix(key);
-      const keyGuarded = (releasedKeysRef.current.get(key) ?? 0) > now;
-      const suffixGuarded = Boolean(suffix && (releasedSuffixesRef.current.get(suffix) ?? 0) > now);
-      if (keyGuarded || suffixGuarded) continue;
-      recentOwnersRef.current.set(key, { owner, expiresAt: now + OWNER_GRACE_MS });
-    }
-    for (const [key, recent] of recentOwnersRef.current) {
-      if (recent.expiresAt <= now) recentOwnersRef.current.delete(key);
-    }
-  }, [pruneReleaseGuards]);
-
-  const ownerForPlan = useCallback((plan: ScopeFlightPlan) => {
-    if (planIsReleaseGuarded(plan)) return "";
-
-    const keys = planKeys(plan);
-    const owners = new Set<string>();
-    const now = Date.now();
-
-    for (const key of keys) {
-      const liveOwner = normalizeOwner(ownersRef.current[key]);
-      if (liveOwner) owners.add(liveOwner);
-      const recent = recentOwnersRef.current.get(key);
-      if (recent && recent.expiresAt > now) owners.add(recent.owner);
-    }
-
-    if (owners.size === 0) {
-      const liveMatches = suffixMatches(plan, Object.keys(ownersRef.current));
-      if (liveMatches.length === 1) {
-        const owner = normalizeOwner(ownersRef.current[liveMatches[0]]);
-        if (owner) owners.add(owner);
-      }
-
-      const recentKeys = Array.from(recentOwnersRef.current.entries())
-        .filter(([, recent]) => recent.expiresAt > now)
-        .map(([key]) => key);
-      const recentMatches = suffixMatches(plan, recentKeys);
-      if (recentMatches.length === 1) {
-        const owner = recentOwnersRef.current.get(recentMatches[0])?.owner ?? "";
-        if (owner) owners.add(owner);
-      }
-    }
-
-    const localOwner = readPosition();
-    if (localOwner) {
-      const claims = readClaims();
-      if (keys.some((key) => Number.isFinite(claims[key]))) {
-        owners.add(localOwner);
-      } else if (owners.size === 0) {
-        const claimMatches = suffixMatches(plan, Object.keys(claims));
-        if (claimMatches.length === 1 && Number.isFinite(claims[claimMatches[0]])) owners.add(localOwner);
-      }
-    }
-
-    return owners.size === 1 ? Array.from(owners)[0] : "";
-  }, [planIsReleaseGuarded]);
-
-  const migrate = useCallback(async (plan: ScopeFlightPlan) => {
-    if (!plan?.id || plan.status === "FINISHED" || plan.assumed_by?.trim()) return;
-    if (migratingRef.current.has(plan.id) || planIsReleaseGuarded(plan)) return;
-
-    const keys = planKeys(plan);
-    if (keys.length === 0) return;
-    const owner = ownerForPlan(plan);
-    if (!owner) return;
-
-    migratingRef.current.add(plan.id);
-    publishHint(keys, owner);
-
-    const { data, error } = await supabase
-      .from("flight_plans")
-      .update({ assumed_by: owner, updated_at: new Date().toISOString() })
-      .eq("id", plan.id)
-      .is("assumed_by", null)
-      .select("id,assumed_by")
-      .maybeSingle();
-
-    migratingRef.current.delete(plan.id);
-
-    if (error) {
-      console.error("PF24 Scope unplanned ownership promotion failed:", error);
-      return;
-    }
-
-    if (data?.assumed_by) publishHint(keys, normalizeOwner(data.assumed_by));
-  }, [ownerForPlan, planIsReleaseGuarded]);
 
   const loadActivePlans = useCallback(async () => {
     const { data, error } = await supabase
@@ -279,7 +149,7 @@ export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
     try {
       const { plans, error } = await loadActivePlans();
       if (error) {
-        console.error("PF24 Scope planned ASSUME lookup failed:", error);
+        console.error("PF24 Scope explicit ASSUME lookup failed:", error);
         return;
       }
 
@@ -287,10 +157,9 @@ export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
       if (candidates.length !== 1) return;
       const plan = candidates[0];
       const currentOwner = normalizeOwner(plan.assumed_by);
-      if (currentOwner === owner) return;
-      if (currentOwner && currentOwner !== owner) return;
+      if (currentOwner === owner || (currentOwner && currentOwner !== owner)) return;
 
-      const { data: assumed, error: assumeError } = await supabase
+      const { data, error: assumeError } = await supabase
         .from("flight_plans")
         .update({ assumed_by: owner, updated_at: new Date().toISOString() })
         .eq("id", plan.id)
@@ -299,118 +168,131 @@ export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
         .maybeSingle();
 
       if (assumeError) {
-        console.error("PF24 Scope aliased planned ASSUME failed:", assumeError);
+        console.error("PF24 Scope explicit aliased ASSUME failed:", assumeError);
         return;
       }
 
-      if (normalizeOwner(assumed?.assumed_by) === owner) {
-        for (const planKey of planKeys(plan)) clearReleaseGuard(planKey);
+      if (normalizeOwner(data?.assumed_by) === owner) {
         window.dispatchEvent(new Event(OWNERSHIP_EVENT));
       }
     } finally {
       assumingRef.current.delete(key);
     }
-  }, [clearReleaseGuard, loadActivePlans]);
+  }, [loadActivePlans]);
 
-  const persistReleaseForTrafficKey = useCallback(async (rawKey: string, previousOwner?: string | null) => {
+  const persistReleaseForTrafficKey = useCallback(async (rawKey: string, rawPreviousOwner: string) => {
     const key = norm(rawKey);
-    const expectedOwner = normalizeOwner(previousOwner) || readPosition();
-    if (!key || !expectedOwner || releasingRef.current.has(key)) return;
+    const previousOwner = normalizeOwner(rawPreviousOwner);
+    if (!key || !previousOwner || releasingRef.current.has(key)) return;
 
     releasingRef.current.add(key);
     try {
       const { plans, error } = await loadActivePlans();
       if (error) {
-        console.error("PF24 Scope planned FREE lookup failed:", error);
+        console.error("PF24 Scope explicit FREE lookup failed:", error);
         return;
       }
 
       const candidates = matchingPlans(plans, key);
       if (candidates.length !== 1) return;
       const plan = candidates[0];
-      if (normalizeOwner(plan.assumed_by) !== expectedOwner) return;
+      if (normalizeOwner(plan.assumed_by) !== previousOwner) return;
 
-      const { data: released, error: releaseError } = await supabase
+      const { data, error: releaseError } = await supabase
         .from("flight_plans")
         .update({ assumed_by: null, updated_at: new Date().toISOString() })
         .eq("id", plan.id)
-        .eq("assumed_by", expectedOwner)
+        .eq("assumed_by", previousOwner)
         .select("id,assumed_by")
         .maybeSingle();
 
       if (releaseError) {
-        console.error("PF24 Scope aliased planned FREE failed:", releaseError);
+        console.error("PF24 Scope explicit aliased FREE failed:", releaseError);
         return;
       }
 
-      if (released && released.assumed_by === null) {
-        for (const planKey of planKeys(plan)) guardRelease(planKey);
+      if (data && data.assumed_by === null) {
         window.dispatchEvent(new Event(OWNERSHIP_EVENT));
       }
     } finally {
       releasingRef.current.delete(key);
     }
-  }, [guardRelease, loadActivePlans]);
+  }, [loadActivePlans]);
+
+  const promoteInsertedPlan = useCallback(async (plan: ScopeFlightPlan) => {
+    if (!plan?.id || plan.status === "FINISHED" || normalizeOwner(plan.assumed_by)) return;
+
+    // A newly created plan inherits an unplanned ASSUME only from this tab's
+    // recent explicit ASSUME claim. Presence snapshots by themselves are never
+    // enough to write assumed_by.
+    const owner = readPosition();
+    if (!owner || !hasRecentExplicitClaim(plan)) return;
+
+    const { data, error } = await supabase
+      .from("flight_plans")
+      .update({ assumed_by: owner, updated_at: new Date().toISOString() })
+      .eq("id", plan.id)
+      .is("assumed_by", null)
+      .select("id,assumed_by")
+      .maybeSingle();
+
+    if (error) {
+      console.error("PF24 Scope new-plan ownership promotion failed:", error);
+      return;
+    }
+
+    if (normalizeOwner(data?.assumed_by) === owner) {
+      window.dispatchEvent(new Event(OWNERSHIP_EVENT));
+    }
+  }, []);
 
   useEffect(() => {
-    const pendingTimers = new Set<number>();
-
-    const onOwners = (event: Event) => {
-      const owners = (event as CustomEvent<{ owners?: Owners }>).detail?.owners ?? {};
-      rememberOwners(owners);
-    };
-
     const onHint = (event: Event) => {
       const detail = (event as CustomEvent<OwnershipHintDetail>).detail;
       const key = norm(detail?.key ?? "");
-      if (!key) return;
-      const owner = normalizeOwner(detail?.owner);
+      if (!key || !detail) return;
+
+      const owner = normalizeOwner(detail.owner);
+      const hasPreviousOwner = Object.prototype.hasOwnProperty.call(detail, "previousOwner");
+      const previousOwner = normalizeOwner(detail.previousOwner);
+
       if (!owner) {
-        guardRelease(key);
-        void persistReleaseForTrafficKey(key, detail?.previousOwner);
+        // FREE must identify the controller that owned the traffic. A generic
+        // visual "free" hint can therefore never mutate persistent ownership.
+        if (hasPreviousOwner && previousOwner) {
+          void persistReleaseForTrafficKey(key, previousOwner);
+        }
         return;
       }
 
-      clearReleaseGuard(key);
-      recentOwnersRef.current.set(key, { owner, expiresAt: Date.now() + OWNER_GRACE_MS });
-      void persistAssumeForTrafficKey(key, owner);
+      // Only a real free -> owned transition produced by an explicit ASSUME is
+      // allowed to persist an aliased plan. Replayed Presence/visual hints and
+      // bridge refreshes do not satisfy this condition.
+      const here = readPosition();
+      if (hasPreviousOwner && !previousOwner && here && owner === here) {
+        void persistAssumeForTrafficKey(key, owner);
+      }
     };
 
-    window.addEventListener(OWNERS_EVENT, onOwners);
     window.addEventListener(OWNERSHIP_HINT_EVENT, onHint);
 
-    // Existing plans are never promoted from Presence during page load. Only a
-    // newly inserted plan can inherit an unplanned radar ASSUME. This prevents
-    // refresh from resurrecting ownership after FREE.
-    window.dispatchEvent(new Event(OWNERS_REQUEST_EVENT));
-
     const channel = supabase
-      .channel("scope-unplanned-plan-ownership-bridge-v6")
+      .channel("scope-unplanned-plan-ownership-bridge-v7")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "flight_plans" },
         (payload) => {
           const next = payload.new as ScopeFlightPlan | undefined;
-          if (!next?.id) return;
-          void migrate(next);
-          for (const delay of [80, 250, 750]) {
-            const timer = window.setTimeout(() => {
-              pendingTimers.delete(timer);
-              void migrate(next);
-            }, delay);
-            pendingTimers.add(timer);
-          }
+          if (next?.id) void promoteInsertedPlan(next);
         },
       )
       .subscribe();
 
     return () => {
-      for (const timer of pendingTimers) window.clearTimeout(timer);
-      window.removeEventListener(OWNERS_EVENT, onOwners);
       window.removeEventListener(OWNERSHIP_HINT_EVENT, onHint);
       void supabase.removeChannel(channel);
     };
-  }, [clearReleaseGuard, guardRelease, migrate, persistAssumeForTrafficKey, persistReleaseForTrafficKey, rememberOwners]);
+  }, [persistAssumeForTrafficKey, persistReleaseForTrafficKey, promoteInsertedPlan]);
 
   return null;
 }
