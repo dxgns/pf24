@@ -10,17 +10,16 @@ type Props = { initialPlans: ScopeFlightPlan[] };
 type StoredConnection = { callsign?: string };
 type OwnershipHintDetail = { key?: string; owner?: string | null };
 type OptimisticOwner = { owner: string | null; expiresAt: number };
-type UnplannedOwners = Record<string, string>;
 type OwnerMatch = { matched: boolean; owner: string | null };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
 const LIST_SELECTOR = "[data-pf24-live-sector-list='true']";
-const OWNERS_EVENT = "pf24-unplanned-ownership-sync";
-const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
+const OWNERSHIP_HINT_EVENT = "pf24-traffic-ownership-hint";
+const OWNERSHIP_EVENT = "pf24-traffic-ownership-change";
 const OPTIMISTIC_TTL_MS = 5000;
 
-function norm(value: string) {
-  return normalizeGameCallsign(value);
+function norm(value: string | null | undefined) {
+  return normalizeGameCallsign(String(value ?? ""));
 }
 
 function normalizeOwner(value: string | null | undefined) {
@@ -28,8 +27,7 @@ function normalizeOwner(value: string | null | undefined) {
 }
 
 function flightSuffix(value: string | null | undefined) {
-  const compact = norm(String(value ?? ""));
-  return compact.match(/(\d{1,4}[A-Z]?)$/)?.[1] ?? "";
+  return norm(value).match(/(\d{1,4}[A-Z]?)$/)?.[1] ?? "";
 }
 
 function callsignVariants(value: string | null | undefined) {
@@ -39,19 +37,9 @@ function callsignVariants(value: string | null | undefined) {
   const airline = norm(normalizeAirlineCallsign(raw));
   if (basic) variants.add(basic);
   if (airline) variants.add(airline);
-
   const lanChile = basic.match(/^LAN(?:CHILE|CHILEAIRLINES)(\d{1,4}[A-Z]?)$/);
   if (lanChile) variants.add(`LAN${lanChile[1]}`);
   return Array.from(variants);
-}
-
-function readPosition() {
-  try {
-    const parsed = JSON.parse(sessionStorage.getItem(CONNECTION_STORAGE_KEY) ?? "null") as StoredConnection | null;
-    return parsed?.callsign?.trim().toUpperCase() ?? "";
-  } catch {
-    return "";
-  }
 }
 
 function planKeys(plan: ScopeFlightPlan) {
@@ -71,6 +59,34 @@ function planSuffixes(plan: ScopeFlightPlan) {
   return suffixes;
 }
 
+function ownerMatchForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>): OwnerMatch {
+  const exact: Array<string | null> = [];
+  for (const key of planKeys(plan)) {
+    if (Object.prototype.hasOwnProperty.call(owners, key)) exact.push(normalizeOwner(owners[key]));
+  }
+  if (exact.length > 0) {
+    const unique = new Set(exact.map((owner) => owner ?? "__FREE__"));
+    return unique.size === 1 ? { matched: true, owner: exact[0] } : { matched: false, owner: null };
+  }
+
+  const suffixes = planSuffixes(plan);
+  const matches = Object.keys(owners).filter((key) => {
+    const suffix = flightSuffix(key);
+    return Boolean(suffix && suffixes.has(suffix));
+  });
+  if (matches.length !== 1) return { matched: false, owner: null };
+  return { matched: true, owner: normalizeOwner(owners[matches[0]]) };
+}
+
+function readPosition() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(CONNECTION_STORAGE_KEY) ?? "null") as StoredConnection | null;
+    return parsed?.callsign?.trim().toUpperCase() ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function rowCallsign(wrapper: HTMLElement) {
   const row = wrapper.firstElementChild instanceof HTMLElement ? wrapper.firstElementChild : wrapper;
   return row.firstElementChild?.textContent?.trim().toUpperCase() ?? "";
@@ -80,51 +96,20 @@ function mutationTouchesSectorList(mutations: MutationRecord[]) {
   return mutations.some((mutation) => {
     const target = mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
     if (target?.closest(LIST_SELECTOR)) return true;
-    return Array.from(mutation.addedNodes).some((node) => {
-      if (!(node instanceof Element)) return false;
-      return node.matches(LIST_SELECTOR) || Boolean(node.querySelector(LIST_SELECTOR));
-    });
+    return Array.from(mutation.addedNodes).some((node) =>
+      node instanceof Element && (node.matches(LIST_SELECTOR) || Boolean(node.querySelector(LIST_SELECTOR))),
+    );
   });
-}
-
-function ownerMatchForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>): OwnerMatch {
-  const exactValues: Array<string | null> = [];
-  for (const key of planKeys(plan)) {
-    if (!Object.prototype.hasOwnProperty.call(owners, key)) continue;
-    exactValues.push(normalizeOwner(owners[key]));
-  }
-  if (exactValues.length > 0) {
-    const unique = new Set(exactValues.map((owner) => owner ?? "__FREE__"));
-    if (unique.size === 1) return { matched: true, owner: exactValues[0] };
-    return { matched: false, owner: null };
-  }
-
-  const suffixes = planSuffixes(plan);
-  if (suffixes.size === 0) return { matched: false, owner: null };
-  const matchingKeys = Object.keys(owners).filter((key) => {
-    const suffix = flightSuffix(key);
-    return Boolean(suffix && suffixes.has(suffix));
-  });
-  if (matchingKeys.length !== 1) return { matched: false, owner: null };
-  return { matched: true, owner: normalizeOwner(owners[matchingKeys[0]]) };
-}
-
-function ownerFromMapForPlan(plan: ScopeFlightPlan, owners: Record<string, string | null | undefined>) {
-  const match = ownerMatchForPlan(plan, owners);
-  return match.matched ? match.owner : null;
 }
 
 export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
   const [optimisticOwners, setOptimisticOwners] = useState<Record<string, OptimisticOwner>>({});
-  const [unplannedOwners, setUnplannedOwners] = useState<UnplannedOwners>({});
 
   const planByKey = useMemo(() => {
     const map = new Map<string, ScopeFlightPlan>();
-    for (const plan of plans) {
-      for (const key of planKeys(plan)) map.set(key, plan);
-    }
+    for (const plan of plans) for (const key of planKeys(plan)) map.set(key, plan);
     return map;
   }, [plans]);
 
@@ -141,10 +126,6 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
     setPlans((data ?? []) as ScopeFlightPlan[]);
   }, []);
 
-  const effectiveOwner = useCallback((plan: ScopeFlightPlan) => {
-    return normalizeOwner(plan.assumed_by) ?? ownerFromMapForPlan(plan, unplannedOwners);
-  }, [unplannedOwners]);
-
   const optimisticOwnerForPlan = useCallback((plan: ScopeFlightPlan, now: number) => {
     const active: Record<string, string | null | undefined> = {};
     for (const [key, value] of Object.entries(optimisticOwners)) {
@@ -158,22 +139,17 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
     if (!list) return;
 
     const now = Date.now();
-    const rows = Array.from(list.children)
-      .slice(1)
-      .filter((node): node is HTMLElement => node instanceof HTMLElement);
-
+    const rows = Array.from(list.children).slice(1).filter((node): node is HTMLElement => node instanceof HTMLElement);
     for (const wrapper of rows) {
       const key = norm(rowCallsign(wrapper));
-      if (!key) continue;
-      const plan = planByKey.get(key);
+      const plan = key ? planByKey.get(key) : undefined;
       if (!plan) continue;
 
       const optimistic = optimisticOwnerForPlan(plan, now);
-      const owner = optimistic.matched ? optimistic.owner : effectiveOwner(plan);
-      const state = position && owner === position ? "mine" : owner ? "other" : "free";
-      wrapper.dataset.pf24SectorOwnership = state;
+      const owner = optimistic.matched ? optimistic.owner : normalizeOwner(plan.assumed_by);
+      wrapper.dataset.pf24SectorOwnership = position && owner === position ? "mine" : owner ? "other" : "free";
     }
-  }, [effectiveOwner, optimisticOwnerForPlan, planByKey, position]);
+  }, [optimisticOwnerForPlan, planByKey, position]);
 
   useEffect(() => {
     setPosition(readPosition());
@@ -190,20 +166,8 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
       if (!key) return;
       setOptimisticOwners((current) => ({
         ...current,
-        [key]: {
-          owner: normalizeOwner(detail?.owner),
-          expiresAt: Date.now() + OPTIMISTIC_TTL_MS,
-        },
+        [key]: { owner: normalizeOwner(detail?.owner), expiresAt: Date.now() + OPTIMISTIC_TTL_MS },
       }));
-    };
-
-    const onUnplannedOwners = (event: Event) => {
-      const owners = (event as CustomEvent<{ owners?: UnplannedOwners }>).detail?.owners ?? {};
-      setUnplannedOwners(Object.fromEntries(
-        Object.entries(owners)
-          .map(([key, owner]) => [norm(key), normalizeOwner(owner) ?? ""] as const)
-          .filter(([key, owner]) => Boolean(key && owner)),
-      ));
     };
 
     const onOwnershipChange = () => {
@@ -212,37 +176,29 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
     };
 
     window.addEventListener("pf24-scope-connection-change", onConnection);
-    window.addEventListener("pf24-traffic-ownership-hint", onHint);
-    window.addEventListener("pf24-traffic-ownership-change", onOwnershipChange);
-    window.addEventListener(OWNERS_EVENT, onUnplannedOwners);
-    window.dispatchEvent(new Event(OWNERS_REQUEST_EVENT));
-
+    window.addEventListener(OWNERSHIP_HINT_EVENT, onHint);
+    window.addEventListener(OWNERSHIP_EVENT, onOwnershipChange);
     return () => {
       window.removeEventListener("pf24-scope-connection-change", onConnection);
-      window.removeEventListener("pf24-traffic-ownership-hint", onHint);
-      window.removeEventListener("pf24-traffic-ownership-change", onOwnershipChange);
-      window.removeEventListener(OWNERS_EVENT, onUnplannedOwners);
+      window.removeEventListener(OWNERSHIP_HINT_EVENT, onHint);
+      window.removeEventListener(OWNERSHIP_EVENT, onOwnershipChange);
     };
   }, [loadPlans]);
 
   useEffect(() => {
-    setOptimisticOwners((current) => {
-      const now = Date.now();
-      const next = { ...current };
-      let changed = false;
-      for (const [key, optimistic] of Object.entries(current)) {
-        if (optimistic.expiresAt <= now) {
-          delete next[key];
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-  }, [plans, unplannedOwners]);
+    const cleanup = window.setInterval(() => {
+      setOptimisticOwners((current) => {
+        const now = Date.now();
+        const next = Object.fromEntries(Object.entries(current).filter(([, value]) => value.expiresAt > now));
+        return Object.keys(next).length === Object.keys(current).length ? current : next;
+      });
+    }, 500);
+    return () => window.clearInterval(cleanup);
+  }, []);
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-sector-ownership-visuals-v5")
+      .channel("scope-sector-ownership-visuals-v6")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -250,18 +206,16 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
 
   useEffect(() => {
     const style = document.createElement("style");
-    style.dataset.pf24SectorOwnershipVisuals = "v5";
+    style.dataset.pf24SectorOwnershipVisuals = "v6";
     style.textContent = `
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child span,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child button,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='mine'] > div:first-child input { color:#00e000 !important; }
-
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='other'] > div:first-child,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='other'] > div:first-child span,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='other'] > div:first-child button,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='other'] > div:first-child input { color:#9b9b9b !important; }
-
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='free'] > div:first-child,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='free'] > div:first-child span,
       ${LIST_SELECTOR} > [data-pf24-sector-ownership='free'] > div:first-child button,
