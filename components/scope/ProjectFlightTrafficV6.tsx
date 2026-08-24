@@ -6,6 +6,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { supabase } from "@/lib/supabase";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 import { MAP_BOUNDS } from "@/lib/scope/mapData";
+import { scopeClientPointToLocal } from "@/lib/scope/domCoordinates";
 import { getGameCallsignFromNotes } from "@/lib/flightPlanGameCallsign";
 import {
   AIRLINE_CALLSIGNS,
@@ -177,8 +178,6 @@ function radarCoordinates(worldX: number, worldZ: number): Point {
   };
 }
 
-// ScopeRadarMap uses the CURRENT expanded SVG viewBox. Traffic coordinates are
-// calibrated above, then projected through these render bounds so EFKT remains visible.
 function screenPoint(size: Point, x: number, y: number, viewport: Viewport): Point {
   const mapWidth = MAP_BOUNDS.maxX - MAP_BOUNDS.minX;
   const mapHeight = MAP_BOUNDS.maxY - MAP_BOUNDS.minY;
@@ -707,8 +706,6 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
               const lastSample = lastTrailSampleRef.current.get(item.id) ?? 0;
               const history = trailsRef.current.get(item.id) ?? [];
 
-              // Trail dots are radar-style time samples. They advance on a fixed
-              // clock cadence regardless of how far (or whether) the aircraft moved.
               if (now - lastSample >= TRAIL_SAMPLE_MS) {
                 trailsRef.current.set(
                   item.id,
@@ -784,7 +781,7 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
     const onMove = (event: MouseEvent) => {
       lastPointerRef.current = { x: event.clientX, y: event.clientY };
       if (!host) return;
-      const rect = host.getBoundingClientRect();
+      const pointer = scopeClientPointToLocal(host, event.clientX, event.clientY);
 
       if (dragLabelRef.current) {
         const drag = dragLabelRef.current;
@@ -793,8 +790,8 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
           if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) drag.moved = true;
           const marker = screenPoint(hostSize, aircraft.x, aircraft.y, viewport);
           updateLabelOffset(drag.id, {
-            x: event.clientX - rect.left - marker.x - drag.dx,
-            y: event.clientY - rect.top - marker.y - drag.dy,
+            x: pointer.x - marker.x - drag.dx,
+            y: pointer.y - marker.y - drag.dy,
           });
         }
       }
@@ -804,8 +801,8 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
         const aircraft = liveRef.current.get(id)?.traffic;
         if (aircraft) {
           const marker = screenPoint(hostSize, aircraft.x, aircraft.y, viewport);
-          const dx = event.clientX - rect.left - marker.x;
-          const dy = event.clientY - rect.top - marker.y;
+          const dx = pointer.x - marker.x;
+          const dy = pointer.y - marker.y;
           if (Math.hypot(dx, dy) >= 3) {
             const heading = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
             updateControl(id, { assignedHeading: Math.round(heading / 5) * 5 % 360 });
@@ -956,10 +953,11 @@ export default function ProjectFlightTrafficV6({ initialPlans, serverId }: Props
           if (target?.closest("button,input,[data-pf24-callsign-menu='true'],[data-pf24-traffic-popup='true']")) return;
           event.preventDefault();
           event.stopPropagation();
+          const pointer = scopeClientPointToLocal(host, event.clientX, event.clientY);
           dragLabelRef.current = {
             id: item.id,
-            dx: event.clientX - (host.getBoundingClientRect().left + labelPoint.x),
-            dy: event.clientY - (host.getBoundingClientRect().top + labelPoint.y),
+            dx: pointer.x - labelPoint.x,
+            dy: pointer.y - labelPoint.y,
             startX: event.clientX,
             startY: event.clientY,
             moved: false,
