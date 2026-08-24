@@ -7,6 +7,7 @@ import ContactMeReceiver from "@/components/ContactMeReceiver";
 import UtcClock from "@/components/UtcClock";
 import PFPilotPrototype from "@/components/PFPilotPrototype";
 import PFPilotAltimeterStdToggle from "@/components/PFPilotAltimeterStdToggle";
+import PilotFlightPlanReadOnlyGuard from "@/components/PilotFlightPlanReadOnlyGuard";
 
 export const metadata: Metadata = {
   title: "PFPilot Beta | PF24",
@@ -74,6 +75,7 @@ export default async function PFPilotPage() {
       <section className="section-container max-w-7xl">
         <ContactMeReceiver pilotId={pilotId} />
         <PFPilotAltimeterStdToggle />
+        <PilotFlightPlanReadOnlyGuard />
 
         <div className="panel rounded-3xl p-6 sm:p-8">
           <div className="flex flex-wrap items-center justify-between gap-4">
