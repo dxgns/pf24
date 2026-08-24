@@ -20,6 +20,7 @@ const OWNERS_REQUEST_EVENT = "pf24-unplanned-ownership-request";
 const OWNERSHIP_HINT_EVENT = "pf24-traffic-ownership-hint";
 const OWNERSHIP_EVENT = "pf24-traffic-ownership-change";
 const OWNER_GRACE_MS = 5000;
+const RELEASE_GUARD_MS = 12_000;
 
 function norm(value: string) {
   return normalizeGameCallsign(value);
@@ -109,9 +110,49 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
   const migratingRef = useRef(new Set<string>());
   const ownersRef = useRef<Owners>({});
   const recentOwnersRef = useRef(new Map<string, RecentOwner>());
+  const releasedKeysRef = useRef(new Map<string, number>());
+  const releasedSuffixesRef = useRef(new Map<string, number>());
+
+  const pruneReleaseGuards = useCallback(() => {
+    const now = Date.now();
+    for (const [key, expiresAt] of releasedKeysRef.current) {
+      if (expiresAt <= now) releasedKeysRef.current.delete(key);
+    }
+    for (const [suffix, expiresAt] of releasedSuffixesRef.current) {
+      if (expiresAt <= now) releasedSuffixesRef.current.delete(suffix);
+    }
+  }, []);
+
+  const guardRelease = useCallback((key: string) => {
+    if (!key) return;
+    const expiresAt = Date.now() + RELEASE_GUARD_MS;
+    releasedKeysRef.current.set(key, expiresAt);
+    const suffix = flightSuffix(key);
+    if (suffix) releasedSuffixesRef.current.set(suffix, expiresAt);
+
+    recentOwnersRef.current.delete(key);
+    for (const recentKey of Array.from(recentOwnersRef.current.keys())) {
+      if (suffix && flightSuffix(recentKey) === suffix) recentOwnersRef.current.delete(recentKey);
+    }
+  }, []);
+
+  const clearReleaseGuard = useCallback((key: string) => {
+    if (!key) return;
+    releasedKeysRef.current.delete(key);
+    const suffix = flightSuffix(key);
+    if (suffix) releasedSuffixesRef.current.delete(suffix);
+  }, []);
+
+  const planIsReleaseGuarded = useCallback((plan: ScopeFlightPlan) => {
+    pruneReleaseGuards();
+    const now = Date.now();
+    if (planKeys(plan).some((key) => (releasedKeysRef.current.get(key) ?? 0) > now)) return true;
+    return Array.from(planSuffixes(plan)).some((suffix) => (releasedSuffixesRef.current.get(suffix) ?? 0) > now);
+  }, [pruneReleaseGuards]);
 
   const rememberOwners = useCallback((owners: Owners) => {
     const now = Date.now();
+    pruneReleaseGuards();
     ownersRef.current = Object.fromEntries(
       Object.entries(owners)
         .map(([key, owner]) => [norm(key), normalizeOwner(owner)] as const)
@@ -119,14 +160,20 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
     );
 
     for (const [key, owner] of Object.entries(ownersRef.current)) {
+      const suffix = flightSuffix(key);
+      const keyGuarded = (releasedKeysRef.current.get(key) ?? 0) > now;
+      const suffixGuarded = Boolean(suffix && (releasedSuffixesRef.current.get(suffix) ?? 0) > now);
+      if (keyGuarded || suffixGuarded) continue;
       recentOwnersRef.current.set(key, { owner, expiresAt: now + OWNER_GRACE_MS });
     }
     for (const [key, recent] of recentOwnersRef.current) {
       if (recent.expiresAt <= now) recentOwnersRef.current.delete(key);
     }
-  }, []);
+  }, [pruneReleaseGuards]);
 
   const ownerForPlan = useCallback((plan: ScopeFlightPlan) => {
+    if (planIsReleaseGuarded(plan)) return "";
+
     const keys = planKeys(plan);
     const owners = new Set<string>();
     const now = Date.now();
@@ -138,11 +185,8 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       if (recent && recent.expiresAt > now) owners.add(recent.owner);
     }
 
-    // When Project Flight exposes an airline-name callsign (for example
-    // LANCHILE1900) but the filed plan is LAN1900, match by the flight suffix.
-    // This fallback is deliberately used only when exactly one live/recent
-    // traffic key has that suffix, preventing two flights with the same number
-    // from being cross-linked.
+    // Project Flight may expose an airline-name callsign (LANCHILE1900) while
+    // the filed plan uses LAN1900. Only use the suffix when the match is unique.
     if (owners.size === 0) {
       const liveMatches = suffixMatches(plan, Object.keys(ownersRef.current));
       if (liveMatches.length === 1) {
@@ -160,8 +204,8 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       }
     }
 
-    // Local sessionStorage is the final fallback for the exact instant in which
-    // the unplanned component removes a claim because a plan has just appeared.
+    // Local storage covers the exact instant in which an unplanned claim is
+    // converted into a newly filed plan.
     const localOwner = readPosition();
     if (localOwner) {
       const claims = readClaims();
@@ -173,13 +217,12 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       }
     }
 
-    // Never guess when two sources disagree about the current controller.
     return owners.size === 1 ? Array.from(owners)[0] : "";
-  }, []);
+  }, [planIsReleaseGuarded]);
 
   const migrate = useCallback(async (plan: ScopeFlightPlan) => {
     if (!plan?.id || plan.status === "FINISHED" || plan.assumed_by?.trim()) return;
-    if (migratingRef.current.has(plan.id)) return;
+    if (migratingRef.current.has(plan.id) || planIsReleaseGuarded(plan)) return;
 
     const keys = planKeys(plan);
     if (keys.length === 0) return;
@@ -222,7 +265,7 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
 
     const finalOwner = normalizeOwner(current?.assumed_by);
     if (finalOwner) publishHint(keys, finalOwner);
-  }, [ownerForPlan]);
+  }, [ownerForPlan, planIsReleaseGuarded]);
 
   const reconcilePlans = useCallback(async () => {
     const { data, error } = await supabase
@@ -236,9 +279,7 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       return;
     }
 
-    for (const plan of (data ?? []) as ScopeFlightPlan[]) {
-      void migrate(plan);
-    }
+    for (const plan of (data ?? []) as ScopeFlightPlan[]) void migrate(plan);
   }, [migrate]);
 
   useEffect(() => {
@@ -256,17 +297,16 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       if (!key) return;
       const owner = normalizeOwner(detail?.owner);
       if (!owner) {
-        recentOwnersRef.current.delete(key);
+        guardRelease(key);
         return;
       }
+      clearReleaseGuard(key);
       recentOwnersRef.current.set(key, { owner, expiresAt: Date.now() + OWNER_GRACE_MS });
     };
 
     window.addEventListener(OWNERS_EVENT, onOwners);
     window.addEventListener(OWNERSHIP_HINT_EVENT, onHint);
 
-    // Covers reloads and the plan-creation race: request the current Presence
-    // snapshot before the unplanned claim is discarded, then reconcile again.
     window.dispatchEvent(new Event(OWNERS_REQUEST_EVENT));
     for (const plan of initialPlans) void migrate(plan);
     const first = window.setTimeout(() => void reconcilePlans(), 80);
@@ -276,7 +316,7 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
     }, 350);
 
     const channel = supabase
-      .channel("scope-unplanned-plan-ownership-bridge-v3")
+      .channel("scope-unplanned-plan-ownership-bridge-v4")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "flight_plans" },
@@ -296,7 +336,7 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       window.removeEventListener(OWNERSHIP_HINT_EVENT, onHint);
       void supabase.removeChannel(channel);
     };
-  }, [initialPlans, migrate, reconcilePlans, rememberOwners]);
+  }, [clearReleaseGuard, guardRelease, initialPlans, migrate, reconcilePlans, rememberOwners]);
 
   return null;
 }
