@@ -6,6 +6,7 @@ import PF24Scope from "@/components/scope/PF24Scope";
 import ScopeNativeListCss from "@/components/scope/ScopeNativeListCss";
 import ScopeLayoutGuards from "@/components/scope/ScopeLayoutGuards";
 import WeatherPanelV2 from "@/components/scope/WeatherPanelV2";
+import ScopeAtisWindowSync from "@/components/scope/ScopeAtisWindowSync";
 import ProjectFlightTrafficConfigured from "@/components/scope/ProjectFlightTrafficConfigured";
 import ScopeFlightPlanTrafficLink from "@/components/scope/ScopeFlightPlanTrafficLink";
 import ScopeDisconnectedFlightPlanCleanup from "@/components/scope/ScopeDisconnectedFlightPlanCleanup";
@@ -105,7 +106,7 @@ export default async function ScopePage() {
   return <>
     <ScopeNativeListCss /><PF24Scope initialPlans={plans} controllerName={controllerName} />
     <ScopeConnectionPersistence /><ScopeConnectDialogPersistence /><ScopeOwnedTrafficLifecycle /><ScopeTrafficAutoRelease />
-    <ScopeLayoutGuards /><ScopeStartupWindowOverlapGuard /><WeatherPanelV2 /><ScopeRadarMap /><ScopeMenorcaIsland /><ScopeGlidePath /><ScopeAirspaceBoundaryDedup /><ScopeTwrGeometryCorrection /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport /><LemhSvgAirport />
+    <ScopeLayoutGuards /><ScopeStartupWindowOverlapGuard /><WeatherPanelV2 /><ScopeAtisWindowSync /><ScopeRadarMap /><ScopeMenorcaIsland /><ScopeGlidePath /><ScopeAirspaceBoundaryDedup /><ScopeTwrGeometryCorrection /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport /><LemhSvgAirport />
     <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} /><ScopeFlightPlanTrafficLink initialPlans={plans} /><ScopeDisconnectedFlightPlanCleanup initialPlans={plans} />
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficLabelSeparatorSpacing /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedPlanOwnershipBridge initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
