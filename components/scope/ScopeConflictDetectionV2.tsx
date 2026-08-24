@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getGameCallsignFromNotes } from "@/lib/flightPlanGameCallsign";
 import { normalizeAirlineCallsign } from "@/lib/scope/airlines";
 import { scopeDistanceNmFromScreenDelta } from "@/lib/scope/distanceScale";
+import { scopeRectCenterToLocal } from "@/lib/scope/domCoordinates";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 import { supabase } from "@/lib/supabase";
 
@@ -107,9 +108,6 @@ function trafficIsGround(label: HTMLElement, altitudeFt: number, plan: ScopeFlig
   if (planIsGround(plan)) return true;
   if (altitudeFt <= ABSOLUTE_GROUND_CUTOFF_FT) return true;
 
-  // Fallback for unplanned traffic at elevated airports: parked/taxi traffic has
-  // very low groundspeed and no vertical trend. This intentionally uses a low
-  // threshold so slow airborne VFR traffic is not broadly suppressed.
   const groundSpeed = readGroundSpeed(label);
   return Number.isFinite(groundSpeed)
     && groundSpeed <= LOW_SPEED_GROUND_KT
@@ -118,7 +116,6 @@ function trafficIsGround(label: HTMLElement, altitudeFt: number, plan: ScopeFlig
 }
 
 function readSamples(radar: HTMLElement, plansByKey: Map<string, ScopeFlightPlan>) {
-  const radarRect = radar.getBoundingClientRect();
   const seen = new Set<string>();
   const samples: TrafficSample[] = [];
 
@@ -136,15 +133,11 @@ function readSamples(radar: HTMLElement, plansByKey: Map<string, ScopeFlightPlan
     const plan = plansByKey.get(key);
     if (trafficIsGround(label, altitudeFt, plan)) continue;
 
-    const rect = target.getBoundingClientRect();
     samples.push({
       id,
       callsign,
       altitudeFt,
-      point: {
-        x: rect.left + rect.width / 2 - radarRect.left,
-        y: rect.top + rect.height / 2 - radarRect.top,
-      },
+      point: scopeRectCenterToLocal(radar, target.getBoundingClientRect()),
       rule: planRule(plan),
       label,
       callsignButton,
