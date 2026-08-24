@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { getGameCallsignFromNotes, normalizeGameCallsign } from "@/lib/flightPlanGameCallsign";
+import { normalizeAirlineCallsign } from "@/lib/scope/airlines";
 import { supabase } from "@/lib/supabase";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
@@ -26,6 +27,24 @@ function norm(value: string) {
 
 function normalizeOwner(value: string | null | undefined) {
   return value?.trim().toUpperCase() || "";
+}
+
+function flightSuffix(value: string | null | undefined) {
+  const compact = norm(String(value ?? ""));
+  return compact.match(/(\d{1,4}[A-Z]?)$/)?.[1] ?? "";
+}
+
+function callsignVariants(value: string | null | undefined) {
+  const raw = String(value ?? "");
+  const variants = new Set<string>();
+  const basic = norm(raw);
+  const airline = norm(normalizeAirlineCallsign(raw));
+  if (basic) variants.add(basic);
+  if (airline) variants.add(airline);
+
+  const lanChile = basic.match(/^LAN(?:CHILE|CHILEAIRLINES)(\d{1,4}[A-Z]?)$/);
+  if (lanChile) variants.add(`LAN${lanChile[1]}`);
+  return Array.from(variants);
 }
 
 function readPosition() {
@@ -53,11 +72,28 @@ function readClaims(): ClaimTimes {
 
 function planKeys(plan: ScopeFlightPlan) {
   const keys = new Set<string>();
-  const planCallsign = norm(plan.callsign);
-  const gameCallsign = norm(getGameCallsignFromNotes(plan.notes));
-  if (planCallsign) keys.add(planCallsign);
-  if (gameCallsign) keys.add(gameCallsign);
+  for (const value of [plan.callsign, getGameCallsignFromNotes(plan.notes)]) {
+    for (const key of callsignVariants(value)) keys.add(key);
+  }
   return Array.from(keys);
+}
+
+function planSuffixes(plan: ScopeFlightPlan) {
+  const suffixes = new Set<string>();
+  for (const value of [plan.callsign, getGameCallsignFromNotes(plan.notes)]) {
+    const suffix = flightSuffix(value);
+    if (suffix) suffixes.add(suffix);
+  }
+  return suffixes;
+}
+
+function suffixMatches(plan: ScopeFlightPlan, candidateKeys: string[]) {
+  const suffixes = planSuffixes(plan);
+  if (suffixes.size === 0) return [];
+  return candidateKeys.filter((key) => {
+    const suffix = flightSuffix(key);
+    return Boolean(suffix && suffixes.has(suffix));
+  });
 }
 
 function publishHint(keys: string[], owner: string) {
@@ -102,12 +138,39 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       if (recent && recent.expiresAt > now) owners.add(recent.owner);
     }
 
+    // When Project Flight exposes an airline-name callsign (for example
+    // LANCHILE1900) but the filed plan is LAN1900, match by the flight suffix.
+    // This fallback is deliberately used only when exactly one live/recent
+    // traffic key has that suffix, preventing two flights with the same number
+    // from being cross-linked.
+    if (owners.size === 0) {
+      const liveMatches = suffixMatches(plan, Object.keys(ownersRef.current));
+      if (liveMatches.length === 1) {
+        const owner = normalizeOwner(ownersRef.current[liveMatches[0]]);
+        if (owner) owners.add(owner);
+      }
+
+      const recentKeys = Array.from(recentOwnersRef.current.entries())
+        .filter(([, recent]) => recent.expiresAt > now)
+        .map(([key]) => key);
+      const recentMatches = suffixMatches(plan, recentKeys);
+      if (recentMatches.length === 1) {
+        const owner = recentOwnersRef.current.get(recentMatches[0])?.owner ?? "";
+        if (owner) owners.add(owner);
+      }
+    }
+
     // Local sessionStorage is the final fallback for the exact instant in which
     // the unplanned component removes a claim because a plan has just appeared.
     const localOwner = readPosition();
     if (localOwner) {
       const claims = readClaims();
-      if (keys.some((key) => Number.isFinite(claims[key]))) owners.add(localOwner);
+      if (keys.some((key) => Number.isFinite(claims[key]))) {
+        owners.add(localOwner);
+      } else if (owners.size === 0) {
+        const claimMatches = suffixMatches(plan, Object.keys(claims));
+        if (claimMatches.length === 1 && Number.isFinite(claims[claimMatches[0]])) owners.add(localOwner);
+      }
     }
 
     // Never guess when two sources disagree about the current controller.
@@ -213,7 +276,7 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
     }, 350);
 
     const channel = supabase
-      .channel("scope-unplanned-plan-ownership-bridge-v2")
+      .channel("scope-unplanned-plan-ownership-bridge-v3")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "flight_plans" },
