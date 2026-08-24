@@ -7,6 +7,7 @@ import { getGameCallsignFromNotes } from "@/lib/flightPlanGameCallsign";
 import { normalizeAirlineCallsign } from "@/lib/scope/airlines";
 import { MAP_BOUNDS, WAYPOINTS, type NamedPoint } from "@/lib/scope/mapData";
 import { SCOPE_MAP_UNITS_PER_NM } from "@/lib/scope/distanceScale";
+import { scopeElementLocalSize } from "@/lib/scope/domCoordinates";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 type Props = { initialPlans: ScopeFlightPlan[] };
@@ -63,9 +64,6 @@ function trafficCallsign(target: Element) {
   const directCallsign = callsignFromSelect(directHit);
   if (directCallsign) return directCallsign;
 
-  // Traffic labels and the radar symbol live under the same traffic wrapper.
-  // Resolve the callsign from the sibling symbol so clicking anywhere on the
-  // label (simple or expanded) selects the exact same planned route.
   const trafficLabel = target.closest<HTMLElement>("[data-pf24-traffic-label='true']");
   if (!trafficLabel) return null;
   const siblingHit = trafficLabel.parentElement?.querySelector<HTMLElement>("[data-pf24-traffic-select='true']") ?? null;
@@ -283,8 +281,13 @@ export default function ScopePlannedRouteTool({ initialPlans }: Props) {
   useEffect(() => {
     if (!radar) return;
     const onResize = () => setSizeTick((value) => value + 1);
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(onResize) : null;
+    observer?.observe(radar);
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
   }, [radar]);
 
   const selectedPlan = useMemo(
@@ -295,12 +298,10 @@ export default function ScopePlannedRouteTool({ initialPlans }: Props) {
   const segments = useMemo<Segment[]>(() => {
     void sizeTick;
     if (!enabled || !radar || !selectedPlan) return [];
-    const rect = radar.getBoundingClientRect();
-    if (!(rect.width > 0) || !(rect.height > 0)) return [];
+    const size = scopeElementLocalSize(radar);
 
     const routePoints = resolveRoutePoints(selectedPlan);
     if (routePoints.length < 2) return [];
-    const size = { x: rect.width, y: rect.height };
 
     return routePoints.slice(0, -1).map((point, index) => {
       const next = routePoints[index + 1];
