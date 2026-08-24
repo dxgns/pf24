@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
+import {
+  scopeClientDeltaToLocal,
+  scopeClientPointToLocal,
+} from "@/lib/scope/domCoordinates";
 
 type Viewport = { zoom: number; panX: number; panY: number };
 
@@ -78,8 +82,6 @@ export default function RadarViewport() {
     const radar = findRadar();
     if (!radar) {
       return () => {
-        // Keep the preload requests untouched; simply release callbacks/references
-        // when the Scope itself unmounts.
         airportPreloads.forEach((image) => {
           image.onload = null;
           image.onerror = null;
@@ -110,18 +112,18 @@ export default function RadarViewport() {
     const onWheel = (event: WheelEvent) => {
       if (isScopeWindowOrFormControl(event.target)) return;
       event.preventDefault();
-      const rect = radar.getBoundingClientRect();
-      const cursorX = event.clientX - rect.left;
-      const cursorY = event.clientY - rect.top;
+      const cursor = scopeClientPointToLocal(radar, event.clientX, event.clientY);
       const oldZoom = viewport.zoom;
-      // 30% stronger than the previous 1.16 wheel step, while preserving the
-      // same viewport event so ground-traffic scaling stays synchronized.
       const factor = event.deltaY < 0 ? 1.208 : 1 / 1.208;
       const nextZoom = clamp(oldZoom * factor, MIN_ZOOM, MAX_ZOOM);
       if (nextZoom === oldZoom) return;
-      const worldX = (cursorX - viewport.panX) / oldZoom;
-      const worldY = (cursorY - viewport.panY) / oldZoom;
-      viewport = { zoom: nextZoom, panX: cursorX - worldX * nextZoom, panY: cursorY - worldY * nextZoom };
+      const worldX = (cursor.x - viewport.panX) / oldZoom;
+      const worldY = (cursor.y - viewport.panY) / oldZoom;
+      viewport = {
+        zoom: nextZoom,
+        panX: cursor.x - worldX * nextZoom,
+        panY: cursor.y - worldY * nextZoom,
+      };
       publish();
       persist();
     };
@@ -137,12 +139,17 @@ export default function RadarViewport() {
 
     const onMouseMove = (event: MouseEvent) => {
       if (!panning) return;
-      const dx = event.clientX - lastX;
-      const dy = event.clientY - lastY;
-      if (Math.abs(dx) + Math.abs(dy) > 1) movedDuringPan = true;
+      const physicalDx = event.clientX - lastX;
+      const physicalDy = event.clientY - lastY;
+      if (Math.abs(physicalDx) + Math.abs(physicalDy) > 1) movedDuringPan = true;
       lastX = event.clientX;
       lastY = event.clientY;
-      viewport = { ...viewport, panX: viewport.panX + dx, panY: viewport.panY + dy };
+      const delta = scopeClientDeltaToLocal(radar, physicalDx, physicalDy);
+      viewport = {
+        ...viewport,
+        panX: viewport.panX + delta.x,
+        panY: viewport.panY + delta.y,
+      };
       publish();
     };
 
@@ -167,6 +174,11 @@ export default function RadarViewport() {
       if (event.target instanceof Element && radar.contains(event.target) && !isScopeWindowOrFormControl(event.target)) event.preventDefault();
     };
 
+    const resizeObserver = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => publish())
+      : null;
+    resizeObserver?.observe(radar);
+
     radar.addEventListener("wheel", onWheel, { passive: false });
     radar.addEventListener("mousedown", onMouseDown);
     radar.addEventListener("click", onClickCapture, true);
@@ -177,6 +189,7 @@ export default function RadarViewport() {
 
     return () => {
       window.clearTimeout(initialRetry);
+      resizeObserver?.disconnect();
       radar.removeEventListener("wheel", onWheel);
       radar.removeEventListener("mousedown", onMouseDown);
       radar.removeEventListener("click", onClickCapture, true);
