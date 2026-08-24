@@ -15,6 +15,7 @@ import ScopeTrafficLabelSeparatorSpacing from "@/components/scope/ScopeTrafficLa
 import ScopeTrafficMappState from "@/components/scope/ScopeTrafficMappState";
 import ScopeTrafficHandover from "@/components/scope/ScopeTrafficHandover";
 import ScopeHandoverAudioAlerts from "@/components/scope/ScopeHandoverAudioAlerts";
+import ScopeFplEditor from "@/components/scope/ScopeFplEditor";
 import ScopeTrafficOperations from "@/components/scope/ScopeTrafficOperations";
 import ScopeUnplannedTrafficOperationsV4 from "@/components/scope/ScopeUnplannedTrafficOperationsV4";
 import ScopeUnplannedPlanOwnershipBridge from "@/components/scope/ScopeUnplannedPlanOwnershipBridge";
@@ -108,7 +109,7 @@ export default async function ScopePage() {
     <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} /><ScopeFlightPlanTrafficLink initialPlans={plans} /><ScopeDisconnectedFlightPlanCleanup initialPlans={plans} />
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficLabelSeparatorSpacing /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedPlanOwnershipBridge initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
-    <ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} /><ScopeTransponderModeSync initialPlans={plans} /><ScopeTrafficOwnershipColorGuard /><ScopeSectorOwnershipVisuals initialPlans={plans} />
+    <ScopeFplEditor initialPlans={plans} /><ScopeTrafficOperations initialPlans={plans} /><ScopeHoldTelemetry /><ScopeTrafficOwnershipVisuals initialPlans={plans} /><ScopeTransponderModeSync initialPlans={plans} /><ScopeTrafficOwnershipColorGuard /><ScopeSectorOwnershipVisuals initialPlans={plans} />
     <ScopeTrafficFooterPlacement /><ScopePersonalization /><RadarViewport /><ScopeFunctionalExtras /><ScopeQdmTool /><ScopeMapDisplayFilters /><ScopeMdpcMapFilterFix /><ScopePlannedRouteTool initialPlans={plans} /><ScopeConflictDetectionV2 initialPlans={plans} /><ScopeConflictColorGuard />
     <ScopeRatingAccess roles={session.user?.discordRoles ?? []} /><ScopeUiRefinements /><ScopeUiConsistencyFixes />
     <ScopeChromeAdditions /><ScopeInterfaceCorrections /><ScopeAtisDialogV2 controllerName={controllerName} />
