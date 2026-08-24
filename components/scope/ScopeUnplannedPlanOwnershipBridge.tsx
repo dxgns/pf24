@@ -10,7 +10,7 @@ type Props = { initialPlans: ScopeFlightPlan[] };
 type StoredConnection = { callsign?: string };
 type ClaimTimes = Record<string, number>;
 type Owners = Record<string, string>;
-type OwnershipHintDetail = { key?: string; owner?: string | null };
+type OwnershipHintDetail = { key?: string; owner?: string | null; previousOwner?: string | null };
 type RecentOwner = { owner: string; expiresAt: number };
 
 const CONNECTION_STORAGE_KEY = "pf24_scope_connection_session_v1";
@@ -97,6 +97,14 @@ function suffixMatches(plan: ScopeFlightPlan, candidateKeys: string[]) {
   });
 }
 
+function planMatchesTrafficKey(plan: ScopeFlightPlan, rawKey: string) {
+  const key = norm(rawKey);
+  if (!key) return false;
+  if (planKeys(plan).includes(key)) return true;
+  const suffix = flightSuffix(key);
+  return Boolean(suffix && planSuffixes(plan).has(suffix));
+}
+
 function publishHint(keys: string[], owner: string) {
   for (const key of keys) {
     window.dispatchEvent(new CustomEvent(OWNERSHIP_HINT_EVENT, {
@@ -106,8 +114,9 @@ function publishHint(keys: string[], owner: string) {
   window.dispatchEvent(new Event(OWNERSHIP_EVENT));
 }
 
-export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Props) {
+export default function ScopeUnplannedPlanOwnershipBridge(_props: Props) {
   const migratingRef = useRef(new Set<string>());
+  const releasingRef = useRef(new Set<string>());
   const ownersRef = useRef<Owners>({});
   const recentOwnersRef = useRef(new Map<string, RecentOwner>());
   const releasedKeysRef = useRef(new Map<string, number>());
@@ -185,8 +194,6 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       if (recent && recent.expiresAt > now) owners.add(recent.owner);
     }
 
-    // Project Flight may expose an airline-name callsign (LANCHILE1900) while
-    // the filed plan uses LAN1900. Only use the suffix when the match is unique.
     if (owners.size === 0) {
       const liveMatches = suffixMatches(plan, Object.keys(ownersRef.current));
       if (liveMatches.length === 1) {
@@ -204,8 +211,6 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       }
     }
 
-    // Local storage covers the exact instant in which an unplanned claim is
-    // converted into a newly filed plan.
     const localOwner = readPosition();
     if (localOwner) {
       const claims = readClaims();
@@ -247,48 +252,65 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       return;
     }
 
-    if (data?.assumed_by) {
-      publishHint(keys, normalizeOwner(data.assumed_by));
-      return;
-    }
-
-    const { data: current, error: lookupError } = await supabase
-      .from("flight_plans")
-      .select("assumed_by")
-      .eq("id", plan.id)
-      .maybeSingle();
-
-    if (lookupError) {
-      console.error("PF24 Scope ownership promotion verification failed:", lookupError);
-      return;
-    }
-
-    const finalOwner = normalizeOwner(current?.assumed_by);
-    if (finalOwner) publishHint(keys, finalOwner);
+    if (data?.assumed_by) publishHint(keys, normalizeOwner(data.assumed_by));
   }, [ownerForPlan, planIsReleaseGuarded]);
 
-  const reconcilePlans = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("flight_plans")
-      .select("*")
-      .neq("status", "FINISHED")
-      .order("created_at", { ascending: false });
+  const persistReleaseForTrafficKey = useCallback(async (rawKey: string, previousOwner?: string | null) => {
+    const key = norm(rawKey);
+    const expectedOwner = normalizeOwner(previousOwner) || readPosition();
+    if (!key || !expectedOwner || releasingRef.current.has(key)) return;
 
-    if (error) {
-      console.error("PF24 Scope ownership bridge refresh failed:", error);
-      return;
+    releasingRef.current.add(key);
+    try {
+      const { data, error } = await supabase
+        .from("flight_plans")
+        .select("*")
+        .neq("status", "FINISHED");
+
+      if (error) {
+        console.error("PF24 Scope planned FREE lookup failed:", error);
+        return;
+      }
+
+      const plans = (data ?? []) as ScopeFlightPlan[];
+      const exact = plans.filter((plan) => planKeys(plan).includes(key));
+      const candidates = exact.length > 0
+        ? exact
+        : plans.filter((plan) => planMatchesTrafficKey(plan, key));
+
+      // A suffix fallback is valid only when it identifies exactly one active plan.
+      if (candidates.length !== 1) return;
+      const plan = candidates[0];
+      if (normalizeOwner(plan.assumed_by) !== expectedOwner) return;
+
+      const { data: released, error: releaseError } = await supabase
+        .from("flight_plans")
+        .update({ assumed_by: null, updated_at: new Date().toISOString() })
+        .eq("id", plan.id)
+        .eq("assumed_by", expectedOwner)
+        .select("id,assumed_by")
+        .maybeSingle();
+
+      if (releaseError) {
+        console.error("PF24 Scope aliased planned FREE failed:", releaseError);
+        return;
+      }
+
+      if (released && released.assumed_by === null) {
+        for (const planKey of planKeys(plan)) guardRelease(planKey);
+        window.dispatchEvent(new Event(OWNERSHIP_EVENT));
+      }
+    } finally {
+      releasingRef.current.delete(key);
     }
-
-    for (const plan of (data ?? []) as ScopeFlightPlan[]) void migrate(plan);
-  }, [migrate]);
+  }, [guardRelease]);
 
   useEffect(() => {
-    let cancelled = false;
+    const pendingTimers = new Set<number>();
 
     const onOwners = (event: Event) => {
       const owners = (event as CustomEvent<{ owners?: Owners }>).detail?.owners ?? {};
       rememberOwners(owners);
-      if (!cancelled) void reconcilePlans();
     };
 
     const onHint = (event: Event) => {
@@ -298,6 +320,7 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
       const owner = normalizeOwner(detail?.owner);
       if (!owner) {
         guardRelease(key);
+        void persistReleaseForTrafficKey(key, detail?.previousOwner);
         return;
       }
       clearReleaseGuard(key);
@@ -307,36 +330,38 @@ export default function ScopeUnplannedPlanOwnershipBridge({ initialPlans }: Prop
     window.addEventListener(OWNERS_EVENT, onOwners);
     window.addEventListener(OWNERSHIP_HINT_EVENT, onHint);
 
+    // We only need the current unplanned Presence snapshot so a NEW flight plan
+    // can inherit an existing radar ASSUME. Existing plans are never re-promoted
+    // during page load, which prevents a refresh from resurrecting a FREE plan.
     window.dispatchEvent(new Event(OWNERS_REQUEST_EVENT));
-    for (const plan of initialPlans) void migrate(plan);
-    const first = window.setTimeout(() => void reconcilePlans(), 80);
-    const second = window.setTimeout(() => {
-      window.dispatchEvent(new Event(OWNERS_REQUEST_EVENT));
-      void reconcilePlans();
-    }, 350);
 
     const channel = supabase
-      .channel("scope-unplanned-plan-ownership-bridge-v4")
+      .channel("scope-unplanned-plan-ownership-bridge-v5")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "flight_plans" },
+        { event: "INSERT", schema: "public", table: "flight_plans" },
         (payload) => {
           const next = payload.new as ScopeFlightPlan | undefined;
-          if (next?.id) void migrate(next);
-          window.setTimeout(() => void reconcilePlans(), 50);
+          if (!next?.id) return;
+          void migrate(next);
+          for (const delay of [80, 250, 750]) {
+            const timer = window.setTimeout(() => {
+              pendingTimers.delete(timer);
+              void migrate(next);
+            }, delay);
+            pendingTimers.add(timer);
+          }
         },
       )
       .subscribe();
 
     return () => {
-      cancelled = true;
-      window.clearTimeout(first);
-      window.clearTimeout(second);
+      for (const timer of pendingTimers) window.clearTimeout(timer);
       window.removeEventListener(OWNERS_EVENT, onOwners);
       window.removeEventListener(OWNERSHIP_HINT_EVENT, onHint);
       void supabase.removeChannel(channel);
     };
-  }, [clearReleaseGuard, guardRelease, initialPlans, migrate, reconcilePlans, rememberOwners]);
+  }, [clearReleaseGuard, guardRelease, migrate, persistReleaseForTrafficKey, rememberOwners]);
 
   return null;
 }
