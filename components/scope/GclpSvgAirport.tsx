@@ -16,10 +16,10 @@ const AIRPORT_DETAIL_MIN_ZOOM = 2.35;
 // RWY 01R -> (88.88, 71.44)
 // RWY 21R -> (89.68, 69.42)
 // RWY 21L -> (89.82, 69.49)
-// A least-squares affine fit over all four anchors keeps both parallel runways
-// aligned simultaneously; residual error is below 0.001 Scope map units.
+// The replacement SVG keeps the same runway geometry but has a different source
+// origin, so only the affine translation is compensated to preserve all four anchors.
 const GCLP_TRANSFORM =
-  "matrix(0.000345487461 -0.000709326423 0.000649487309 0.000317187036 87.8328662 71.5692600)";
+  "matrix(0.000345487461 -0.000709326423 0.000649487309 0.000317187036 87.918054535 71.440106769)";
 
 function readViewport(): Viewport {
   try {
@@ -97,8 +97,8 @@ export default function GclpSvgAirport() {
           href="/scope/gclp-ground.svg"
           x={0}
           y={0}
-          width={4316.5}
-          height={1890}
+          width={3742.5173}
+          height={1781.6703}
           transform={GCLP_TRANSFORM}
           preserveAspectRatio="none"
           opacity={showAirportDetail ? 1 : 0}
