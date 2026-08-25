@@ -4,9 +4,12 @@ import { useEffect } from "react";
 import {
   scopeClientDeltaToLocal,
   scopeClientPointToLocal,
+  scopeElementLocalSize,
 } from "@/lib/scope/domCoordinates";
+import { MAP_BOUNDS } from "@/lib/scope/mapData";
 
 type Viewport = { zoom: number; panX: number; panY: number };
+type Point = { x: number; y: number };
 
 const STORAGE_KEY = "pf24_scope_radar_viewport_v1";
 const MIN_ZOOM = 0.55;
@@ -47,6 +50,41 @@ function readViewport(): Viewport {
   } catch {
     return { zoom: 1, panX: 0, panY: 0 };
   }
+}
+
+function mapFit(size: Point) {
+  const mapWidth = MAP_BOUNDS.maxX - MAP_BOUNDS.minX;
+  const mapHeight = MAP_BOUNDS.maxY - MAP_BOUNDS.minY;
+  const scale = Math.min(size.x / mapWidth, size.y / mapHeight);
+  return {
+    scale,
+    offsetX: (size.x - mapWidth * scale) / 2,
+    offsetY: (size.y - mapHeight * scale) / 2,
+  };
+}
+
+function mapPointFromLocal(point: Point, size: Point, viewport: Viewport): Point | null {
+  const fit = mapFit(size);
+  if (!(fit.scale > 0)) return null;
+  const zoom = Math.max(0.01, viewport.zoom);
+  const baseX = (point.x - viewport.panX) / zoom;
+  const baseY = (point.y - viewport.panY) / zoom;
+  return {
+    x: MAP_BOUNDS.minX + (baseX - fit.offsetX) / fit.scale,
+    y: MAP_BOUNDS.minY + (baseY - fit.offsetY) / fit.scale,
+  };
+}
+
+function basePointFromMap(point: Point, size: Point): Point {
+  const fit = mapFit(size);
+  return {
+    x: fit.offsetX + (point.x - MAP_BOUNDS.minX) * fit.scale,
+    y: fit.offsetY + (point.y - MAP_BOUNDS.minY) * fit.scale,
+  };
+}
+
+function sameSize(a: Point, b: Point) {
+  return Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
 }
 
 function findRadar() {
@@ -90,6 +128,7 @@ export default function RadarViewport() {
     }
 
     let viewport = readViewport();
+    let radarSize = scopeElementLocalSize(radar);
     let panning = false;
     let movedDuringPan = false;
     let suppressTrafficClick = false;
@@ -105,6 +144,34 @@ export default function RadarViewport() {
     };
 
     const persist = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(viewport));
+
+    const reframeForSize = () => {
+      const nextSize = scopeElementLocalSize(radar);
+      if (sameSize(radarSize, nextSize)) {
+        publish();
+        return;
+      }
+
+      // General Scope zoom changes the CSS layout size of the radar before the
+      // outer transform is applied. Raw pan pixels therefore cannot be reused:
+      // the same pan would point at a different place on the map. Preserve the
+      // geographic point currently under the radar centre and solve a new pan
+      // for the new logical size instead.
+      const oldCenter = { x: radarSize.x / 2, y: radarSize.y / 2 };
+      const anchor = mapPointFromLocal(oldCenter, radarSize, viewport);
+      if (anchor) {
+        const base = basePointFromMap(anchor, nextSize);
+        viewport = {
+          ...viewport,
+          panX: nextSize.x / 2 - base.x * viewport.zoom,
+          panY: nextSize.y / 2 - base.y * viewport.zoom,
+        };
+        persist();
+      }
+
+      radarSize = nextSize;
+      publish();
+    };
 
     publish();
     const initialRetry = window.setTimeout(publish, 300);
@@ -175,7 +242,7 @@ export default function RadarViewport() {
     };
 
     const resizeObserver = typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(() => publish())
+      ? new ResizeObserver(reframeForSize)
       : null;
     resizeObserver?.observe(radar);
 
