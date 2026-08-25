@@ -216,7 +216,7 @@ export default function PilotFlightPlans({
   }
 
   async function finishFlight(id: string) {
-    const confirmed = confirm("¿Finalizar este vuelo y volver al dashboard?");
+    const confirmed = confirm("¿Finalizar este vuelo?");
     if (!confirmed) return;
 
     const { error } = await supabase
@@ -238,7 +238,6 @@ export default function PilotFlightPlans({
     }
 
     setPlans((current) => current.filter((plan) => plan.id !== id));
-    window.location.href = "/dashboard";
   }
 
   if (plans.length === 0) {
