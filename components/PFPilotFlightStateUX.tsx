@@ -56,13 +56,23 @@ function findEmptyPlanPanel(module: HTMLElement) {
   ) ?? null;
 }
 
+function isFinishButton(button: HTMLButtonElement) {
+  return normalizedText(button.textContent).toUpperCase().includes("FINALIZAR");
+}
+
 function findExistingPlanCards(module: HTMLElement) {
   const cards = new Set<HTMLElement>();
+
+  for (const card of Array.from(module.querySelectorAll<HTMLElement>("[data-pf24-pilot-fpl-readonly='true']"))) {
+    cards.add(card);
+  }
+
   for (const button of Array.from(module.querySelectorAll<HTMLButtonElement>("button"))) {
-    if (!normalizedText(button.textContent).toUpperCase().includes("FINALIZAR VUELO")) continue;
+    if (!isFinishButton(button)) continue;
     const card = button.closest<HTMLElement>(".panel");
     if (card && card !== module) cards.add(card);
   }
+
   return Array.from(cards);
 }
 
@@ -93,7 +103,11 @@ export default function PFPilotFlightStateUX({ pilotId }: { pilotId: string }) {
 
     const channel = supabase
       .channel(`pfpilot-flight-state-ux-${pilotId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void refresh())
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "flight_plans" },
+        () => void refresh(),
+      )
       .subscribe();
 
     const fallback = window.setInterval(() => void refresh(), 2500);
@@ -125,6 +139,8 @@ export default function PFPilotFlightStateUX({ pilotId }: { pilotId: string }) {
       const emptyPanel = findEmptyPlanPanel(module);
       const existingCards = findExistingPlanCards(module);
 
+      // Exactly one Flight Plan state is visible at a time:
+      // no active plan -> creation form only; active plan -> filed plan only.
       setDisplay(createPanel, !activePlan);
       setDisplay(emptyPanel, false);
       for (const card of existingCards) setDisplay(card, Boolean(activePlan));
@@ -137,7 +153,7 @@ export default function PFPilotFlightStateUX({ pilotId }: { pilotId: string }) {
 
     queueSync();
     const observer = new MutationObserver(queueSync);
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
     return () => {
       observer.disconnect();
@@ -150,10 +166,10 @@ export default function PFPilotFlightStateUX({ pilotId }: { pilotId: string }) {
       const button = event.target instanceof Element
         ? event.target.closest<HTMLButtonElement>("button")
         : null;
-      if (!button) return;
-      if (!normalizedText(button.textContent).toUpperCase().includes("FINALIZAR VUELO")) return;
-      if (!button.closest("section")) return;
+      if (!button || !isFinishButton(button) || !button.closest("section")) return;
 
+      // PFPilot owns the finish flow. Stop PilotFlightPlans from redirecting to
+      // /dashboard after the database update.
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
