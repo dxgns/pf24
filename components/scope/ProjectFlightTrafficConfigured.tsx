@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ProjectFlightTrafficV6 from "@/components/scope/ProjectFlightTrafficV6";
 import GroundHeadingVectorFix from "@/components/scope/GroundHeadingVectorFix";
 import { installTrafficCalibrationShim } from "@/components/scope/TrafficCalibrationShim";
+import { installProjectFlightLiveUpdateShim } from "@/components/scope/ProjectFlightLiveUpdateShim";
 import type { ScopeFlightPlan } from "@/lib/scope/types";
 
 type Props = {
@@ -18,7 +19,11 @@ const FEED_STALE_MS = 2500;
 const WATCHDOG_INTERVAL_MS = 500;
 
 export default function ProjectFlightTrafficConfigured({ initialPlans, serverId }: Props) {
+  // Complete snapshots are calibrated first. The live-update shim then hydrates
+  // Project Flight's position-only delta packets with the identity learned from
+  // those snapshots, allowing ProjectFlightTrafficV6 to consume both formats.
   installTrafficCalibrationShim();
+  installProjectFlightLiveUpdateShim();
 
   const [feedGeneration, setFeedGeneration] = useState(0);
   const lastHealthyUpdateRef = useRef(0);
