@@ -2,7 +2,7 @@ export type MapPoint = { x: number; y: number };
 export type NamedPoint = MapPoint & { name: string; kind?: "fix" | "vor" | "airport" | "stand" };
 export type MapPath = { id: string; points: MapPoint[]; closed?: boolean; tone: "fir" | "app" | "tower" | "ground" | "runway" };
 
-export const MAP_BOUNDS = { minX: 15, maxX: 210, minY: 0, maxY: 120 } as const;
+export const MAP_BOUNDS = { minX: 15, maxX: 210, minY: -0.02, maxY: 120 } as const;
 
 export const WAYPOINTS: NamedPoint[] = [
   { name: "BODLO", x: 15.0, y: 75.0 }, { name: "POKEG", x: 67.24, y: 75.0 },
@@ -45,6 +45,13 @@ export const WAYPOINTS: NamedPoint[] = [
   { name: "SARGO", x: 121.20, y: 49.84 }, { name: "ELTAN", x: 109.75, y: 75.94 },
   { name: "RIXOT", x: 148.82, y: 44.56 },
 
+  { name: "RATSU", x: 79.08, y: 0.00 }, { name: "VALDI", x: 129.69, y: -0.02 },
+  { name: "MIKEL", x: 114.25, y: 27.75 }, { name: "LAKEY", x: 120.79, y: 25.36 },
+  { name: "GASKO", x: 125.09, y: 25.05 }, { name: "BODSO", x: 134.38, y: 23.82 },
+  { name: "FRANE", x: 144.28, y: 27.19 }, { name: "WIZAD", x: 142.78, y: 36.28 },
+  { name: "KUNAV", x: 143.19, y: 44.26 }, { name: "BOGNA", x: 127.46, y: 46.54 },
+  { name: "VASUX", x: 118.65, y: 47.12 }, { name: "NOVMA", x: 114.10, y: 39.09 },
+
   { name: "BRAVO", x: 178.56, y: 35.50 }, { name: "KIT", x: 186.56, y: 27.59 },
   { name: "LIMA", x: 163.25, y: 25.00 }, { name: "AMULU", x: 151.94, y: 31.44 },
   { name: "ROSE", x: 152.34, y: 18.84 }, { name: "KETF", x: 150.31, y: 4.16 },
@@ -86,6 +93,12 @@ export const AIRSPACE_PATHS: MapPath[] = [
     { x: 143.99, y: 0.00 }, { x: 210.00, y: 0.00 }, { x: 210.00, y: 37.44 },
     { x: 190.44, y: 42.25 }, { x: 162.06, y: 40.71 },
   ]},
+  { id: "EGTT_CTR", tone: "fir", closed: true, points: [
+    { x: 79.08, y: 53.56 }, { x: 79.08, y: 0.00 }, { x: 129.69, y: -0.02 },
+    { x: 143.99, y: 0.00 }, { x: 143.79, y: 10.11 }, { x: 151.94, y: 31.44 },
+    { x: 148.82, y: 44.56 }, { x: 136.70, y: 49.82 }, { x: 121.20, y: 49.84 },
+    { x: 100.45, y: 53.56 },
+  ]},
   { id: "LCLK_APP", tone: "app", closed: true, points: [
     { x: 136.19, y: 91.40 }, { x: 140.93, y: 86.24 }, { x: 176.44, y: 78.94 }, { x: 171.94, y: 94.95 },
     { x: 164.63, y: 103.46 }, { x: 151.76, y: 105.46 }, { x: 135.96, y: 98.25 },
@@ -93,6 +106,12 @@ export const AIRSPACE_PATHS: MapPath[] = [
   { id: "LCPH_APP", tone: "app", closed: true, points: [
     { x: 136.19, y: 91.40 }, { x: 135.96, y: 98.25 }, { x: 144.33, y: 102.14 }, { x: 134.70, y: 106.59 },
     { x: 124.76, y: 103.21 }, { x: 126.75, y: 92.82 },
+  ]},
+  { id: "EGKK_APP", tone: "app", closed: true, points: [
+    { x: 114.25, y: 27.75 }, { x: 120.79, y: 25.36 }, { x: 125.09, y: 25.05 },
+    { x: 134.38, y: 23.82 }, { x: 144.28, y: 27.19 }, { x: 142.78, y: 36.28 },
+    { x: 143.19, y: 44.26 }, { x: 127.46, y: 46.54 }, { x: 118.65, y: 47.12 },
+    { x: 114.10, y: 39.09 },
   ]},
   { id: "MDPC_APP", tone: "app", closed: true, points: [
     { x: 73.93, y: 85.06 }, { x: 83.72, y: 84.96 }, { x: 100.56, y: 96.22 }, { x: 99.61, y: 103.25 },
