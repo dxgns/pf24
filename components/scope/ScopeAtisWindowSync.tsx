@@ -105,24 +105,36 @@ export default function ScopeAtisWindowSync() {
     void refresh();
 
     const channel = supabase
-      .channel("scope-atis-window-sync-v1")
+      .channel("scope-atis-window-sync-v2")
       .on("postgres_changes", { event: "*", schema: "public", table: "atis_messages" }, () => void refresh())
       .subscribe();
 
-    const fallback = window.setInterval(() => void refresh(), 3000);
+    // Realtime remains the primary source, but a short fallback also covers
+    // browsers where the publication succeeds before the postgres event arrives.
+    const fallback = window.setInterval(() => void refresh(), 1500);
+
+    const refreshBurst = () => {
+      [100, 450, 1000, 2200].forEach((delay) => {
+        window.setTimeout(() => void refresh(), delay);
+      });
+    };
 
     const onClick = (event: MouseEvent) => {
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button") : null;
-      const label = button?.textContent?.replace(/\s+/g, " ").trim().toUpperCase() ?? "";
-      if (label !== "SEND" && label !== "DELETE ATIS") return;
-      window.setTimeout(() => void refresh(), 150);
-      window.setTimeout(() => void refresh(), 700);
+      if (!button) return;
+      const label = button.textContent?.replace(/\s+/g, " ").trim().toUpperCase() ?? "";
+      const isAtisDialogAction = Boolean(button.closest("[data-pf24-atis-dialog='true']"));
+      if (!isAtisDialogAction || (label !== "SEND" && label !== "DELETE ATIS")) return;
+      refreshBurst();
     };
 
+    const onExplicitSync = () => refreshBurst();
     document.addEventListener("click", onClick, true);
+    window.addEventListener("pf24-atis-config-sync", onExplicitSync);
     return () => {
       window.clearInterval(fallback);
       document.removeEventListener("click", onClick, true);
+      window.removeEventListener("pf24-atis-config-sync", onExplicitSync);
       void supabase.removeChannel(channel);
     };
   }, [refresh]);
@@ -177,7 +189,7 @@ export default function ScopeAtisWindowSync() {
     queueSync();
     const observer = new MutationObserver(queueSync);
     observer.observe(document.body, { childList: true, subtree: true });
-    const timer = window.setInterval(queueSync, 750);
+    const timer = window.setInterval(queueSync, 500);
 
     return () => {
       observer.disconnect();
