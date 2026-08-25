@@ -46,6 +46,7 @@ import MdabSvgAirport from "@/components/scope/MdabSvgAirport";
 import MdcrMtcaSvgAirport from "@/components/scope/MdcrMtcaSvgAirport";
 import LemhSvgAirport from "@/components/scope/LemhSvgAirport";
 import GclpSvgAirport from "@/components/scope/GclpSvgAirport";
+import EgkkSvgAirport from "@/components/scope/EgkkSvgAirport";
 import ScopeFunctionalExtras from "@/components/scope/ScopeFunctionalExtras";
 import ScopeQdmTool from "@/components/scope/ScopeQdmTool";
 import ScopePlannedRouteTool from "@/components/scope/ScopePlannedRouteTool";
@@ -108,7 +109,7 @@ export default async function ScopePage() {
   return <>
     <ScopeNativeListCss /><PF24Scope initialPlans={plans} controllerName={controllerName} />
     <ScopeConnectionPersistence /><ScopeConnectDialogPersistence /><ScopeOwnedTrafficLifecycle /><ScopeTrafficAutoRelease />
-    <ScopeLayoutGuards /><ScopeStartupWindowOverlapGuard /><WeatherPanelV2 /><ScopeAtisWindowSync /><ScopeRadarMap /><ScopeEgttWaypoints /><ScopeMenorcaIsland /><ScopeGlidePath /><ScopeAirspaceBoundaryDedup /><ScopeTwrGeometryCorrection /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport /><LemhSvgAirport /><GclpSvgAirport />
+    <ScopeLayoutGuards /><ScopeStartupWindowOverlapGuard /><WeatherPanelV2 /><ScopeAtisWindowSync /><ScopeRadarMap /><ScopeEgttWaypoints /><ScopeMenorcaIsland /><ScopeGlidePath /><ScopeAirspaceBoundaryDedup /><ScopeTwrGeometryCorrection /><ScopeWaypointStyling /><MdstSvgAirport /><MdabSvgAirport /><MdcrMtcaSvgAirport /><LemhSvgAirport /><GclpSvgAirport /><EgkkSvgAirport />
     <ProjectFlightTrafficConfigured initialPlans={plans} serverId={projectFlightServerId} /><ScopeFlightPlanTrafficLink initialPlans={plans} /><ScopeDisconnectedFlightPlanCleanup initialPlans={plans} />
     <ScopeTrafficSettings /><ScopeTrafficLabelUX /><ScopeTrafficLabelSeparatorSpacing /><ScopeTrafficMappState /><ScopeTrafficHandover initialPlans={plans} /><ScopeHandoverAudioAlerts />
     <ScopeUnplannedHold initialPlans={plans} /><ScopeUnplannedPlanOwnershipBridge initialPlans={plans} /><ScopeUnplannedTrafficOperationsV4 initialPlans={plans} /><ScopeSharedHoldSync />
