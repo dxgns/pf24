@@ -11,7 +11,7 @@ import {
 
 type Point = { x: number; y: number };
 type Viewport = { zoom: number; panX: number; panY: number };
-type FrozenQdm = { id: number; originBase: Point; endBase: Point };
+type FrozenQdm = { id: number; originMap: Point; endMap: Point };
 type RenderedQdm = {
   id?: number;
   origin: Point;
@@ -122,10 +122,24 @@ function mapCoordinatesFromScreen(point: Point, size: Point, viewport: Viewport)
   };
 }
 
+function screenPointFromMap(point: Point, size: Point, viewport: Viewport): Point {
+  const mapWidth = MAP_BOUNDS.maxX - MAP_BOUNDS.minX;
+  const mapHeight = MAP_BOUNDS.maxY - MAP_BOUNDS.minY;
+  const fitScale = Math.min(size.x / mapWidth, size.y / mapHeight);
+  const offsetX = (size.x - mapWidth * fitScale) / 2;
+  const offsetY = (size.y - mapHeight * fitScale) / 2;
+  const baseX = offsetX + (point.x - MAP_BOUNDS.minX) * fitScale;
+  const baseY = offsetY + (point.y - MAP_BOUNDS.minY) * fitScale;
+  return {
+    x: baseX * viewport.zoom + viewport.panX,
+    y: baseY * viewport.zoom + viewport.panY,
+  };
+}
+
 export default function ScopeQdmTool() {
   const [radar, setRadar] = useState<HTMLElement | null>(null);
   const [viewport, setViewport] = useState<Viewport>({ zoom: 1, panX: 0, panY: 0 });
-  const [originBase, setOriginBase] = useState<Point | null>(null);
+  const [originMap, setOriginMap] = useState<Point | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
   const [frozenQdms, setFrozenQdms] = useState<FrozenQdm[]>([]);
   const [multiQdm, setMultiQdm] = useState(false);
@@ -216,14 +230,11 @@ export default function ScopeQdmTool() {
 
       const point = radarPoint(event);
       const currentViewport = viewportRef.current;
-      const zoom = Math.max(0.01, currentViewport.zoom);
-      const origin = {
-        x: (point.x - currentViewport.panX) / zoom,
-        y: (point.y - currentViewport.panY) / zoom,
-      };
+      const origin = mapCoordinatesFromScreen(point, scopeElementLocalSize(radar), currentViewport);
+      if (!origin) return;
 
       originRef.current = origin;
-      setOriginBase(origin);
+      setOriginMap(origin);
       cursorRef.current = point;
       setCursor(point);
       holdingRef.current = true;
@@ -260,7 +271,7 @@ export default function ScopeQdmTool() {
       if (event.button !== 0 || !holdingRef.current) return;
       holdingRef.current = false;
       originRef.current = null;
-      setOriginBase(null);
+      setOriginMap(null);
       cursorRef.current = null;
       setCursor(null);
     };
@@ -272,14 +283,12 @@ export default function ScopeQdmTool() {
       if (!point || !origin) return;
 
       const currentViewport = viewportRef.current;
-      const zoom = Math.max(0.01, currentViewport.zoom);
+      const endMap = mapCoordinatesFromScreen(point, scopeElementLocalSize(radar), currentViewport);
+      if (!endMap) return;
       const frozen: FrozenQdm = {
         id: nextQdmIdRef.current++,
-        originBase: origin,
-        endBase: {
-          x: (point.x - currentViewport.panX) / zoom,
-          y: (point.y - currentViewport.panY) / zoom,
-        },
+        originMap: origin,
+        endMap,
       };
 
       event.preventDefault();
@@ -292,7 +301,7 @@ export default function ScopeQdmTool() {
       });
       holdingRef.current = false;
       originRef.current = null;
-      setOriginBase(null);
+      setOriginMap(null);
       cursorRef.current = null;
       setCursor(null);
     };
@@ -373,28 +382,20 @@ export default function ScopeQdmTool() {
   }, [radar, sizeTick, viewport.zoom]);
 
   const renderedFrozen = useMemo(() => {
-    if (!renderQdm) return [];
+    if (!renderQdm || !radar) return [];
+    const size = scopeElementLocalSize(radar);
     return frozenQdms.map((qdm) => {
-      const origin = {
-        x: qdm.originBase.x * viewport.zoom + viewport.panX,
-        y: qdm.originBase.y * viewport.zoom + viewport.panY,
-      };
-      const endpoint = {
-        x: qdm.endBase.x * viewport.zoom + viewport.panX,
-        y: qdm.endBase.y * viewport.zoom + viewport.panY,
-      };
+      const origin = screenPointFromMap(qdm.originMap, size, viewport);
+      const endpoint = screenPointFromMap(qdm.endMap, size, viewport);
       return renderQdm(origin, endpoint, qdm.id);
     });
-  }, [frozenQdms, renderQdm, viewport]);
+  }, [frozenQdms, radar, renderQdm, sizeTick, viewport]);
 
   const renderedActive = useMemo(() => {
-    if (!renderQdm || !originBase || !cursor) return null;
-    const origin = {
-      x: originBase.x * viewport.zoom + viewport.panX,
-      y: originBase.y * viewport.zoom + viewport.panY,
-    };
+    if (!renderQdm || !radar || !originMap || !cursor) return null;
+    const origin = screenPointFromMap(originMap, scopeElementLocalSize(radar), viewport);
     return renderQdm(origin, cursor);
-  }, [cursor, originBase, renderQdm, viewport]);
+  }, [cursor, originMap, radar, renderQdm, sizeTick, viewport]);
 
   const crd = useMemo(() => {
     void sizeTick;
