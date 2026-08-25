@@ -2,11 +2,13 @@ import type { ReactNode } from "react";
 import ScopeMdpcAirportLayer from "@/components/scope/ScopeMdpcAirportLayer";
 import ScopeGclpIsland from "@/components/scope/ScopeGclpIsland";
 import ScopeEgkkIsland from "@/components/scope/ScopeEgkkIsland";
+import ScopeMapFilterCorrections from "@/components/scope/ScopeMapFilterCorrections";
 
 export default function ScopeTemplate({ children }: { children: ReactNode }) {
   return (
     <>
       {children}
+      <ScopeMapFilterCorrections />
       <ScopeGclpIsland />
       <ScopeEgkkIsland />
       <ScopeMdpcAirportLayer />
