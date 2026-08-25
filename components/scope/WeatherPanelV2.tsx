@@ -139,6 +139,7 @@ export default function WeatherPanelV2() {
   const [collapsed, setCollapsed] = useState(false);
   const [position, setPosition] = useState<Point>({ x: 1265, y: 48 });
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const atisAirportsRef = useRef<string[]>([]);
 
   const airportKey = useMemo(() => airports.join(","), [airports]);
   const selectedRaw = selectedStation ? metars[selectedStation]?.raw ?? null : null;
@@ -148,13 +149,23 @@ export default function WeatherPanelV2() {
   const syncEnvironment = useCallback(() => {
     const nextRadar = findRadar();
     const nextFooter = findFooterForm();
-    setRadar(nextRadar); setFooterForm(nextFooter); setAirports(getActiveAirports()); hideNativeWeather(); hideDefaultFooterMetar(nextFooter);
+    const nextAirports = Array.from(new Set([...getActiveAirports(), ...atisAirportsRef.current])).sort();
+    setRadar(nextRadar);
+    setFooterForm(nextFooter);
+    setAirports(nextAirports);
+    hideNativeWeather();
+    hideDefaultFooterMetar(nextFooter);
   }, []);
   const loadAtis = useCallback(async () => {
     const { data } = await supabase.from("atis_messages").select("airport_icao,info_letter,created_at").order("created_at", { ascending: false });
     const next: Record<string, string> = {};
-    for (const row of (data ?? []) as AtisRow[]) if (!next[row.airport_icao]) next[row.airport_icao] = row.info_letter;
+    for (const row of (data ?? []) as AtisRow[]) {
+      const icao = String(row.airport_icao ?? "").trim().toUpperCase();
+      if (icao && !next[icao]) next[icao] = row.info_letter;
+    }
+    atisAirportsRef.current = Object.keys(next);
     setAtisLetters(next);
+    setAirports(Array.from(new Set([...getActiveAirports(), ...atisAirportsRef.current])).sort());
   }, []);
 
   useEffect(() => { localStorage.setItem(VISIBILITY_STORAGE_KEY, JSON.stringify(visible)); }, [visible]);
