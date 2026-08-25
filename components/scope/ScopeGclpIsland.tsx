@@ -11,8 +11,8 @@ const VIEWPORT_EVENT = "pf24-radar-viewport";
 
 // Calibrated from the supplied PFTracker reference using CANDE, MADAS,
 // PELIN, POKEG, PIXAR, BETIR and ELTAN as map anchors. The visible Gran
-// Canaria coastline occupies approximately x=77.8..90.4 / y=62.8..74.8.
-const GCLP_ISLAND_TRANSFORM = "matrix(0.0992 0 0 0.0992 77.77 62.80)";
+// Canaria coastline occupies approximately x=78.25..90.85 / y=62.8..74.8.
+const GCLP_ISLAND_TRANSFORM = "matrix(0.0992 0 0 0.0992 78.22 62.80)";
 const GCLP_ISLAND_WIDTH = 126.85157;
 const GCLP_ISLAND_HEIGHT = 121.48666;
 
