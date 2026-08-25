@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
 import ScopeMdpcAirportLayer from "@/components/scope/ScopeMdpcAirportLayer";
+import ScopeGclpIsland from "@/components/scope/ScopeGclpIsland";
 
 export default function ScopeTemplate({ children }: { children: ReactNode }) {
   return (
     <>
       {children}
+      <ScopeGclpIsland />
       <ScopeMdpcAirportLayer />
       <style>{`
         [data-pf24-radar-map-v2="true"]{z-index:7!important;}
