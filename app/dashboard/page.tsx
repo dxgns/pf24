@@ -73,20 +73,11 @@ export default async function DashboardPage() {
             />
           )}
 
-          {canAccessPilot && (
-            <PortalCard
-              href="/piloto"
-              eyebrow="Pilot Operations"
-              title="Portal Piloto"
-              text="Crear, modificar y finalizar planes de vuelo. Consulta ATCs online y estados operativos."
-            />
-          )}
-
           {canAccessATC && (
             <PortalCard
               href="/scope"
-              eyebrow="PF24 Scope Beta"
-              title="Scope ATC"
+              eyebrow="PFScope Beta"
+              title="PFScope"
               text="Radar, flight data, coordinación, ventanas operacionales y modo de simulación."
             />
           )}
