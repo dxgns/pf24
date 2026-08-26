@@ -22,6 +22,18 @@ type WireField = {
   number?: number;
 };
 
+type RawTrafficRecord = {
+  id: string;
+  rawCallsign: string;
+  username: string;
+  aircraftType: string;
+  worldX: number;
+  worldZ: number;
+  altitude: number;
+  heading: number;
+  groundSpeed: number;
+};
+
 type NativeWebSocketCtor = typeof WebSocket;
 
 declare global {
@@ -30,8 +42,8 @@ declare global {
   }
 }
 
-const SERVER_ID = "2ykygVZiX5";
-const WS_URL = `wss://v3api.project-flight.com/v3/traffic/server/ws/${SERVER_ID}`;
+const DEFAULT_SERVER_ID = "2ykygVZiX5";
+const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
 
 // Same wide-area calibration used by the Scope. Keeping PFPilot in the same
 // coordinate frame lets guidance use the already calibrated PF24 waypoint map.
@@ -71,6 +83,14 @@ const TELEPHONY_TO_ICAO: Record<string, string> = {
   WIZZ: "WZZ",
   KLM: "KLM",
 };
+
+function configuredServerId() {
+  if (typeof document === "undefined") return DEFAULT_SERVER_ID;
+  return document
+    .querySelector<HTMLElement>("main[data-project-flight-server-id]")
+    ?.dataset.projectFlightServerId
+    ?.trim() || DEFAULT_SERVER_ID;
+}
 
 function globalMapPoint(worldX: number, worldZ: number) {
   return {
@@ -134,7 +154,7 @@ function parseFields(bytes: Uint8Array): WireField[] {
     offset = tag.offset;
     const field = Math.floor(tag.value / 8);
     const wire = tag.value % 8;
-    if (field <= 0) break;
+    if (field <= 0) throw new Error("Invalid protobuf field");
 
     if (wire === 0) {
       const value = readVarint(bytes, offset);
@@ -143,7 +163,7 @@ function parseFields(bytes: Uint8Array): WireField[] {
       continue;
     }
     if (wire === 1) {
-      if (offset + 8 > bytes.length) break;
+      if (offset + 8 > bytes.length) throw new Error("Invalid protobuf double");
       fields.push({ field, wire, bytes: bytes.slice(offset, offset + 8) });
       offset += 8;
       continue;
@@ -152,18 +172,18 @@ function parseFields(bytes: Uint8Array): WireField[] {
       const length = readVarint(bytes, offset);
       offset = length.offset;
       const size = Math.floor(length.value);
-      if (size < 0 || offset + size > bytes.length) break;
+      if (size < 0 || offset + size > bytes.length) throw new Error("Invalid protobuf length");
       fields.push({ field, wire, bytes: bytes.slice(offset, offset + size) });
       offset += size;
       continue;
     }
     if (wire === 5) {
-      if (offset + 4 > bytes.length) break;
+      if (offset + 4 > bytes.length) throw new Error("Invalid protobuf float");
       fields.push({ field, wire, bytes: bytes.slice(offset, offset + 4) });
       offset += 4;
       continue;
     }
-    break;
+    throw new Error("Unsupported protobuf wire type");
   }
   return fields;
 }
@@ -191,26 +211,55 @@ function doubleField(fields: WireField[], number: number) {
   return doubleOf(fields.find((field) => field.field === number && field.wire === 1));
 }
 
-function isTrafficRecord(bytes: Uint8Array) {
-  try {
-    const fields = parseFields(bytes);
-    const server = stringField(fields, 1);
-    const callsign = stringField(fields, 2);
-    return Boolean(callsign && (!server || server === SERVER_ID || server.length >= 6));
-  } catch {
-    return false;
+function identityKeys(fields: WireField[]) {
+  const keys = new Set<string>();
+  const source = fields.find((field) => field.field === 1);
+
+  if (source?.wire === 0 && Number.isFinite(source.number)) keys.add(`idn:${source.number}`);
+  if (source?.wire === 2 && source.bytes?.length) {
+    const text = textOf(source);
+    if (text) keys.add(`ids:${text}`);
+    else {
+      keys.add(`idh:${Array.from(source.bytes)
+        .map((value) => value.toString(16).padStart(2, "0"))
+        .join("")}`);
+    }
   }
+
+  const callsign = stringField(fields, 2).toUpperCase();
+  const username = stringField(fields, 3).toLowerCase();
+  if (callsign) keys.add(`cs:${callsign}`);
+  if (username) keys.add(`user:${username}`);
+  return Array.from(keys);
 }
 
-function recordsFromMessage(bytes: Uint8Array) {
-  if (isTrafficRecord(bytes)) return [bytes];
-  try {
-    return parseFields(bytes)
-      .filter((field) => field.wire === 2 && field.bytes && isTrafficRecord(field.bytes))
-      .map((field) => field.bytes as Uint8Array);
-  } catch {
-    return [];
-  }
+function collectCandidateFields(bytes: Uint8Array) {
+  const result: WireField[][] = [];
+
+  const visit = (input: Uint8Array, depth: number) => {
+    if (depth > 5) return;
+    let fields: WireField[];
+    try {
+      fields = parseFields(input);
+    } catch {
+      return;
+    }
+
+    const x = doubleField(fields, 4);
+    const z = doubleField(fields, 5);
+    if (Number.isFinite(x) && Number.isFinite(z) && identityKeys(fields).length > 0) {
+      result.push(fields);
+    }
+
+    for (const field of fields) {
+      if (field.wire === 2 && field.bytes && field.bytes.length >= 2) {
+        visit(field.bytes, depth + 1);
+      }
+    }
+  };
+
+  visit(bytes, 0);
+  return result;
 }
 
 function aircraftCode(raw: string) {
@@ -236,17 +285,7 @@ function aircraftCode(raw: string) {
   return upper.replace(/[^A-Z0-9]/g, "").slice(0, 4) || "----";
 }
 
-function toTelemetry(raw: {
-  id: string;
-  rawCallsign: string;
-  username: string;
-  aircraftType: string;
-  worldX: number;
-  worldZ: number;
-  altitude: number;
-  heading: number;
-  groundSpeed: number;
-}): ProjectFlightTelemetry {
+function toTelemetry(raw: RawTrafficRecord): ProjectFlightTelemetry {
   const point = globalMapPoint(raw.worldX, raw.worldZ);
   return {
     ...raw,
@@ -257,30 +296,73 @@ function toTelemetry(raw: {
   };
 }
 
-function decodeBinary(bytes: Uint8Array): ProjectFlightTelemetry[] {
-  return recordsFromMessage(bytes).flatMap((record) => {
-    const fields = parseFields(record);
-    const rawCallsign = stringField(fields, 2);
-    const username = stringField(fields, 3);
-    const worldX = doubleField(fields, 4);
-    const worldZ = doubleField(fields, 5);
-    const heading = doubleField(fields, 6);
-    const altitude = doubleField(fields, 7);
-    const speed = doubleField(fields, 8);
-    const type = stringField(fields, 9);
-    if (!rawCallsign || !Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
-    return [toTelemetry({
-      id: username || normalizeProjectFlightCallsign(rawCallsign),
-      rawCallsign,
-      username,
-      aircraftType: type,
-      worldX,
-      worldZ,
-      altitude: Number.isFinite(altitude) ? Math.max(0, altitude) : 0,
-      heading: Number.isFinite(heading) ? ((heading % 360) + 360) % 360 : 0,
-      groundSpeed: Number.isFinite(speed) ? Math.max(0, speed) : 0,
-    })];
-  });
+function createBinaryDecoder() {
+  const byIdentity = new Map<string, RawTrafficRecord>();
+
+  const remember = (record: RawTrafficRecord, keys: string[]) => {
+    for (const key of keys) byIdentity.set(key, record);
+    if (record.rawCallsign) byIdentity.set(`cs:${record.rawCallsign.toUpperCase()}`, record);
+    if (record.username) byIdentity.set(`user:${record.username.toLowerCase()}`, record);
+  };
+
+  const resolve = (keys: string[]) => {
+    const matches = new Set<RawTrafficRecord>();
+    for (const key of keys) {
+      const match = byIdentity.get(key);
+      if (match) matches.add(match);
+    }
+    return matches.size === 1 ? Array.from(matches)[0] : null;
+  };
+
+  return (bytes: Uint8Array): ProjectFlightTelemetry[] => {
+    const rows = collectCandidateFields(bytes).flatMap((fields) => {
+      const keys = identityKeys(fields);
+      const currentCallsign = stringField(fields, 2);
+      const currentUsername = stringField(fields, 3);
+      const existing = resolve(keys);
+      if (!currentCallsign && !existing) return [];
+
+      const worldX = doubleField(fields, 4);
+      const worldZ = doubleField(fields, 5);
+      if (!Number.isFinite(worldX) || !Number.isFinite(worldZ)) return [];
+
+      const heading = doubleField(fields, 6);
+      const altitude = doubleField(fields, 7);
+      const speed = doubleField(fields, 8);
+      const aircraftType = stringField(fields, 9);
+      const rawCallsign = currentCallsign || existing?.rawCallsign || "";
+      const username = currentUsername || existing?.username || "";
+
+      const record: RawTrafficRecord = existing ?? {
+        id: username || normalizeProjectFlightCallsign(rawCallsign) || keys[0] || "traffic",
+        rawCallsign,
+        username,
+        aircraftType: "",
+        worldX,
+        worldZ,
+        altitude: 0,
+        heading: 0,
+        groundSpeed: 0,
+      };
+
+      record.rawCallsign = rawCallsign;
+      record.username = username;
+      record.id = record.id || username || normalizeProjectFlightCallsign(rawCallsign);
+      record.worldX = worldX;
+      record.worldZ = worldZ;
+      if (Number.isFinite(heading)) record.heading = ((heading % 360) + 360) % 360;
+      if (Number.isFinite(altitude)) record.altitude = Math.max(0, altitude);
+      if (Number.isFinite(speed)) record.groundSpeed = Math.max(0, speed);
+      if (aircraftType) record.aircraftType = aircraftType;
+
+      remember(record, keys);
+      return [toTelemetry({ ...record })];
+    });
+
+    const unique = new Map<string, ProjectFlightTelemetry>();
+    for (const row of rows) unique.set(row.id || row.callsign, row);
+    return Array.from(unique.values());
+  };
 }
 
 function numberFrom(value: unknown, fallback = Number.NaN) {
@@ -321,17 +403,21 @@ function decodeJson(value: unknown): ProjectFlightTelemetry[] {
   });
 }
 
-async function decodeMessage(data: unknown) {
-  if (typeof data === "string") {
-    try {
-      return decodeJson(JSON.parse(data));
-    } catch {
-      return [];
+function createMessageDecoder() {
+  const decodeBinary = createBinaryDecoder();
+
+  return async (data: unknown) => {
+    if (typeof data === "string") {
+      try {
+        return decodeJson(JSON.parse(data));
+      } catch {
+        return [];
+      }
     }
-  }
-  if (data instanceof ArrayBuffer) return decodeBinary(new Uint8Array(data));
-  if (data instanceof Blob) return decodeBinary(new Uint8Array(await data.arrayBuffer()));
-  return [];
+    if (data instanceof ArrayBuffer) return decodeBinary(new Uint8Array(data));
+    if (data instanceof Blob) return decodeBinary(new Uint8Array(await data.arrayBuffer()));
+    return [];
+  };
 }
 
 export function connectProjectFlightTraffic({
@@ -348,8 +434,10 @@ export function connectProjectFlightTraffic({
   const connect = () => {
     if (stopped || typeof window === "undefined") return;
     onState(socket ? "RECONNECTING" : "CONNECTING");
+    const serverId = configuredServerId();
     const WebSocketCtor = window.__PF24_NATIVE_WEBSOCKET__ ?? window.WebSocket;
-    socket = new WebSocketCtor(WS_URL);
+    const decodeMessage = createMessageDecoder();
+    socket = new WebSocketCtor(`${PROJECT_FLIGHT_WS_PREFIX}${encodeURIComponent(serverId)}`);
     socket.binaryType = "arraybuffer";
 
     socket.onopen = () => onState("LIVE");
