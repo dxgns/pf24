@@ -275,8 +275,7 @@ export default function PilotFlightPlans({
                 <p className="mt-1 text-sm text-slate-400">
                   <span className={`rounded-lg px-2 py-1 ${emergencyClass(plan.transponder)}`}>
                     XPDR {plan.transponder}
-                  </span>{" "}
-                  · {plan.status} · {plan.sector_status}
+                  </span>
                 </p>
               </div>
 
@@ -388,8 +387,6 @@ export default function PilotFlightPlans({
             <div className="mt-4 rounded-2xl border border-white/10 bg-[#020617] p-4 text-sm text-slate-300">
               <p>Callsign en juego: {gameCallsign}</p>
               <p>Sector asignado: {plan.assumed_by ?? "Sin asumir"}</p>
-              <p>Estado de plan de vuelo: {plan.status}</p>
-              <p>Estado operativo: {plan.sector_status}</p>
               <p>Transponder: <span className={`rounded-lg px-2 py-1 ${emergencyClass(plan.transponder)}`}>{plan.transponder}</span></p>
             </div>
 
