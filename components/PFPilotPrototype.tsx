@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import PilotFlightPlanForm from "@/components/PilotFlightPlanForm";
 import PilotFlightPlans from "@/components/PilotFlightPlans";
+import PFPilotGuidanceDirector from "@/components/PFPilotGuidanceDirector";
 import { supabase } from "@/lib/supabase";
 import { ATC_FREQUENCIES, ATC_SECTOR_NAMES } from "@/lib/atcFrequencies";
 import {
@@ -56,6 +57,11 @@ type ChatMessage = {
 
 type PilotPlan = {
   id: string;
+  callsign: string;
+  departure_icao: string;
+  arrival_icao: string;
+  route: string;
+  flight_level: string;
   transponder: string;
   notes: string | null;
   status: string;
@@ -152,13 +158,6 @@ export default function PFPilotPrototype({
   const [qnhUnit, setQnhUnit] = useState<PressureUnit>("HPA");
   const [isStd, setIsStd] = useState(true);
 
-  const [apEnabled, setApEnabled] = useState(false);
-  const [targetWaypoint, setTargetWaypoint] = useState("");
-  const [targetHeading, setTargetHeading] = useState("090");
-  const [targetAltitude, setTargetAltitude] = useState("10000");
-  const [targetSpeed, setTargetSpeed] = useState("250");
-  const [currentAltitude, setCurrentAltitude] = useState("32000");
-  const [groundSpeed, setGroundSpeed] = useState("420");
   const [warningTest, setWarningTest] = useState<WarningTest>("NONE");
 
   const [activeRadio, setActiveRadio] = useState<RadioChannel>({
@@ -314,15 +313,6 @@ export default function PFPilotPrototype({
       ...atcChannels,
     ];
   }, [sessions]);
-
-  const altitudeNow = Number(currentAltitude) || 0;
-  const altitudeTarget = Number(targetAltitude) || 0;
-  const gs = Math.max(1, Number(groundSpeed) || 1);
-  const altitudeDelta = altitudeNow - altitudeTarget;
-  const descentDistance = altitudeDelta > 0 ? altitudeDelta / 300 : 0;
-  const climbDistance = altitudeDelta < 0 ? Math.abs(altitudeDelta) / 500 : 0;
-  const todMinutes = descentDistance > 0 ? (descentDistance / gs) * 60 : 0;
-  const tocMinutes = climbDistance > 0 ? (climbDistance / gs) * 60 : 0;
 
   function selectTool(id: ToolId) {
     setActiveTool((current) => (current === id ? "cabin" : id));
@@ -516,66 +506,7 @@ export default function PFPilotPrototype({
             )}
 
             {cabinTab === "autopilot" && (
-              <div className="mt-6 grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
-                <div className="rounded-2xl border border-white/10 bg-slate-950 p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="mono text-xs text-slate-500">GUIDANCE DIRECTOR</p>
-                      <p className="mt-1 text-sm text-slate-400">Da instrucciones al piloto; no controla la aeronave.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setApEnabled((current) => !current)}
-                      className={`rounded-xl border px-4 py-2 mono text-xs font-bold ${apEnabled ? "border-green-400/60 bg-green-400/10 text-green-300" : "border-white/10 text-slate-400"}`}
-                    >
-                      {apEnabled ? "GUIDANCE ON" : "GUIDANCE OFF"}
-                    </button>
-                  </div>
-
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    <Field label="TARGET WPT" value={targetWaypoint} onChange={setTargetWaypoint} placeholder="PIXES" />
-                    <Field label="HDG" value={targetHeading} onChange={setTargetHeading} placeholder="090" />
-                    <Field label="ALTITUDE" value={targetAltitude} onChange={setTargetAltitude} placeholder="10000" suffix="FT" />
-                    <Field label="SPEED" value={targetSpeed} onChange={setTargetSpeed} placeholder="250" suffix="KT" />
-                    <Field label="CURRENT ALT" value={currentAltitude} onChange={setCurrentAltitude} placeholder="32000" suffix="FT" />
-                    <Field label="GROUND SPEED" value={groundSpeed} onChange={setGroundSpeed} placeholder="420" suffix="KT" />
-                  </div>
-
-                  <div className={`mt-5 rounded-2xl border p-5 ${apEnabled ? "border-sky-400/40 bg-sky-400/5" : "border-white/10 bg-[#020617]"}`}>
-                    <p className="mono text-xs text-slate-500">PFPILOT ADVISORY</p>
-                    {apEnabled ? (
-                      <div className="mt-3 space-y-2 text-sm text-slate-200">
-                        <p>FLY HEADING <span className="mono font-bold text-sky-300">{targetHeading || "---"}°</span>{targetWaypoint ? <> DIRECT <span className="mono font-bold text-sky-300">{targetWaypoint.toUpperCase()}</span></> : null}</p>
-                        <p>MAINTAIN <span className="mono font-bold text-sky-300">{targetAltitude || "-----"} FT</span> · SPEED <span className="mono font-bold text-sky-300">{targetSpeed || "---"} KT</span></p>
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-sm text-slate-500">Activa GUIDANCE para mostrar instrucciones de vuelo.</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-white/10 bg-slate-950 p-5">
-                    <p className="mono text-xs text-slate-500">TOD / TOC ESTIMATE</p>
-                    {altitudeDelta > 0 ? (
-                      <>
-                        <p className="mono mt-4 text-3xl font-bold text-sky-300">TOD {descentDistance.toFixed(1)} NM</p>
-                        <p className="mt-2 text-sm text-slate-400">≈ {todMinutes.toFixed(1)} min at {gs.toFixed(0)} kt · prototype 300 ft/NM rule.</p>
-                      </>
-                    ) : altitudeDelta < 0 ? (
-                      <>
-                        <p className="mono mt-4 text-3xl font-bold text-sky-300">TOC {climbDistance.toFixed(1)} NM</p>
-                        <p className="mt-2 text-sm text-slate-400">≈ {tocMinutes.toFixed(1)} min at {gs.toFixed(0)} kt · prototype climb estimate.</p>
-                      </>
-                    ) : (
-                      <p className="mt-4 text-sm text-green-300">Target altitude reached.</p>
-                    )}
-                  </div>
-                  <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-5 text-sm leading-6 text-amber-100/80">
-                    La siguiente fase conectará posición, ruta, waypoints y restricciones publicadas para que estas instrucciones se calculen automáticamente.
-                  </div>
-                </div>
-              </div>
+              <PFPilotGuidanceDirector plan={pilotPlan} />
             )}
 
             {cabinTab === "warning" && (
@@ -851,35 +782,6 @@ function ToolWindow({
       </div>
       {children}
     </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  suffix,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  suffix?: string;
-}) {
-  return (
-    <label>
-      <span className="mono text-[10px] text-slate-500">{label}</span>
-      <div className="mt-1 flex overflow-hidden rounded-xl border border-white/10 bg-[#020617] focus-within:border-sky-400/60">
-        <input
-          value={value}
-          onChange={(event) => onChange(event.target.value.toUpperCase())}
-          placeholder={placeholder}
-          className="mono min-w-0 flex-1 bg-transparent px-3 py-3 text-sm text-white outline-none"
-        />
-        {suffix && <span className="mono flex items-center border-l border-white/10 px-3 text-[10px] text-slate-500">{suffix}</span>}
-      </div>
-    </label>
   );
 }
 
