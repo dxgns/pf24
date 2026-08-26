@@ -6,6 +6,9 @@ declare module "next-auth" {
     user: {
       discordRoles: string[];
       permissions: WebPermissions;
+      robloxUserId?: string;
+      robloxUsername?: string;
+      robloxDisplayName?: string;
     } & DefaultSession["user"];
   }
 }
@@ -15,5 +18,9 @@ declare module "next-auth/jwt" {
     discordRoles?: string[];
     permissions?: WebPermissions;
     discordAccessToken?: string;
+    discordId?: string;
+    robloxUserId?: string;
+    robloxUsername?: string;
+    robloxDisplayName?: string;
   }
 }

@@ -14,6 +14,7 @@ const PUBLIC_DURING_MAINTENANCE = [
   "/login",
   "/access-denied",
   "/api/auth",
+  "/api/pf24/roblox",
   "/api/scope",
 ];
 

@@ -61,6 +61,10 @@ function statusTone(state: ProjectFlightConnectionState, found: boolean) {
   return "text-slate-400";
 }
 
+function normalizedUsername(value: string) {
+  return value.trim().replace(/^@/, "").toLowerCase();
+}
+
 export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | null }) {
   const [enabled, setEnabled] = useState(false);
   const [connectionState, setConnectionState] = useState<ProjectFlightConnectionState>("OFFLINE");
@@ -70,6 +74,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   const [targetIndex, setTargetIndex] = useState(0);
   const [departureConditionMet, setDepartureConditionMet] = useState(false);
   const [procedureComplete, setProcedureComplete] = useState(false);
+  const [robloxUsername, setRobloxUsername] = useState("");
   const autoInitializedRef = useRef(false);
 
   const procedure = useMemo(
@@ -88,6 +93,13 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   );
 
   useEffect(() => {
+    const linkedUsername = document
+      .querySelector<HTMLElement>("main[data-pf24-roblox-username]")
+      ?.dataset.pf24RobloxUsername ?? "";
+    setRobloxUsername(normalizedUsername(linkedUsername));
+  }, [plan?.id]);
+
+  useEffect(() => {
     setTargetIndex(0);
     setTelemetry(null);
     setLastSeen(0);
@@ -97,7 +109,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   }, [plan?.id, procedure?.id]);
 
   useEffect(() => {
-    if (!plan?.id || !gameCallsign) {
+    if (!plan?.id || (!robloxUsername && !gameCallsign)) {
       setConnectionState("OFFLINE");
       return;
     }
@@ -105,16 +117,20 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     return connectProjectFlightTraffic({
       onState: setConnectionState,
       onTraffic: (traffic) => {
-        const aircraft = traffic.find((item) =>
+        const byRobloxUser = robloxUsername
+          ? traffic.find((item) => normalizedUsername(item.username) === robloxUsername)
+          : undefined;
+        const byCallsign = traffic.find((item) =>
           normalizeAirlineCallsign(item.callsign) === gameCallsign ||
           normalizeAirlineCallsign(item.rawCallsign) === gameCallsign,
         );
+        const aircraft = byRobloxUser ?? byCallsign;
         if (!aircraft) return;
         setTelemetry(aircraft);
         setLastSeen(Date.now());
       },
     });
-  }, [plan?.id, gameCallsign]);
+  }, [plan?.id, gameCallsign, robloxUsername]);
 
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 1000);
@@ -276,6 +292,9 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     );
   }
 
+  const displayedProjectFlightCallsign = activeTelemetry?.rawCallsign || projectFlightCallsign || gameCallsign || "----";
+  const linkedIdentityLabel = activeTelemetry?.username || robloxUsername;
+
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
       <div className="rounded-2xl border border-white/10 bg-slate-950 p-5">
@@ -284,7 +303,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
             <div className="flex flex-wrap items-center gap-2">
               <p className="mono text-xs text-slate-500">GUIDANCE DIRECTOR</p>
               <span className={`mono text-[10px] ${statusTone(connectionState, telemetryFresh)}`}>
-                {connectionState}{connectionState === "LIVE" ? telemetryFresh ? " · AIRCRAFT LINKED" : " · SEARCHING AIRCRAFT" : ""}
+                {connectionState}{connectionState === "LIVE" ? telemetryFresh ? ` · AIRCRAFT LINKED${linkedIdentityLabel ? ` · @${linkedIdentityLabel}` : ""}` : " · SEARCHING AIRCRAFT" : ""}
               </span>
             </div>
             <p className="mt-1 text-sm text-slate-400">Asistencia en tiempo real; nunca controla la aeronave.</p>
@@ -299,7 +318,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <LiveMetric label="PF CALLSIGN" value={projectFlightCallsign || gameCallsign || "----"} />
+          <LiveMetric label="PF CALLSIGN" value={displayedProjectFlightCallsign} />
           <LiveMetric label="ALTITUDE" value={activeTelemetry ? `${Math.round(activeTelemetry.altitude).toLocaleString("en-US")} FT` : "-----"} />
           <LiveMetric label="HEADING" value={activeTelemetry ? `${paddedHeading(activeTelemetry.heading)}°` : "---°"} />
           <LiveMetric label="GROUND SPEED" value={activeTelemetry ? `${Math.round(activeTelemetry.groundSpeed)} KT` : "--- KT"} />
@@ -317,7 +336,11 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
               No hay un procedimiento cargado que coincida con la salida/llegada y la ruta del FPL. El motor no inventará instrucciones.
             </div>
           ) : !activeTelemetry ? (
-            <p className="mt-3 text-sm text-amber-200">Esperando al callsign {projectFlightCallsign || gameCallsign || "del FPL"} en Project Flight.</p>
+            <p className="mt-3 text-sm text-amber-200">
+              {robloxUsername
+                ? `Esperando al usuario @${robloxUsername} en Project Flight.`
+                : `Esperando al callsign ${projectFlightCallsign || gameCallsign || "del FPL"} en Project Flight.`}
+            </p>
           ) : (
             <div className="mt-4 grid gap-3">
               <AdvisoryRow label="NAV" value={navCommand} primary />

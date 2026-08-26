@@ -29,6 +29,8 @@ export default async function PFPilotPage() {
   const pilotId = session.user?.email ?? session.user?.name ?? "unknown";
   const pilotName = session.user?.name ?? "Piloto";
   const projectFlightServerId = (process.env.PROJECT_FLIGHT_SERVER_ID ?? "2ykygVZiX5").trim();
+  const robloxUsername = session.user?.robloxUsername?.trim() ?? "";
+  const robloxUserId = session.user?.robloxUserId?.trim() ?? "";
 
   let flightPlans: any[] = [];
   let atcSessions: any[] = [];
@@ -74,6 +76,8 @@ export default async function PFPilotPage() {
   return (
     <main
       data-project-flight-server-id={projectFlightServerId}
+      data-pf24-roblox-username={robloxUsername}
+      data-pf24-roblox-user-id={robloxUserId}
       className="radar-grid min-h-screen bg-[#020617] px-4 py-12 text-white sm:px-6 sm:py-16"
     >
       <section className="section-container max-w-7xl">
