@@ -27,10 +27,6 @@ export default async function Navbar() {
               Inicio
             </a>
 
-            <a href="/#features" className="text-white/80 transition hover:text-white">
-              Herramientas
-            </a>
-
             <a href="https://discord.gg/DD7yeDDyPY" className="text-white/80 transition hover:text-white">
               Discord
             </a>
@@ -41,10 +37,6 @@ export default async function Navbar() {
 
             <a href="https://trello.com/b/CXt0oq24/pf24-espanol-actualizaciones" className="text-white/80 transition hover:text-white">
               Trello
-            </a>
-
-            <a href="/ayuda" className="text-white/80 transition hover:text-white">
-              Ayuda
             </a>
 
             {session && (
