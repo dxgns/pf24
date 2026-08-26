@@ -33,6 +33,7 @@ export type ProcedureLeg = {
 export type FlightProcedure = {
   id: string;
   code: string;
+  aliases?: string[];
   airport: string;
   runway: string;
   kind: ProcedureKind;
@@ -141,7 +142,10 @@ const mdstStiGeometry = resolveMdstStiGeometry();
 // Exported for future MDST procedures that publish additional STI radial/DME fixes.
 export const MDST_STI_DME_REFERENCE = mdstStiGeometry?.sti;
 
-const commonVogep: ProcedureFix = {
+const mdstSgo = namedFix("SGO");
+const mdstD20Sgo = resolveDmeMapPoint(mdstSgo, 295, 2);
+
+const commonVogep4B: ProcedureFix = {
   id: "VOGEP",
   label: "VOGEP",
   mapPoint: namedFix("VOGEP"),
@@ -150,9 +154,39 @@ const commonVogep: ProcedureFix = {
   source: "NAMED_FIX",
 };
 
+const commonD20Sgo: ProcedureFix = {
+  id: "D2.0-SGO",
+  label: "D2.0 SGO",
+  mapPoint: mdstD20Sgo,
+  altitude: { type: "AT_OR_ABOVE", feet: 3000 },
+  source: "DME_FIX",
+  dme: {
+    station: "SGO",
+    distanceNm: 2,
+    radial: 295,
+    note: "Resolved from D2.0 SGO on R-295, reciprocal to the published 115° leg to SGO.",
+  },
+};
+
+const commonSgo: ProcedureFix = {
+  id: "SGO",
+  label: "SGO",
+  mapPoint: mdstSgo,
+  altitude: { type: "AT", feet: 3000 },
+  speed: { type: "MAX", knots: 200 },
+  source: "NAMED_FIX",
+};
+
+const allRunwaysGlobalSpeed = {
+  belowFeet: 10000,
+  maxKnots: 250,
+  note: "MAX 250 KT BELOW FL100 UNLESS OTHERWISE AUTHORIZED",
+};
+
 export const MDST_PIXES4B: FlightProcedure = {
   id: "MDST-PIXES4B-RWY11",
   code: "PIXES4B",
+  aliases: ["PIXE4B"],
   airport: "MDST",
   runway: "11",
   kind: "STAR",
@@ -167,7 +201,7 @@ export const MDST_PIXES4B: FlightProcedure = {
       speed: { type: "MAX", knots: 220 },
       source: "NAMED_FIX",
     },
-    commonVogep,
+    commonVogep4B,
   ],
   legs: [{ from: "PIXES", to: "VOGEP", course: 268 }],
   globalSpeed: {
@@ -180,6 +214,7 @@ export const MDST_PIXES4B: FlightProcedure = {
 export const MDST_ETBOD4B: FlightProcedure = {
   id: "MDST-ETBOD4B-RWY11",
   code: "ETBOD4B",
+  aliases: ["ETBO4B"],
   airport: "MDST",
   runway: "11",
   kind: "STAR",
@@ -219,7 +254,7 @@ export const MDST_ETBOD4B: FlightProcedure = {
         note: "Resolved from D1.8 STI / R-035 and the published 300° leg to VOGEP.",
       },
     },
-    commonVogep,
+    commonVogep4B,
   ],
   legs: [
     { from: "ETBOD", to: "D2.0-STI", course: 33 },
@@ -233,7 +268,93 @@ export const MDST_ETBOD4B: FlightProcedure = {
   },
 };
 
-export const PROCEDURES: FlightProcedure[] = [MDST_PIXES4B, MDST_ETBOD4B];
+export const MDST_PIXES3R: FlightProcedure = {
+  id: "MDST-PIXES3R-ALL",
+  code: "PIXES3R",
+  aliases: ["PIXE3R"],
+  airport: "MDST",
+  runway: "ALL",
+  kind: "STAR",
+  entryFix: "PIXES",
+  chart: "MDST 10-3 · 10 JUL 26",
+  fixes: [
+    {
+      id: "PIXES",
+      label: "PIXES",
+      mapPoint: namedFix("PIXES"),
+      altitude: { type: "AT_OR_BELOW", feet: 5000 },
+      source: "NAMED_FIX",
+    },
+    commonD20Sgo,
+    commonSgo,
+  ],
+  legs: [
+    { from: "PIXES", to: "D2.0-SGO", course: 235 },
+    { from: "D2.0-SGO", to: "SGO", course: 115 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const MDST_VOGEP3R: FlightProcedure = {
+  id: "MDST-VOGEP3R-ALL",
+  code: "VOGEP3R",
+  aliases: ["VOGE3R"],
+  airport: "MDST",
+  runway: "ALL",
+  kind: "STAR",
+  entryFix: "VOGEP",
+  chart: "MDST 10-3 · 10 JUL 26",
+  fixes: [
+    {
+      id: "VOGEP",
+      label: "VOGEP",
+      mapPoint: namedFix("VOGEP"),
+      altitude: { type: "AT_OR_BELOW", feet: 5000 },
+      source: "NAMED_FIX",
+    },
+    commonD20Sgo,
+    commonSgo,
+  ],
+  legs: [
+    { from: "VOGEP", to: "D2.0-SGO", course: 164 },
+    { from: "D2.0-SGO", to: "SGO", course: 115 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const MDST_ETBOD3R: FlightProcedure = {
+  id: "MDST-ETBOD3R-ALL",
+  code: "ETBOD3R",
+  aliases: ["ETBO3R"],
+  airport: "MDST",
+  runway: "ALL",
+  kind: "STAR",
+  entryFix: "ETBOD",
+  chart: "MDST 10-3 · 10 JUL 26",
+  fixes: [
+    {
+      id: "ETBOD",
+      label: "ETBOD",
+      mapPoint: namedFix("ETBOD"),
+      source: "NAMED_FIX",
+    },
+    commonD20Sgo,
+    commonSgo,
+  ],
+  legs: [
+    { from: "ETBOD", to: "D2.0-SGO", course: 11 },
+    { from: "D2.0-SGO", to: "SGO", course: 115 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const PROCEDURES: FlightProcedure[] = [
+  MDST_PIXES4B,
+  MDST_ETBOD4B,
+  MDST_PIXES3R,
+  MDST_VOGEP3R,
+  MDST_ETBOD3R,
+];
 
 function routeTokens(route: unknown) {
   return String(route ?? "")
@@ -243,19 +364,19 @@ function routeTokens(route: unknown) {
     .filter(Boolean);
 }
 
+function procedureTokens(procedure: FlightProcedure) {
+  return [procedure.code, ...(procedure.aliases ?? [])].map((item) => item.toUpperCase());
+}
+
 export function selectProcedureForPlan(plan: FlightPlanLike | null | undefined) {
   if (!plan) return null;
   const arrival = String(plan.arrival_icao ?? "").trim().toUpperCase();
-  if (arrival !== "MDST") return null;
+  if (!arrival) return null;
 
-  const tokens = routeTokens(plan.route);
-  if (tokens.includes("ETBOD") || tokens.includes("ETBOD4B") || tokens.includes("ETBO4B")) {
-    return MDST_ETBOD4B;
-  }
-  if (tokens.includes("PIXES") || tokens.includes("PIXES4B") || tokens.includes("PIXE4B")) {
-    return MDST_PIXES4B;
-  }
-  return null;
+  const tokens = new Set(routeTokens(plan.route));
+  return PROCEDURES.find((procedure) => (
+    procedure.airport === arrival && procedureTokens(procedure).some((token) => tokens.has(token))
+  )) ?? null;
 }
 
 export function getProcedureFix(procedure: FlightProcedure, id: string) {
