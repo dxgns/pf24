@@ -73,32 +73,31 @@ function appendMissingRow(windowElement: HTMLElement, station: string, letter: s
 
 export default function ScopeAtisWindowSync() {
   const [published, setPublished] = useState<PublishedAtis>({});
-  const refreshingRef = useRef(false);
+  const refreshVersionRef = useRef(0);
 
   const refresh = useCallback(async () => {
-    if (refreshingRef.current) return;
-    refreshingRef.current = true;
-    try {
-      const { data, error } = await supabase
-        .from("atis_messages")
-        .select("airport_icao,info_letter,created_at")
-        .order("created_at", { ascending: false });
+    const version = ++refreshVersionRef.current;
+    const { data, error } = await supabase
+      .from("atis_messages")
+      .select("airport_icao,info_letter,created_at")
+      .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("PF24 Scope ATIS window refresh failed:", error);
-        return;
-      }
-
-      const next: PublishedAtis = {};
-      for (const row of data ?? []) {
-        const station = String(row.airport_icao ?? "").trim().toUpperCase();
-        if (!station || next[station]) continue;
-        next[station] = String(row.info_letter ?? "-").trim().toUpperCase() || "-";
-      }
-      setPublished(next);
-    } finally {
-      refreshingRef.current = false;
+    if (error) {
+      console.error("PF24 Scope ATIS window refresh failed:", error);
+      return;
     }
+
+    // A DELETE followed immediately by INSERT can produce overlapping reads.
+    // Only the newest requested snapshot is allowed to update the window.
+    if (version !== refreshVersionRef.current) return;
+
+    const next: PublishedAtis = {};
+    for (const row of data ?? []) {
+      const station = String(row.airport_icao ?? "").trim().toUpperCase();
+      if (!station || next[station]) continue;
+      next[station] = String(row.info_letter ?? "-").trim().toUpperCase() || "-";
+    }
+    setPublished(next);
   }, []);
 
   useEffect(() => {
