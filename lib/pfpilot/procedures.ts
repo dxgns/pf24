@@ -30,6 +30,15 @@ export type ProcedureLeg = {
   course: number;
 };
 
+export type ProcedureDepartureLeg = {
+  type: "HEADING_UNTIL_ALTITUDE";
+  heading: number;
+  untilAltitudeFeet: number;
+  speed?: SpeedRestriction;
+  afterCourse: number;
+  targetFix: string;
+};
+
 export type FlightProcedure = {
   id: string;
   code: string;
@@ -40,6 +49,7 @@ export type FlightProcedure = {
   entryFix: string;
   fixes: ProcedureFix[];
   legs: ProcedureLeg[];
+  departureLeg?: ProcedureDepartureLeg;
   globalSpeed?: {
     belowFeet: number;
     maxKnots: number;
@@ -49,6 +59,7 @@ export type FlightProcedure = {
 };
 
 type FlightPlanLike = {
+  departure_icao?: unknown;
   arrival_icao?: unknown;
   route?: unknown;
 };
@@ -183,6 +194,17 @@ const allRunwaysGlobalSpeed = {
   note: "MAX 250 KT BELOW FL100 UNLESS OTHERWISE AUTHORIZED",
 };
 
+function mdstRunway29DepartureLeg(afterCourse: number, targetFix: string): ProcedureDepartureLeg {
+  return {
+    type: "HEADING_UNTIL_ALTITUDE",
+    heading: 294,
+    untilAltitudeFeet: 2000,
+    speed: { type: "MAX", knots: 180 },
+    afterCourse,
+    targetFix,
+  };
+}
+
 export const MDST_PIXES4B: FlightProcedure = {
   id: "MDST-PIXES4B-RWY11",
   code: "PIXES4B",
@@ -204,11 +226,7 @@ export const MDST_PIXES4B: FlightProcedure = {
     commonVogep4B,
   ],
   legs: [{ from: "PIXES", to: "VOGEP", course: 268 }],
-  globalSpeed: {
-    belowFeet: 10000,
-    maxKnots: 250,
-    note: "MAX 250 KT BELOW FL100 UNLESS OTHERWISE AUTHORIZED",
-  },
+  globalSpeed: allRunwaysGlobalSpeed,
 };
 
 export const MDST_ETBOD4B: FlightProcedure = {
@@ -261,11 +279,7 @@ export const MDST_ETBOD4B: FlightProcedure = {
     { from: "D2.0-STI", to: "D1.8-STI", course: 33 },
     { from: "D1.8-STI", to: "VOGEP", course: 300 },
   ],
-  globalSpeed: {
-    belowFeet: 10000,
-    maxKnots: 250,
-    note: "MAX 250 KT BELOW FL100 UNLESS OTHERWISE AUTHORIZED",
-  },
+  globalSpeed: allRunwaysGlobalSpeed,
 };
 
 export const MDST_PIXES3R: FlightProcedure = {
@@ -348,12 +362,83 @@ export const MDST_ETBOD3R: FlightProcedure = {
   globalSpeed: allRunwaysGlobalSpeed,
 };
 
+export const MDST_PIXES2C: FlightProcedure = {
+  id: "MDST-PIXES2C-RWY29",
+  code: "PIXES2C",
+  aliases: ["PIXE2C"],
+  airport: "MDST",
+  runway: "29",
+  kind: "SID",
+  entryFix: "RWY29",
+  chart: "MDST 10-6 · 9 JUL 26",
+  departureLeg: mdstRunway29DepartureLeg(63, "PIXES"),
+  fixes: [
+    {
+      id: "PIXES",
+      label: "PIXES",
+      mapPoint: namedFix("PIXES"),
+      altitude: { type: "AT_OR_ABOVE", feet: 5000 },
+      source: "NAMED_FIX",
+    },
+  ],
+  legs: [],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const MDST_VOGEP2C: FlightProcedure = {
+  id: "MDST-VOGEP2C-RWY29",
+  code: "VOGEP2C",
+  aliases: ["VOGE2C"],
+  airport: "MDST",
+  runway: "29",
+  kind: "SID",
+  entryFix: "RWY29",
+  chart: "MDST 10-6 · 9 JUL 26",
+  departureLeg: mdstRunway29DepartureLeg(343, "VOGEP"),
+  fixes: [
+    {
+      id: "VOGEP",
+      label: "VOGEP",
+      mapPoint: namedFix("VOGEP"),
+      altitude: { type: "AT_OR_ABOVE", feet: 5000 },
+      source: "NAMED_FIX",
+    },
+  ],
+  legs: [],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const MDST_ETBOD2C: FlightProcedure = {
+  id: "MDST-ETBOD2C-RWY29",
+  code: "ETBOD2C",
+  aliases: ["ETBO2C"],
+  airport: "MDST",
+  runway: "29",
+  kind: "SID",
+  entryFix: "RWY29",
+  chart: "MDST 10-6 · 9 JUL 26",
+  departureLeg: mdstRunway29DepartureLeg(187, "ETBOD"),
+  fixes: [
+    {
+      id: "ETBOD",
+      label: "ETBOD",
+      mapPoint: namedFix("ETBOD"),
+      source: "NAMED_FIX",
+    },
+  ],
+  legs: [],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
 export const PROCEDURES: FlightProcedure[] = [
   MDST_PIXES4B,
   MDST_ETBOD4B,
   MDST_PIXES3R,
   MDST_VOGEP3R,
   MDST_ETBOD3R,
+  MDST_PIXES2C,
+  MDST_VOGEP2C,
+  MDST_ETBOD2C,
 ];
 
 function routeTokens(route: unknown) {
@@ -368,14 +453,27 @@ function procedureTokens(procedure: FlightProcedure) {
   return [procedure.code, ...(procedure.aliases ?? [])].map((item) => item.toUpperCase());
 }
 
+function routeContainsProcedure(procedure: FlightProcedure, tokens: Set<string>) {
+  return procedureTokens(procedure).some((token) => tokens.has(token));
+}
+
 export function selectProcedureForPlan(plan: FlightPlanLike | null | undefined) {
   if (!plan) return null;
+  const departure = String(plan.departure_icao ?? "").trim().toUpperCase();
   const arrival = String(plan.arrival_icao ?? "").trim().toUpperCase();
-  if (!arrival) return null;
-
   const tokens = new Set(routeTokens(plan.route));
+
+  const sid = PROCEDURES.find((procedure) => (
+    procedure.kind === "SID" &&
+    procedure.airport === departure &&
+    routeContainsProcedure(procedure, tokens)
+  ));
+  if (sid) return sid;
+
   return PROCEDURES.find((procedure) => (
-    procedure.airport === arrival && procedureTokens(procedure).some((token) => tokens.has(token))
+    procedure.kind !== "SID" &&
+    procedure.airport === arrival &&
+    routeContainsProcedure(procedure, tokens)
   )) ?? null;
 }
 
