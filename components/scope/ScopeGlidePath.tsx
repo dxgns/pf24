@@ -49,6 +49,20 @@ const RUNWAY_GEOMETRY: Record<string, Record<string, RunwayGeometry>> = {
     "11": { threshold: { x: 80.82, y: 95.44 }, oppositeThreshold: { x: 82.26, y: 95.70 } },
     "29": { threshold: { x: 82.26, y: 95.70 }, oppositeThreshold: { x: 80.82, y: 95.44 } },
   },
+  LEMH: {
+    "19": { threshold: { x: 126.56, y: 64.82 }, oppositeThreshold: { x: 126.31, y: 66.76 } },
+    "01": { threshold: { x: 126.31, y: 66.76 }, oppositeThreshold: { x: 126.56, y: 64.82 } },
+  },
+  GCLP: {
+    "03L": { threshold: { x: 88.74, y: 71.37 }, oppositeThreshold: { x: 89.68, y: 69.42 } },
+    "21R": { threshold: { x: 89.68, y: 69.42 }, oppositeThreshold: { x: 88.74, y: 71.37 } },
+    "03R": { threshold: { x: 88.88, y: 71.44 }, oppositeThreshold: { x: 89.82, y: 69.49 } },
+    "21L": { threshold: { x: 89.82, y: 69.49 }, oppositeThreshold: { x: 88.88, y: 71.44 } },
+  },
+  EGKK: {
+    "08R": { threshold: { x: 126.87, y: 34.31 }, oppositeThreshold: { x: 130.33, y: 33.50 } },
+    "26L": { threshold: { x: 130.33, y: 33.50 }, oppositeThreshold: { x: 126.87, y: 34.31 } },
+  },
 };
 
 function readViewport(): Viewport {
