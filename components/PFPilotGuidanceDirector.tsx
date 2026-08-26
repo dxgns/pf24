@@ -18,6 +18,7 @@ import {
   type ProjectFlightConnectionState,
   type ProjectFlightTelemetry,
 } from "@/lib/pfpilot/projectFlightLive";
+import { normalizeAirlineCallsign, spokenAirlineCallsign } from "@/lib/scope/airlines";
 
 type PilotPlan = {
   id: string;
@@ -71,8 +72,14 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
 
   const procedure = useMemo(() => selectProcedureForPlan(plan), [plan?.arrival_icao, plan?.route]);
   const gameCallsign = useMemo(
-    () => normalizeProjectFlightCallsign(getGameCallsignFromNotes(plan?.notes) || String(plan?.callsign ?? "")),
+    () => normalizeAirlineCallsign(
+      normalizeProjectFlightCallsign(getGameCallsignFromNotes(plan?.notes) || String(plan?.callsign ?? "")),
+    ),
     [plan?.callsign, plan?.notes],
+  );
+  const projectFlightCallsign = useMemo(
+    () => gameCallsign ? spokenAirlineCallsign(gameCallsign) : "",
+    [gameCallsign],
   );
 
   useEffect(() => {
@@ -91,7 +98,10 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     return connectProjectFlightTraffic({
       onState: setConnectionState,
       onTraffic: (traffic) => {
-        const aircraft = traffic.find((item) => item.callsign === gameCallsign);
+        const aircraft = traffic.find((item) =>
+          normalizeAirlineCallsign(item.callsign) === gameCallsign ||
+          normalizeAirlineCallsign(item.rawCallsign) === gameCallsign,
+        );
         if (!aircraft) return;
         setTelemetry(aircraft);
         setLastSeen(Date.now());
@@ -223,7 +233,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <LiveMetric label="PF CALLSIGN" value={gameCallsign || "----"} />
+          <LiveMetric label="PF CALLSIGN" value={projectFlightCallsign || gameCallsign || "----"} />
           <LiveMetric label="ALTITUDE" value={activeTelemetry ? `${Math.round(activeTelemetry.altitude).toLocaleString("en-US")} FT` : "-----"} />
           <LiveMetric label="HEADING" value={activeTelemetry ? `${paddedHeading(activeTelemetry.heading)}°` : "---°"} />
           <LiveMetric label="GROUND SPEED" value={activeTelemetry ? `${Math.round(activeTelemetry.groundSpeed)} KT` : "--- KT"} />
@@ -241,7 +251,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
               No hay un procedimiento cargado que coincida con el destino/ruta del FPL. El motor no inventará instrucciones.
             </div>
           ) : !activeTelemetry ? (
-            <p className="mt-3 text-sm text-amber-200">Esperando al callsign {gameCallsign || "del FPL"} en Project Flight.</p>
+            <p className="mt-3 text-sm text-amber-200">Esperando al callsign {projectFlightCallsign || gameCallsign || "del FPL"} en Project Flight.</p>
           ) : (
             <div className="mt-4 grid gap-3">
               <AdvisoryRow label="NAV" value={navCommand} primary />
