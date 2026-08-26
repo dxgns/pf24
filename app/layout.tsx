@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://pf24.lat"),
   title: {
     default: "PF24 | Simulación aérea en Project Flight",
-    template: "%s | PF24",
+    template: "%s",
   },
   description:
     "PF24 es una comunidad hispana de simulación aérea en Project Flight y una plataforma para pilotos y controladores ATC.",
