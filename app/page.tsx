@@ -3,66 +3,93 @@ import { auth } from "@/auth";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Home | PF24",
+  title: "PF24 | Simulación aérea en Project Flight",
+  description:
+    "PF24 es una comunidad hispana de simulación aérea en Project Flight, con vuelos multijugador, pilotos y controladores ATC.",
 };
 
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://pf24.lat/#website",
+      url: "https://pf24.lat/",
+      name: "PF24",
+      description:
+        "Comunidad hispana de simulación aérea en Project Flight.",
+      inLanguage: "es-CL",
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://pf24.lat/#organization",
+      name: "PF24",
+      url: "https://pf24.lat/",
+      description:
+        "Comunidad hispana de simulación aérea y operaciones ATC virtuales en Project Flight.",
+    },
+  ],
+};
 
 export default async function HomePage() {
   const session = await auth();
-    return (
-      <main className="min-h-screen bg-[#050612] text-white">
-        <Navbar />
+  return (
+    <main className="min-h-screen bg-[#050612] text-white">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <Navbar />
 
-        {/* HERO */}
-        <section className="relative flex min-h-screen items-center overflow-hidden px-6 pt-24">
-          <div
-            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-            style={{
-              backgroundImage:
-                "url('https://framerusercontent.com/images/lKs77AFnsbHG3ATgS3hBMy8iCOw.png')",
-            }}
-          />
+      {/* HERO */}
+      <section className="relative flex min-h-screen items-center overflow-hidden px-6 pt-24">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage:
+              "url('https://framerusercontent.com/images/lKs77AFnsbHG3ATgS3hBMy8iCOw.png')",
+          }}
+        />
 
-          <div className="absolute inset-0 bg-black/10" />
+        <div className="absolute inset-0 bg-black/10" />
 
-          <div className="section-container relative z-10">
-            <div className="max-w-3xl">
-              <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#8095ff]">
-                Project Flight Spanish Community
-              </p>
+        <div className="section-container relative z-10">
+          <div className="max-w-3xl">
+            <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#8095ff]">
+              Project Flight Spanish Community
+            </p>
 
-              <h1 className="text-6xl font-extrabold leading-[0.95] tracking-tight text-white md:text-8xl">
-                PF<span className="text-sky-400">24</span>
-              </h1>
+            <h1 className="text-6xl font-extrabold leading-[0.95] tracking-tight text-white md:text-8xl">
+              PF<span className="text-sky-400">24</span>
+            </h1>
 
-              <p className="mt-8 max-w-2xl text-lg leading-8 text-white/85">
-                PF24 es una comunidad de simulación aérea realista
-                inspirada en el espacio aéreo mundial, donde pilotos y
-                controladores recrean operaciones reales y vuelos multijugador en
-                Project Flight y Discord.
-              </p>
+            <p className="mt-8 max-w-2xl text-lg leading-8 text-white/85">
+              PF24 es una comunidad hispana de simulación aérea en Project
+              Flight, donde pilotos y controladores recrean operaciones aéreas
+              realistas y vuelos multijugador con herramientas propias de ATC,
+              planes de vuelo y coordinación operativa.
+            </p>
 
-              <div className="mt-10 flex flex-wrap gap-4">
-                <a
-                  href="https://discord.gg/DD7yeDDyPY"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-2xl bg-[#8095ff] px-10 py-4 text-xl font-semibold text-white transition hover:bg-[#6f84ff]"
-                >
-                  Unirse al Discord
-                </a>
+            <div className="mt-10 flex flex-wrap gap-4">
+              <a
+                href="https://discord.gg/DD7yeDDyPY"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-2xl bg-[#8095ff] px-10 py-4 text-xl font-semibold text-white transition hover:bg-[#6f84ff]"
+              >
+                Unirse al Discord
+              </a>
 
-                <a
-                  href={session ? "/dashboard" : "/login"}
-                  className="rounded-2xl border border-white/20 px-10 py-4 text-xl font-semibold text-white transition hover:bg-white/10"
-                >
-                  {session ? "Ir al Dashboard" : "Iniciar sesión"}
-                </a>
-
-              </div>
+              <a
+                href={session ? "/dashboard" : "/login"}
+                className="rounded-2xl border border-white/20 px-10 py-4 text-xl font-semibold text-white transition hover:bg-white/10"
+              >
+                {session ? "Ir al Dashboard" : "Iniciar sesión"}
+              </a>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
       {/* STATS */}
       <section className="border-y border-white/10 bg-[#080b18] px-6 py-10">
@@ -78,28 +105,28 @@ export default async function HomePage() {
       <section id="features" className="px-6 py-28">
         <div className="section-container">
           <h2 className="text-center text-4xl font-extrabold">
-            Plataforma operacional PF24
+            Plataforma de simulación aérea PF24
           </h2>
 
           <p className="mx-auto mt-4 max-w-2xl text-center text-slate-400">
             Herramientas desarrolladas para pilotos y controladores de la
-            comunidad.
+            comunidad de Project Flight.
           </p>
 
           <div className="mt-12 grid gap-6 md:grid-cols-3">
             <Card
               title="Planes de Vuelo"
-              text="Creación y gestión completa de planes IFR, VFR, YFR y ZFR."
+              text="Creación y gestión de planes IFR, VFR, YFR y ZFR para operaciones de vuelo organizadas."
             />
 
             <Card
               title="Sector List"
-              text="Lista operativa para ATC con estados, transponder y asignación de vuelos."
+              text="Herramienta operativa para controladores ATC con estados, tráfico y asignación de vuelos."
             />
 
             <Card
               title="ATIS"
-              text="Información meteorológica y operacional para aeropuertos activos."
+              text="Información meteorológica y operacional para aeropuertos activos dentro de la red PF24."
             />
           </div>
         </div>
@@ -108,13 +135,12 @@ export default async function HomePage() {
       {/* DISCORD CTA */}
       <section className="px-6 pb-28">
         <div className="section-container rounded-[2rem] border border-white/10 bg-slate-900 p-12 text-center">
-          <h2 className="text-4xl font-extrabold">
-            Únete a PF24
-          </h2>
+          <h2 className="text-4xl font-extrabold">Únete a PF24</h2>
 
           <p className="mx-auto mt-4 max-w-2xl text-slate-400">
-            Participa en eventos, vuelos organizados y operaciones ATC junto a
-            la comunidad hispana de Project Flight.
+            Participa en eventos, vuelos organizados y operaciones de control
+            de tránsito aéreo virtual junto a la comunidad hispana de Project
+            Flight.
           </p>
 
           <a
@@ -128,12 +154,10 @@ export default async function HomePage() {
         </div>
       </section>
 
-            {/* FOOTER */}
+      {/* FOOTER */}
       <footer className="border-t border-white/10 bg-[#050612] px-6 py-8">
         <div className="section-container flex flex-col items-center justify-between gap-4 text-center text-sm text-slate-400 md:flex-row md:text-left">
-          <p>
-            © {new Date().getFullYear()} PF24
-          </p>
+          <p>© {new Date().getFullYear()} PF24</p>
 
           <div className="flex flex-wrap items-center justify-center gap-4">
             <a href="/legal/terms" className="transition hover:text-sky-300">
@@ -154,13 +178,9 @@ export default async function HomePage() {
 
             <span className="text-slate-600">•</span>
 
-              <a
-                href="/about"
-                className="transition hover:text-sky-300"
-              >
-                Créditos
-              </a>
-
+            <a href="/about" className="transition hover:text-sky-300">
+              Créditos
+            </a>
           </div>
         </div>
       </footer>
@@ -168,41 +188,21 @@ export default async function HomePage() {
   );
 }
 
-function Stat({
-  value,
-  label,
-}: {
-  value: string;
-  label: string;
-}) {
+function Stat({ value, label }: { value: string; label: string }) {
   return (
     <div>
-      <p className="text-3xl font-extrabold text-[#8095ff]">
-        {value}
-      </p>
-      <p className="mt-2 text-sm text-white/60">
-        {label}
-      </p>
+      <p className="text-3xl font-extrabold text-[#8095ff]">{value}</p>
+      <p className="mt-2 text-sm text-white/60">{label}</p>
     </div>
   );
 }
 
-function Card({
-  title,
-  text,
-}: {
-  title: string;
-  text: string;
-}) {
+function Card({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-8 transition hover:border-[#8095ff]/50">
-      <h3 className="text-xl font-bold text-[#8095ff]">
-        {title}
-      </h3>
+      <h3 className="text-xl font-bold text-[#8095ff]">{title}</h3>
 
-      <p className="mt-4 leading-7 text-slate-300">
-        {text}
-      </p>
+      <p className="mt-4 leading-7 text-slate-300">{text}</p>
     </div>
   );
 }
