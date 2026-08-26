@@ -13,8 +13,44 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PF24",
-  description: "La comunidad hispana más grande de Project Flight.",
+  metadataBase: new URL("https://pf24.lat"),
+  title: {
+    default: "PF24 | Simulación aérea en Project Flight",
+    template: "%s | PF24",
+  },
+  description:
+    "PF24 es una comunidad hispana de simulación aérea en Project Flight y una plataforma para pilotos y controladores ATC.",
+  applicationName: "PF24",
+  generator: "Next.js",
+  alternates: {
+    canonical: "https://pf24.lat/",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  openGraph: {
+    type: "website",
+    locale: "es_CL",
+    url: "https://pf24.lat/",
+    siteName: "PF24",
+    title: "PF24 | Simulación aérea en Project Flight",
+    description:
+      "Comunidad hispana de simulación aérea en Project Flight con operaciones de pilotos y control de tránsito aéreo virtual.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "PF24 | Simulación aérea en Project Flight",
+    description:
+      "Comunidad hispana de simulación aérea en Project Flight con operaciones de pilotos y ATC.",
+  },
 };
 
 export default function RootLayout({
