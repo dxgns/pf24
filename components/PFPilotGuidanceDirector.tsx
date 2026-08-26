@@ -68,9 +68,14 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   const [lastSeen, setLastSeen] = useState(0);
   const [clock, setClock] = useState(Date.now());
   const [targetIndex, setTargetIndex] = useState(0);
+  const [departureConditionMet, setDepartureConditionMet] = useState(false);
+  const [procedureComplete, setProcedureComplete] = useState(false);
   const autoInitializedRef = useRef(false);
 
-  const procedure = useMemo(() => selectProcedureForPlan(plan), [plan?.arrival_icao, plan?.route]);
+  const procedure = useMemo(
+    () => selectProcedureForPlan(plan),
+    [plan?.departure_icao, plan?.arrival_icao, plan?.route],
+  );
   const gameCallsign = useMemo(
     () => normalizeAirlineCallsign(
       normalizeProjectFlightCallsign(getGameCallsignFromNotes(plan?.notes) || String(plan?.callsign ?? "")),
@@ -86,6 +91,8 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     setTargetIndex(0);
     setTelemetry(null);
     setLastSeen(0);
+    setDepartureConditionMet(false);
+    setProcedureComplete(false);
     autoInitializedRef.current = false;
   }, [plan?.id, procedure?.id]);
 
@@ -116,16 +123,25 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
 
   const telemetryFresh = Boolean(telemetry && lastSeen > 0 && clock - lastSeen < 15000);
   const activeTelemetry = telemetryFresh ? telemetry : null;
+  const departureLeg = procedure?.departureLeg ?? null;
+  const departureLegActive = Boolean(departureLeg && !departureConditionMet);
   const currentFix = procedure?.fixes[Math.min(targetIndex, Math.max(0, procedure.fixes.length - 1))] ?? null;
   const inboundLeg = procedure && currentFix ? getInboundLeg(procedure, currentFix.id) : null;
   const inboundStart = procedure && inboundLeg ? getProcedureFix(procedure, inboundLeg.from) : null;
 
   useEffect(() => {
-    if (!procedure || !activeTelemetry || autoInitializedRef.current) return;
+    if (!departureLeg || !activeTelemetry || departureConditionMet) return;
+    if (activeTelemetry.altitude >= departureLeg.untilAltitudeFeet) {
+      setDepartureConditionMet(true);
+    }
+  }, [activeTelemetry, departureConditionMet, departureLeg]);
+
+  useEffect(() => {
+    if (!procedure || procedure.kind !== "STAR" || !activeTelemetry || autoInitializedRef.current) return;
     autoInitializedRef.current = true;
 
-    // If the aircraft is already established on the first published leg, do not
-    // send it backwards to the STAR entry fix when PFPilot is opened mid-flight.
+    // If the aircraft is already established on the first published STAR leg,
+    // do not send it backwards to the procedure entry fix when opened mid-flight.
     const firstLeg = procedure.legs[0];
     if (!firstLeg) return;
     const from = getProcedureFix(procedure, firstLeg.from);
@@ -148,8 +164,14 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
 
   useEffect(() => {
     if (!procedure || targetDistanceNm === null || targetDistanceNm > 0.9) return;
+
+    if (procedure.kind === "SID") {
+      if (!departureLeg || departureConditionMet) setProcedureComplete(true);
+      return;
+    }
+
     setTargetIndex((current) => Math.min(current + 1, procedure.fixes.length - 1));
-  }, [procedure, currentFix?.id, targetDistanceNm]);
+  }, [procedure, departureLeg, departureConditionMet, currentFix?.id, targetDistanceNm]);
 
   const directHeading = activeTelemetry && currentFix?.mapPoint
     ? bearingToMapPoint({ x: activeTelemetry.mapX, y: activeTelemetry.mapY }, currentFix.mapPoint)
@@ -164,23 +186,34 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     : null;
   const established = Boolean(legCapture && legCapture.progress >= -0.05 && legCapture.progress <= 1.08 && legCapture.distanceNm <= 0.55);
 
-  const navCommand = !currentFix
-    ? "NO ACTIVE PROCEDURE"
-    : !currentFix.mapPoint
-      ? `HOLD GUIDANCE · ${currentFix.label} GEOMETRY NOT RESOLVED`
-      : established && inboundLeg
-        ? `FLY ${paddedHeading(inboundLeg.course)}° · ${currentFix.label}`
-        : inboundLeg
-          ? `INTERCEPT ${paddedHeading(inboundLeg.course)}° · HDG ${paddedHeading(directHeading)}° TO ${currentFix.label}`
-          : `HDG ${paddedHeading(directHeading)}° · DIRECT ${currentFix.label}`;
+  const navCommand = procedureComplete && procedure?.kind === "SID"
+    ? "SID COMPLETE · FOLLOW FPL ROUTE"
+    : departureLegActive && departureLeg
+      ? `FLY HDG ${paddedHeading(departureLeg.heading)}° · UNTIL ${departureLeg.untilAltitudeFeet.toLocaleString("en-US")} FT`
+      : departureLeg && currentFix
+        ? `FLY ${paddedHeading(departureLeg.afterCourse)}° · ${currentFix.label}`
+        : !currentFix
+          ? "NO ACTIVE PROCEDURE"
+          : !currentFix.mapPoint
+            ? `HOLD GUIDANCE · ${currentFix.label} GEOMETRY NOT RESOLVED`
+            : established && inboundLeg
+              ? `FLY ${paddedHeading(inboundLeg.course)}° · ${currentFix.label}`
+              : inboundLeg
+                ? `INTERCEPT ${paddedHeading(inboundLeg.course)}° · HDG ${paddedHeading(directHeading)}° TO ${currentFix.label}`
+                : `HDG ${paddedHeading(directHeading)}° · DIRECT ${currentFix.label}`;
 
   const altitude = activeTelemetry?.altitude ?? 0;
-  const altitudeAdvisory = activeTelemetry
-    ? altitudeCommand(currentFix?.altitude, altitude)
-    : "WAITING FOR AIRCRAFT TELEMETRY";
+  const activeAltitudeRestriction: AltitudeRestriction | undefined = departureLegActive && departureLeg
+    ? { type: "AT_OR_ABOVE", feet: departureLeg.untilAltitudeFeet }
+    : currentFix?.altitude;
+  const altitudeAdvisory = procedureComplete && procedure?.kind === "SID"
+    ? "FOLLOW FPL / ATC ALTITUDE"
+    : activeTelemetry
+      ? altitudeCommand(activeAltitudeRestriction, altitude)
+      : "WAITING FOR AIRCRAFT TELEMETRY";
 
   const speedLimits = [
-    currentFix?.speed?.knots,
+    departureLegActive ? departureLeg?.speed?.knots : currentFix?.speed?.knots,
     procedure?.globalSpeed && activeTelemetry && activeTelemetry.altitude < procedure.globalSpeed.belowFeet
       ? procedure.globalSpeed.maxKnots
       : undefined,
@@ -189,7 +222,15 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   const speedAdvisory = maxSpeed ? `MAX ${maxSpeed} KT` : "NO PUBLISHED SPEED AT NEXT FIX";
 
   let verticalProfile = "NO DESCENT CALCULATION REQUIRED";
-  if (activeTelemetry && currentFix?.altitude && targetDistanceNm !== null) {
+  if (departureLegActive && departureLeg) {
+    verticalProfile = `ALTITUDE TRIGGER · TURN AFTER ${departureLeg.untilAltitudeFeet.toLocaleString("en-US")} FT`;
+  } else if (procedure?.kind === "SID" && !procedureComplete) {
+    verticalProfile = currentFix?.altitude
+      ? `CLIMB PROFILE · NEXT ${currentFix.label} ${formatAltitudeRestriction(currentFix.altitude)}`
+      : `DEPARTURE LEG · ${currentFix?.label ?? "NEXT FIX"}`;
+  } else if (procedureComplete && procedure?.kind === "SID") {
+    verticalProfile = "SID COMPLETE · ENROUTE PHASE";
+  } else if (activeTelemetry && currentFix?.altitude && targetDistanceNm !== null) {
     const restriction = currentFix.altitude;
     const descTarget = restriction.type === "AT_OR_ABOVE" ? null : restriction.feet;
     if (descTarget !== null && activeTelemetry.altitude > descTarget) {
@@ -200,6 +241,31 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
         : `TOD IN ≈ ${margin.toFixed(1)} NM · NEED ≈ ${requiredNm.toFixed(1)} NM`;
     }
   }
+
+  const nextConstraintLabel = departureLegActive && departureLeg
+    ? `HDG ${paddedHeading(departureLeg.heading)}°`
+    : procedureComplete && procedure?.kind === "SID"
+      ? "ENROUTE"
+      : currentFix?.label ?? "—";
+  const nextConstraintAltitude = departureLegActive && departureLeg
+    ? `${departureLeg.untilAltitudeFeet.toLocaleString("en-US")} FT OR ABOVE`
+    : procedureComplete && procedure?.kind === "SID"
+      ? "FPL / ATC"
+      : formatAltitudeRestriction(currentFix?.altitude);
+  const nextConstraintSpeed = departureLegActive && departureLeg?.speed
+    ? `MAX ${departureLeg.speed.knots} KT`
+    : currentFix?.speed
+      ? `MAX ${currentFix.speed.knots} KT`
+      : "—";
+  const nextConstraintDistance = departureLegActive
+    ? "Altitude-triggered transition; no fixed geographic turn point"
+    : procedureComplete && procedure?.kind === "SID"
+      ? "Procedure complete"
+      : targetDistanceNm !== null
+        ? `${targetDistanceNm.toFixed(1)} NM to fix`
+        : currentFix?.dme
+          ? "DME geometry pending resolver"
+          : "Distance unavailable";
 
   if (!plan) {
     return (
@@ -248,7 +314,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
             <p className="mt-3 text-sm text-slate-500">Activa GUIDANCE para comenzar las indicaciones.</p>
           ) : !procedure ? (
             <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-100/80">
-              No hay un procedimiento cargado que coincida con el destino/ruta del FPL. El motor no inventará instrucciones.
+              No hay un procedimiento cargado que coincida con la salida/llegada y la ruta del FPL. El motor no inventará instrucciones.
             </div>
           ) : !activeTelemetry ? (
             <p className="mt-3 text-sm text-amber-200">Esperando al callsign {projectFlightCallsign || gameCallsign || "del FPL"} en Project Flight.</p>
@@ -269,9 +335,9 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
             <div>
               <p className="mono text-xs text-slate-500">ACTIVE PROCEDURE</p>
               <p className="mono mt-2 text-2xl font-extrabold text-white">{procedure?.code ?? "NOT LOADED"}</p>
-              <p className="mt-1 text-xs text-slate-500">{procedure ? `${procedure.kind} · ${procedure.airport} RWY ${procedure.runway} · ${procedure.chart}` : `ARR ${String(plan.arrival_icao ?? "----")}`}</p>
+              <p className="mt-1 text-xs text-slate-500">{procedure ? `${procedure.kind} · ${procedure.airport} RWY ${procedure.runway} · ${procedure.chart}` : `${String(plan.departure_icao ?? "----")} → ${String(plan.arrival_icao ?? "----")}`}</p>
             </div>
-            {procedure && (
+            {procedure && procedure.fixes.length > 1 && (
               <div className="flex gap-1">
                 <button
                   type="button"
@@ -293,35 +359,54 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
 
           {procedure ? (
             <div className="mt-5 space-y-2">
-              {procedure.fixes.map((fix, index) => (
-                <div
-                  key={fix.id}
-                  className={`rounded-xl border p-3 ${index === targetIndex ? "border-sky-400/50 bg-sky-400/5" : "border-white/10 bg-[#020617]"}`}
-                >
+              {procedure.departureLeg && (
+                <div className={`rounded-xl border p-3 ${departureLegActive ? "border-sky-400/50 bg-sky-400/5" : "border-white/10 bg-[#020617]"}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className={`mono text-xs font-bold ${index === targetIndex ? "text-sky-300" : "text-slate-300"}`}>{fix.label}</span>
-                    <span className="mono text-[10px] text-slate-500">{fix.source === "DME_FIX" ? "DME" : "FIX"}</span>
+                    <span className={`mono text-xs font-bold ${departureLegActive ? "text-sky-300" : "text-slate-300"}`}>
+                      HDG {paddedHeading(procedure.departureLeg.heading)}°
+                    </span>
+                    <span className="mono text-[10px] text-slate-500">ALT TRIGGER</span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
-                    <span>ALT {formatAltitudeRestriction(fix.altitude)}</span>
-                    <span>SPD {fix.speed ? `MAX ${fix.speed.knots} KT` : "—"}</span>
+                    <span>UNTIL {procedure.departureLeg.untilAltitudeFeet.toLocaleString("en-US")} FT</span>
+                    <span>SPD {procedure.departureLeg.speed ? `MAX ${procedure.departureLeg.speed.knots} KT` : "—"}</span>
+                    <span>THEN {paddedHeading(procedure.departureLeg.afterCourse)}° TO {procedure.departureLeg.targetFix}</span>
                   </div>
-                  {fix.dme && !fix.mapPoint && (
-                    <p className="mt-2 text-[10px] leading-4 text-amber-200/70">{fix.dme.distanceNm.toFixed(1)} DME {fix.dme.station} · geometric fix definition stored; coordinate resolver will use the station reference.</p>
-                  )}
                 </div>
-              ))}
+              )}
+
+              {procedure.fixes.map((fix, index) => {
+                const active = !departureLegActive && !procedureComplete && index === targetIndex;
+                return (
+                  <div
+                    key={fix.id}
+                    className={`rounded-xl border p-3 ${active ? "border-sky-400/50 bg-sky-400/5" : "border-white/10 bg-[#020617]"}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className={`mono text-xs font-bold ${active ? "text-sky-300" : "text-slate-300"}`}>{fix.label}</span>
+                      <span className="mono text-[10px] text-slate-500">{fix.source === "DME_FIX" ? "DME" : "FIX"}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                      <span>ALT {formatAltitudeRestriction(fix.altitude)}</span>
+                      <span>SPD {fix.speed ? `MAX ${fix.speed.knots} KT` : "—"}</span>
+                    </div>
+                    {fix.dme && !fix.mapPoint && (
+                      <p className="mt-2 text-[10px] leading-4 text-amber-200/70">{fix.dme.distanceNm.toFixed(1)} DME {fix.dme.station} · geometric fix definition stored; coordinate resolver will use the station reference.</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
-            <p className="mt-4 text-sm leading-6 text-slate-500">Primera librería cargada: MDST PIXES4B / ETBOD4B. Se selecciona automáticamente desde el FPL.</p>
+            <p className="mt-4 text-sm leading-6 text-slate-500">Librería activa: procedimientos MDST cargados desde el código exacto incluido en la ruta del FPL.</p>
           )}
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-slate-950 p-5">
           <p className="mono text-xs text-slate-500">NEXT CONSTRAINT</p>
-          <p className="mono mt-3 text-xl font-bold text-sky-300">{currentFix?.label ?? "—"}</p>
-          <p className="mt-2 text-sm text-slate-400">ALT {formatAltitudeRestriction(currentFix?.altitude)} · SPD {currentFix?.speed ? `MAX ${currentFix.speed.knots} KT` : "—"}</p>
-          <p className="mt-2 text-xs text-slate-500">{targetDistanceNm !== null ? `${targetDistanceNm.toFixed(1)} NM to fix` : currentFix?.dme ? "DME geometry pending resolver" : "Distance unavailable"}</p>
+          <p className="mono mt-3 text-xl font-bold text-sky-300">{nextConstraintLabel}</p>
+          <p className="mt-2 text-sm text-slate-400">ALT {nextConstraintAltitude} · SPD {nextConstraintSpeed}</p>
+          <p className="mt-2 text-xs text-slate-500">{nextConstraintDistance}</p>
         </div>
 
         <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-xs leading-5 text-amber-100/75">
