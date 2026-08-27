@@ -1,0 +1,253 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { APPROACHES, type ApproachMode } from "@/lib/pfpilot/approaches";
+import {
+  getPFPilotProcedureSelection,
+  setPFPilotProcedureSelectionInNotes,
+  type PFPilotProcedureSelection,
+} from "@/lib/pfpilot/procedureSelection";
+import { PROCEDURES } from "@/lib/pfpilot/procedures";
+import { supabase } from "@/lib/supabase";
+
+type PilotPlan = {
+  id: string;
+  callsign?: string;
+  departure_icao?: string;
+  arrival_icao?: string;
+  notes?: string | null;
+  status?: string;
+  [key: string]: unknown;
+};
+
+type ApproachChoice = {
+  token: string;
+  label: string;
+};
+
+function airport(value: unknown) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function procedureLabel(code: string, runway: string, chart: string) {
+  return `${code} · RWY ${runway} · ${chart}`;
+}
+
+function approachModeLabel(mode: ApproachMode) {
+  if (mode === "RNAV") return "RNAV (GNSS)";
+  if (mode === "LOC") return "LOC (GS OUT)";
+  return "ILS";
+}
+
+export default function PFPilotProcedureLoader({
+  plan,
+  pilotId,
+}: {
+  plan: PilotPlan | null;
+  pilotId: string;
+}) {
+  const initialSelection = useMemo(
+    () => getPFPilotProcedureSelection(plan?.notes),
+    [plan?.id, plan?.notes],
+  );
+  const [draft, setDraft] = useState<PFPilotProcedureSelection>(initialSelection);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    setDraft(initialSelection);
+    setMessage("");
+  }, [initialSelection.sid, initialSelection.star, initialSelection.approach, plan?.id]);
+
+  const departure = airport(plan?.departure_icao);
+  const arrival = airport(plan?.arrival_icao);
+
+  const sidChoices = useMemo(
+    () => PROCEDURES.filter((item) => item.kind === "SID" && item.airport === departure),
+    [departure],
+  );
+  const starChoices = useMemo(
+    () => PROCEDURES.filter((item) => item.kind === "STAR" && item.airport === arrival),
+    [arrival],
+  );
+  const approachChoices = useMemo<ApproachChoice[]>(
+    () => APPROACHES
+      .filter((item) => item.airport === arrival)
+      .flatMap((item) => item.approach.modes.map((mode) => {
+        const token = item.approach.modeTokens[mode]?.[0] ?? item.code;
+        return {
+          token,
+          label: `${approachModeLabel(mode)} RWY ${item.runway} · ${item.chart}`,
+        };
+      })),
+    [arrival],
+  );
+
+  const dirty =
+    draft.sid !== initialSelection.sid ||
+    draft.star !== initialSelection.star ||
+    draft.approach !== initialSelection.approach;
+
+  async function commitSelection(nextSelection = draft) {
+    if (!plan?.id || saving) return;
+    setSaving(true);
+    setMessage("");
+
+    const { data, error: readError } = await supabase
+      .from("flight_plans")
+      .select("notes")
+      .eq("id", plan.id)
+      .eq("created_by", pilotId)
+      .neq("status", "FINISHED")
+      .maybeSingle();
+
+    if (readError || !data) {
+      console.error("PFPilot procedure loader read failed:", readError);
+      setMessage("NO SE PUDO LEER EL FPL ACTIVO");
+      setSaving(false);
+      return;
+    }
+
+    const notes = setPFPilotProcedureSelectionInNotes(data.notes, nextSelection);
+    const { error } = await supabase
+      .from("flight_plans")
+      .update({ notes, updated_at: new Date().toISOString() })
+      .eq("id", plan.id)
+      .eq("created_by", pilotId)
+      .neq("status", "FINISHED");
+
+    if (error) {
+      console.error("PFPilot procedure loader save failed:", error);
+      setMessage("ERROR AL CARGAR PROCEDIMIENTOS");
+    } else {
+      setDraft(nextSelection);
+      setMessage("EXEC COMPLETE · GUIDANCE UPDATED");
+    }
+    setSaving(false);
+  }
+
+  function clearAll() {
+    const empty = { sid: "", star: "", approach: "" };
+    setDraft(empty);
+    void commitSelection(empty);
+  }
+
+  if (!plan) return null;
+
+  return (
+    <section className="mb-6 rounded-3xl border border-emerald-400/20 bg-[#020817] p-5 shadow-[inset_0_0_40px_rgba(16,185,129,0.035)]">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="mono text-[10px] tracking-[0.24em] text-emerald-300/70">CABIN · FMS / MCDU</p>
+          <h2 className="mt-2 text-xl font-extrabold text-white">PROCEDURE LOAD</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Carga SID, STAR y APPR asignadas sin modificar la ruta enroute del plan de vuelo.
+          </p>
+        </div>
+        <div className="rounded-xl border border-emerald-400/20 bg-black/30 px-4 py-3 text-right">
+          <p className="mono text-[9px] text-slate-600">ACTIVE FPL</p>
+          <p className="mono mt-1 text-sm font-bold text-emerald-300">{String(plan.callsign ?? "----").toUpperCase()}</p>
+          <p className="mono mt-1 text-[10px] text-slate-500">{departure || "----"} → {arrival || "----"}</p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 xl:grid-cols-3">
+        <ProcedureSelect
+          label="DEP / SID"
+          value={draft.sid}
+          placeholder={sidChoices.length ? "SELECT SID" : `NO SID LOADED FOR ${departure || "DEP"}`}
+          options={sidChoices.map((item) => ({
+            value: item.code,
+            label: procedureLabel(item.code, item.runway, item.chart),
+          }))}
+          onChange={(sid) => setDraft((current) => ({ ...current, sid }))}
+        />
+        <ProcedureSelect
+          label="ARR / STAR"
+          value={draft.star}
+          placeholder={starChoices.length ? "SELECT STAR" : `NO STAR LOADED FOR ${arrival || "ARR"}`}
+          options={starChoices.map((item) => ({
+            value: item.code,
+            label: procedureLabel(item.code, item.runway, item.chart),
+          }))}
+          onChange={(star) => setDraft((current) => ({ ...current, star }))}
+        />
+        <ProcedureSelect
+          label="ARR / APPR"
+          value={draft.approach}
+          placeholder={approachChoices.length ? "SELECT APPROACH" : `NO APPR LOADED FOR ${arrival || "ARR"}`}
+          options={approachChoices.map((item) => ({ value: item.token, label: item.label }))}
+          onChange={(approach) => setDraft((current) => ({ ...current, approach }))}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+        <div className="rounded-xl border border-white/10 bg-black/25 p-3">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <FmsLine label="SID" value={draft.sid || "-----"} />
+            <FmsLine label="STAR" value={draft.star || "-----"} />
+            <FmsLine label="APPR" value={draft.approach || "-----"} />
+          </div>
+          {message && <p className="mono mt-3 text-[10px] text-emerald-300">{message}</p>}
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={clearAll}
+            disabled={saving}
+            className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 mono text-xs font-bold text-slate-400 disabled:opacity-40"
+          >
+            CLR
+          </button>
+          <button
+            type="button"
+            onClick={() => void commitSelection()}
+            disabled={saving || !dirty}
+            className="rounded-xl border border-emerald-400/50 bg-emerald-400/10 px-5 py-3 mono text-xs font-extrabold text-emerald-200 disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            {saving ? "EXEC..." : "EXEC"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProcedureSelect({
+  label,
+  value,
+  placeholder,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="rounded-2xl border border-white/10 bg-black/25 p-4">
+      <span className="mono text-[9px] tracking-[0.16em] text-slate-600">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mono mt-2 w-full rounded-xl border border-emerald-400/20 bg-[#020617] px-3 py-3 text-xs font-bold text-emerald-200 outline-none focus:border-emerald-400/60"
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function FmsLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 sm:block">
+      <span className="mono text-[9px] text-slate-600">{label}</span>
+      <span className="mono text-xs font-bold text-emerald-300 sm:mt-1 sm:block">{value}</span>
+    </div>
+  );
+}
