@@ -38,6 +38,9 @@ type PilotPlan = {
   [key: string]: unknown;
 };
 
+const TARGET_TELEMETRY_FRESH_MS = 20000;
+const TARGET_TELEMETRY_HOLD_MS = 60000;
+
 function paddedHeading(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return "---";
   return String((Math.round(value) + 360) % 360).padStart(3, "0");
@@ -125,7 +128,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
 
   const matches = useMemo(
     () => selectProcedureMatches(plan),
-    [plan?.departure_icao, plan?.arrival_icao, plan?.route],
+    [plan?.departure_icao, plan?.arrival_icao, plan?.route, plan?.notes],
   );
   const procedure = useMemo(
     () => procedureForKind(matches, activeKind),
@@ -147,6 +150,32 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   );
 
   useEffect(() => {
+    if (!plan?.id) {
+      setEnabled(false);
+      return;
+    }
+    try {
+      setEnabled(window.sessionStorage.getItem(`pf24-guidance-enabled:${plan.id}`) === "1");
+    } catch {
+      setEnabled(false);
+    }
+  }, [plan?.id]);
+
+  const toggleGuidance = () => {
+    setEnabled((current) => {
+      const next = !current;
+      if (plan?.id) {
+        try {
+          window.sessionStorage.setItem(`pf24-guidance-enabled:${plan.id}`, next ? "1" : "0");
+        } catch {
+          // Session storage is optional; guidance still works without it.
+        }
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
     const linkedUsername = document
       .querySelector<HTMLElement>("main[data-pf24-roblox-username]")
       ?.dataset.pf24RobloxUsername ?? "";
@@ -165,7 +194,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   useEffect(() => {
     const selected = selectApproachModeForPlan(plan, matches.approach);
     if (selected) setApproachMode(selected);
-  }, [plan?.id, plan?.route, matches.approach?.id]);
+  }, [plan?.id, plan?.route, plan?.notes, matches.approach?.id]);
 
   useEffect(() => {
     setTargetIndex(0);
@@ -207,8 +236,10 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     return () => clearInterval(timer);
   }, []);
 
-  const telemetryFresh = Boolean(telemetry && lastSeen > 0 && clock - lastSeen < 15000);
-  const activeTelemetry = telemetryFresh ? telemetry : null;
+  const telemetryAgeMs = telemetry && lastSeen > 0 ? Math.max(0, clock - lastSeen) : Number.POSITIVE_INFINITY;
+  const telemetryFresh = Boolean(telemetry && telemetryAgeMs < TARGET_TELEMETRY_FRESH_MS);
+  const telemetryHeld = Boolean(telemetry && telemetryAgeMs < TARGET_TELEMETRY_HOLD_MS);
+  const activeTelemetry = telemetryHeld ? telemetry : null;
   const departureLeg = procedure?.departureLeg ?? null;
   const departureLegActive = Boolean(departureLeg && !departureConditionMet);
   const departureToFixActive = Boolean(
@@ -685,15 +716,15 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <p className="mono text-xs text-slate-500">GUIDANCE DIRECTOR</p>
-              <span className={`mono text-[10px] ${statusTone(connectionState, telemetryFresh)}`}>
-                {connectionState}{connectionState === "LIVE" ? telemetryFresh ? ` · AIRCRAFT LINKED${linkedIdentityLabel ? ` · @${linkedIdentityLabel}` : ""}` : " · SEARCHING AIRCRAFT" : ""}
+              <span className={`mono text-[10px] ${statusTone(connectionState, telemetryHeld)}`}>
+                {connectionState}{connectionState === "LIVE" ? telemetryHeld ? ` · AIRCRAFT LINKED${linkedIdentityLabel ? ` · @${linkedIdentityLabel}` : ""}${telemetryFresh ? "" : " · UPDATE DELAY"}` : " · SEARCHING AIRCRAFT" : ""}
               </span>
             </div>
             <p className="mt-1 text-sm text-slate-400">Asistencia en tiempo real; nunca controla la aeronave.</p>
           </div>
           <button
             type="button"
-            onClick={() => setEnabled((current) => !current)}
+            onClick={toggleGuidance}
             className={`rounded-xl border px-4 py-2 mono text-xs font-bold ${enabled ? "border-green-400/60 bg-green-400/10 text-green-300" : "border-white/10 text-slate-400"}`}
           >
             {enabled ? "GUIDANCE ON" : "GUIDANCE OFF"}
