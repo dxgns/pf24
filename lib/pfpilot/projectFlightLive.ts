@@ -44,6 +44,9 @@ declare global {
 
 const DEFAULT_SERVER_ID = "2ykygVZiX5";
 const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
+const FEED_STALE_MS = 12000;
+const WATCHDOG_INTERVAL_MS = 1000;
+const RECONNECT_DELAY_MS = 1500;
 
 // Same wide-area calibration used by the Scope. Keeping PFPilot in the same
 // coordinate frame lets guidance use the already calibrated PF24 waypoint map.
@@ -430,38 +433,101 @@ export function connectProjectFlightTraffic({
   let stopped = false;
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  let socketOpenedAt = 0;
+  let lastFrameAt = 0;
+  let lastDecodedTrafficAt = 0;
+  let everDecodedTraffic = false;
+
+  // Keep decoder identity state across reconnects. Project Flight can resume with
+  // position-only delta packets, so throwing this cache away on every socket
+  // reconnect can make an otherwise healthy stream impossible to associate with
+  // the aircraft until a later complete snapshot arrives.
+  const decodeMessage = createMessageDecoder();
+
+  const scheduleReconnect = () => {
+    if (stopped || reconnectTimer) return;
+    onState("RECONNECTING");
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, RECONNECT_DELAY_MS);
+  };
 
   const connect = () => {
     if (stopped || typeof window === "undefined") return;
-    onState(socket ? "RECONNECTING" : "CONNECTING");
+    const currentSocket = socket;
+    if (currentSocket && (currentSocket.readyState === WebSocket.CONNECTING || currentSocket.readyState === WebSocket.OPEN)) return;
+
     const serverId = configuredServerId();
     const WebSocketCtor = window.__PF24_NATIVE_WEBSOCKET__ ?? window.WebSocket;
-    const decodeMessage = createMessageDecoder();
-    socket = new WebSocketCtor(`${PROJECT_FLIGHT_WS_PREFIX}${encodeURIComponent(serverId)}`);
-    socket.binaryType = "arraybuffer";
+    const nextSocket = new WebSocketCtor(`${PROJECT_FLIGHT_WS_PREFIX}${encodeURIComponent(serverId)}`);
+    socket = nextSocket;
+    nextSocket.binaryType = "arraybuffer";
+    socketOpenedAt = Date.now();
+    lastFrameAt = 0;
+    lastDecodedTrafficAt = 0;
+    onState(everDecodedTraffic ? "RECONNECTING" : "CONNECTING");
 
-    socket.onopen = () => onState("LIVE");
-    socket.onmessage = (event) => {
+    nextSocket.onopen = () => {
+      if (stopped || socket !== nextSocket) return;
+      socketOpenedAt = Date.now();
+      onState("LIVE");
+    };
+
+    nextSocket.onmessage = (event) => {
+      if (stopped || socket !== nextSocket) return;
+      lastFrameAt = Date.now();
       void decodeMessage(event.data).then((traffic) => {
-        if (!stopped && traffic.length > 0) onTraffic(traffic);
+        if (stopped || socket !== nextSocket || traffic.length === 0) return;
+        everDecodedTraffic = true;
+        lastDecodedTrafficAt = Date.now();
+        onTraffic(traffic);
       });
     };
-    socket.onerror = () => {
+
+    nextSocket.onerror = () => {
+      if (stopped || socket !== nextSocket) return;
       onState("RECONNECTING");
+      if (nextSocket.readyState === WebSocket.CONNECTING || nextSocket.readyState === WebSocket.OPEN) {
+        nextSocket.close();
+      }
     };
-    socket.onclose = () => {
+
+    nextSocket.onclose = () => {
+      if (socket === nextSocket) socket = null;
       if (stopped) return;
-      onState("RECONNECTING");
-      reconnectTimer = setTimeout(connect, 3000);
+      scheduleReconnect();
     };
   };
+
+  watchdogTimer = setInterval(() => {
+    if (stopped || !socket || socket.readyState !== WebSocket.OPEN) return;
+    // Before the first decoded traffic packet, raw frames prove that the API is
+    // still alive. Once traffic has been decoded, require actual decoded traffic
+    // to keep advancing so a socket that remains OPEN but stops updating cannot
+    // leave PFPilot frozen indefinitely.
+    const lastUsefulActivity = everDecodedTraffic
+      ? (lastDecodedTrafficAt || socketOpenedAt)
+      : (lastFrameAt || socketOpenedAt);
+    if (!lastUsefulActivity || Date.now() - lastUsefulActivity <= FEED_STALE_MS) return;
+
+    console.warn("PF24 Project Flight feed became stale; reconnecting socket.");
+    onState("RECONNECTING");
+    socket.close();
+  }, WATCHDOG_INTERVAL_MS);
 
   connect();
 
   return () => {
     stopped = true;
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    if (socket && socket.readyState <= WebSocket.OPEN) socket.close();
+    if (watchdogTimer) clearInterval(watchdogTimer);
+    reconnectTimer = null;
+    watchdogTimer = null;
+    const current = socket;
+    socket = null;
+    if (current && (current.readyState === WebSocket.CONNECTING || current.readyState === WebSocket.OPEN)) current.close();
     onState("OFFLINE");
   };
 }
