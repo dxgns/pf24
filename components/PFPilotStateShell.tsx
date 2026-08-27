@@ -5,12 +5,14 @@ import type { CSSProperties } from "react";
 import PFPilotMinimumsAudio from "@/components/PFPilotMinimumsAudio";
 import PFPilotProcedureLoader from "@/components/PFPilotProcedureLoader";
 import PFPilotPrototype from "@/components/PFPilotPrototype";
+import { getPFPilotProcedureSelection } from "@/lib/pfpilot/procedureSelection";
 import { supabase } from "@/lib/supabase";
 
 type ActivePlan = {
   id: string;
   callsign: string;
   status: string;
+  notes?: string | null;
   [key: string]: unknown;
 };
 
@@ -63,6 +65,11 @@ export default function PFPilotStateShell({
   }, [pilotId, refreshActivePlan]);
 
   const currentPlans = useMemo(() => activePlan ? [activePlan] : [], [activePlan]);
+  const selection = useMemo(
+    () => getPFPilotProcedureSelection(activePlan?.notes),
+    [activePlan?.notes],
+  );
+  const procedureLoadKey = `${activePlan?.id ?? "none"}:${selection.sid}:${selection.star}:${selection.approach}`;
   const callsign = activePlan?.callsign?.trim().toUpperCase() ?? "";
   const shellStyle = activePlan
     ? ({ "--pf24-pfpilot-active-callsign": `"${callsign}"` } as CSSProperties)
@@ -95,9 +102,10 @@ export default function PFPilotStateShell({
           display: none !important;
         }
       `}</style>
-      <PFPilotMinimumsAudio plan={activePlan} />
+      <PFPilotMinimumsAudio key={`minimums:${procedureLoadKey}`} plan={activePlan} />
       {activePlan && <PFPilotProcedureLoader plan={activePlan} pilotId={pilotId} />}
       <PFPilotPrototype
+        key={`prototype:${procedureLoadKey}`}
         pilotId={pilotId}
         pilotName={pilotName}
         initialPlans={currentPlans}
