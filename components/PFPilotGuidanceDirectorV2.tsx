@@ -24,6 +24,10 @@ import {
   type ProjectFlightConnectionState,
   type ProjectFlightTelemetry,
 } from "@/lib/pfpilot/projectFlightLive";
+import {
+  computeLateralGuidance,
+  dynamicWaypointPassToleranceNm,
+} from "@/lib/pfpilot/lateralGuidance";
 import { getGameCallsignFromNotes } from "@/lib/flightPlanGameCallsign";
 import { WAYPOINTS } from "@/lib/scope/mapData";
 import { normalizeAirlineCallsign, spokenAirlineCallsign } from "@/lib/scope/airlines";
@@ -55,9 +59,8 @@ const TARGET_TELEMETRY_FRESH_MS = 20000;
 const TARGET_TELEMETRY_HOLD_MS = 60000;
 
 // Guidance precision and waypoint-passage tolerance are deliberately separate.
-// HDG keeps pointing to the exact published fix. The wider tolerance is only
-// used after the aircraft has passed abeam so minor tracking error does not
-// leave the director stuck on an already-flown waypoint.
+// The wider tolerance confirms passage after a fly-by; it never moves the fix or
+// changes the published leg geometry used by lateral guidance.
 const EXACT_FIX_CAPTURE_NM: Record<ProcedureKind, number> = {
   SID: 0.08,
   STAR: 0.08,
@@ -162,6 +165,15 @@ function distanceToProcedureFix(
     distance += mapDistanceNm(previous, next);
   }
   return distance;
+}
+
+function publishedLegCourse(
+  procedure: FlightProcedure | null,
+  fromId: string | undefined,
+  toId: string | undefined,
+) {
+  if (!procedure || !fromId || !toId) return null;
+  return procedure.legs.find((leg) => leg.from === fromId && leg.to === toId)?.course ?? null;
 }
 
 function findSidAltitudeTarget(
@@ -470,7 +482,66 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
   const departureLeg = procedure?.departureLeg ?? null;
   const departureLegActive = Boolean(departureLeg && !departureConditionMet);
   const currentFix = procedure?.fixes[Math.min(targetIndex, Math.max(0, procedure.fixes.length - 1))] ?? null;
+  const previousProcedureFix = procedure && targetIndex > 0 ? procedure.fixes[targetIndex - 1] ?? null : null;
+  const nextProcedureFix = procedure && targetIndex < procedure.fixes.length - 1 ? procedure.fixes[targetIndex + 1] ?? null : null;
   const currentFixDistance = position && currentFix?.mapPoint ? mapDistanceNm(position, currentFix.mapPoint) : null;
+
+  const procedureContinuationPoint = useMemo(() => {
+    if (!procedure || !currentFix?.mapPoint || targetIndex < procedure.fixes.length - 1) return null;
+
+    if (procedure.kind === "SID") {
+      return enroutePoints.find((point) => mapDistanceNm(point, currentFix.mapPoint!) > 0.15) ?? null;
+    }
+
+    if (procedure.kind === "STAR" && matches.approach) {
+      const entryIndex = matches.approach.fixes.findIndex((fix) => fix.id === matches.approach!.entryFix);
+      const entry = entryIndex >= 0 ? matches.approach.fixes[entryIndex] : null;
+      if (!entry?.mapPoint) return null;
+      if (mapDistanceNm(entry.mapPoint, currentFix.mapPoint) <= 0.15) {
+        return matches.approach.fixes[entryIndex + 1]?.mapPoint ?? null;
+      }
+      return entry.mapPoint;
+    }
+
+    return null;
+  }, [procedure, currentFix?.id, currentFix?.mapPoint, targetIndex, enroutePoints, matches.approach]);
+
+  const procedureNextPoint = nextProcedureFix?.mapPoint ?? procedureContinuationPoint;
+  const procedureInboundCourse = publishedLegCourse(
+    procedure,
+    previousProcedureFix?.id,
+    currentFix?.id,
+  ) ?? (
+    targetIndex === 0 &&
+    departureLeg &&
+    departureConditionMet &&
+    departureLeg.afterCourseMode === "COURSE"
+      ? departureLeg.afterCourse
+      : null
+  );
+  const procedureOutboundCourse = publishedLegCourse(
+    procedure,
+    currentFix?.id,
+    nextProcedureFix?.id,
+  );
+
+  const procedurePassTolerance = useMemo(() => {
+    if (!procedure || !activeTelemetry || !position || !currentFix?.mapPoint) {
+      return procedure ? WAYPOINT_PASS_TOLERANCE_NM[procedure.kind] : 0;
+    }
+    const specialTurn = approachProcedure?.approach.rnavTurn;
+    if (specialTurn && currentFix.id === specialTurn.toFix) return WAYPOINT_PASS_TOLERANCE_NM[procedure.kind];
+
+    return dynamicWaypointPassToleranceNm(WAYPOINT_PASS_TOLERANCE_NM[procedure.kind], {
+      position,
+      target: currentFix.mapPoint,
+      next: procedureNextPoint,
+      inboundStart: previousProcedureFix?.mapPoint,
+      groundSpeedKnots: activeTelemetry.groundSpeed,
+      publishedInboundCourse: procedureInboundCourse,
+      publishedOutboundCourse: procedureOutboundCourse,
+    });
+  }, [procedure, activeTelemetry?.groundSpeed, position?.x, position?.y, currentFix?.id, currentFix?.mapPoint, procedureNextPoint, previousProcedureFix?.mapPoint, procedureInboundCourse, procedureOutboundCourse, approachProcedure]);
 
   useEffect(() => {
     if (!departureLeg || !activeTelemetry || departureConditionMet) return;
@@ -497,7 +568,7 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
     const min = Math.min(history.min, currentFixDistance);
     const exactCapture = currentFixDistance <= EXACT_FIX_CAPTURE_NM[procedure.kind];
     const passedWithinTolerance =
-      min <= WAYPOINT_PASS_TOLERANCE_NM[procedure.kind] &&
+      min <= procedurePassTolerance &&
       currentFixDistance > history.last + 0.03;
     targetHistoryRef.current = { key, min, last: currentFixDistance };
     if (!exactCapture && !passedWithinTolerance) return;
@@ -508,7 +579,7 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
     }
 
     if (procedure.kind !== "APPROACH") setProcedureComplete(true);
-  }, [procedure, procedureComplete, missedApproachActive, currentFixDistance, departureLegActive, targetIndex]);
+  }, [procedure, procedureComplete, missedApproachActive, currentFixDistance, departureLegActive, targetIndex, procedurePassTolerance]);
 
   useEffect(() => {
     if (!activeTelemetry || enroutePoints.length === 0 || routeInitializedRef.current) return;
@@ -532,7 +603,29 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
   }, [activeTelemetry, enroutePoints, activeKind, procedureComplete]);
 
   const enrouteTarget = enroutePoints[Math.min(enrouteIndex, Math.max(0, enroutePoints.length - 1))] ?? null;
+  const enroutePrevious = enrouteIndex > 0 ? enroutePoints[enrouteIndex - 1] ?? null : null;
+  const nextEnroutePoint = enrouteIndex < enroutePoints.length - 1 ? enroutePoints[enrouteIndex + 1] ?? null : null;
+  const starEntryFix = matches.star ? getProcedureFix(matches.star, matches.star.entryFix) : null;
+  const starEntryIndex = matches.star ? matches.star.fixes.findIndex((fix) => fix.id === matches.star!.entryFix) : -1;
+  const starAfterEntryFix = matches.star && starEntryIndex >= 0 ? matches.star.fixes[starEntryIndex + 1] ?? null : null;
+  const enrouteContinuation = useMemo(() => {
+    if (nextEnroutePoint) return nextEnroutePoint;
+    if (!enrouteTarget || !starEntryFix?.mapPoint) return null;
+    if (mapDistanceNm(enrouteTarget, starEntryFix.mapPoint) <= 0.15) return starAfterEntryFix?.mapPoint ?? null;
+    return starEntryFix.mapPoint;
+  }, [nextEnroutePoint, enrouteTarget, starEntryFix?.mapPoint, starAfterEntryFix?.mapPoint]);
   const enrouteDistance = position && enrouteTarget ? mapDistanceNm(position, enrouteTarget) : null;
+
+  const enroutePassTolerance = useMemo(() => {
+    if (!activeTelemetry || !position || !enrouteTarget) return ENROUTE_PASS_TOLERANCE_NM;
+    return dynamicWaypointPassToleranceNm(ENROUTE_PASS_TOLERANCE_NM, {
+      position,
+      target: enrouteTarget,
+      next: enrouteContinuation,
+      inboundStart: enroutePrevious,
+      groundSpeedKnots: activeTelemetry.groundSpeed,
+    });
+  }, [activeTelemetry?.groundSpeed, position?.x, position?.y, enrouteTarget, enrouteContinuation, enroutePrevious]);
 
   useEffect(() => {
     if (!activeTelemetry || !enrouteTarget || enrouteDistance === null) return;
@@ -549,13 +642,13 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
     const min = Math.min(history.min, enrouteDistance);
     const exactCapture = enrouteDistance <= ENROUTE_EXACT_CAPTURE_NM;
     const passedWithinTolerance =
-      min <= ENROUTE_PASS_TOLERANCE_NM &&
+      min <= enroutePassTolerance &&
       enrouteDistance > history.last + 0.03;
     enrouteHistoryRef.current = { key, min, last: enrouteDistance };
     if (!exactCapture && !passedWithinTolerance) return;
 
     if (enrouteIndex < enroutePoints.length - 1) setEnrouteIndex((index) => index + 1);
-  }, [activeTelemetry, enrouteTarget, enrouteDistance, activeKind, procedureComplete, enrouteIndex, enroutePoints.length]);
+  }, [activeTelemetry, enrouteTarget, enrouteDistance, activeKind, procedureComplete, enrouteIndex, enroutePoints.length, enroutePassTolerance]);
 
   useEffect(() => {
     if (!position) return;
@@ -615,6 +708,19 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
   const missed = approachProcedure?.approach.missedApproach;
   const missedTarget = approachProcedure && missed ? getProcedureFix(approachProcedure, missed.targetFix) : null;
 
+  const speedTarget = useMemo(() => {
+    if (!activeTelemetry || !position) return 0;
+    if (missedApproachActive && missed?.targetSpeedKnots) return missed.targetSpeedKnots;
+    return predictiveSpeedTarget({
+      procedure: procedureComplete && procedure?.kind === "SID" ? null : procedure,
+      targetIndex,
+      telemetry: activeTelemetry,
+      altitudePlan,
+      position,
+      departureSpeed: departureLegActive ? departureLeg?.speed?.knots : undefined,
+    });
+  }, [activeTelemetry, position?.x, position?.y, missedApproachActive, missed?.targetSpeedKnots, procedure, procedureComplete, targetIndex, altitudePlan, departureLegActive, departureLeg?.speed?.knots]);
+
   const headingTarget = useMemo(() => {
     if (!activeTelemetry || !position) return null;
     if (missedApproachActive && missed) {
@@ -632,27 +738,30 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
       if (curved !== null) return curved;
     }
     if (procedure && !procedureComplete && currentFix?.mapPoint) {
-      return bearingToMapPoint(position, currentFix.mapPoint);
+      return computeLateralGuidance({
+        position,
+        target: currentFix.mapPoint,
+        next: procedureNextPoint,
+        inboundStart: previousProcedureFix?.mapPoint,
+        groundSpeedKnots: activeTelemetry.groundSpeed,
+        publishedInboundCourse: procedureInboundCourse,
+        publishedOutboundCourse: procedureOutboundCourse,
+        maxInterceptDegrees: procedure.kind === "APPROACH" ? 20 : 30,
+      });
     }
     if ((activeKind === null || (activeKind === "SID" && procedureComplete)) && enrouteTarget) {
-      return bearingToMapPoint(position, enrouteTarget);
+      return computeLateralGuidance({
+        position,
+        target: enrouteTarget,
+        next: enrouteContinuation,
+        inboundStart: enroutePrevious,
+        groundSpeedKnots: activeTelemetry.groundSpeed,
+        maxInterceptDegrees: 30,
+      });
     }
     if (approachProcedure) return approachProcedure.approach.finalCourse;
     return activeTelemetry.heading;
-  }, [activeTelemetry, position?.x, position?.y, missedApproachActive, missed, missedTurnAltitudeMet, missedTarget?.mapPoint, departureLegActive, departureLeg, departureConditionMet, currentFix?.id, currentFix?.mapPoint, approachProcedure, approachMode, procedure, procedureComplete, activeKind, enrouteTarget]);
-
-  const speedTarget = useMemo(() => {
-    if (!activeTelemetry || !position) return 0;
-    if (missedApproachActive && missed?.targetSpeedKnots) return missed.targetSpeedKnots;
-    return predictiveSpeedTarget({
-      procedure: procedureComplete && procedure?.kind === "SID" ? null : procedure,
-      targetIndex,
-      telemetry: activeTelemetry,
-      altitudePlan,
-      position,
-      departureSpeed: departureLegActive ? departureLeg?.speed?.knots : undefined,
-    });
-  }, [activeTelemetry, position?.x, position?.y, missedApproachActive, missed?.targetSpeedKnots, procedure, procedureComplete, targetIndex, altitudePlan, departureLegActive, departureLeg?.speed?.knots]);
+  }, [activeTelemetry, position?.x, position?.y, missedApproachActive, missed, missedTurnAltitudeMet, missedTarget?.mapPoint, departureLegActive, departureLeg, departureConditionMet, currentFix?.id, currentFix?.mapPoint, approachProcedure, approachMode, procedure, procedureComplete, activeKind, enrouteTarget, enrouteContinuation, enroutePrevious, procedureNextPoint, previousProcedureFix?.mapPoint, procedureInboundCourse, procedureOutboundCourse, speedTarget]);
 
   const toggleGuidance = () => {
     setEnabled((current) => {
@@ -743,7 +852,7 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
             </p>
           )}
           <p className="mt-3 text-[10px] leading-4 text-slate-600">
-            HDG mantiene el rumbo exacto al fix activo. La tolerancia solo confirma que el waypoint ya fue sobrepasado; no suaviza ni recorta la trayectoria. ALT anticipa restricciones posteriores y el nivel de vuelo. SPD conserva límites publicados y anticipa desaceleración, incluyendo energía de descenso. La API de Project Flight entrega GS, no IAS.
+            HDG intercepta la ruta publicada y anticipa virajes según GS y geometría del siguiente tramo. La tolerancia solo confirma el paso del waypoint. ALT anticipa restricciones posteriores y el nivel de vuelo. SPD conserva límites publicados y anticipa desaceleración, incluyendo energía de descenso. Project Flight entrega GS, no IAS.
           </p>
         </div>
       </div>
