@@ -73,6 +73,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   const [clock, setClock] = useState(Date.now());
   const [targetIndex, setTargetIndex] = useState(0);
   const [departureConditionMet, setDepartureConditionMet] = useState(false);
+  const [departureTargetReached, setDepartureTargetReached] = useState(false);
   const [procedureComplete, setProcedureComplete] = useState(false);
   const [robloxUsername, setRobloxUsername] = useState("");
   const autoInitializedRef = useRef(false);
@@ -104,6 +105,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     setTelemetry(null);
     setLastSeen(0);
     setDepartureConditionMet(false);
+    setDepartureTargetReached(false);
     setProcedureComplete(false);
     autoInitializedRef.current = false;
   }, [plan?.id, procedure?.id]);
@@ -141,6 +143,9 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   const activeTelemetry = telemetryFresh ? telemetry : null;
   const departureLeg = procedure?.departureLeg ?? null;
   const departureLegActive = Boolean(departureLeg && !departureConditionMet);
+  const departureToFixActive = Boolean(
+    departureLeg && departureConditionMet && !departureTargetReached && !procedureComplete,
+  );
   const currentFix = procedure?.fixes[Math.min(targetIndex, Math.max(0, procedure.fixes.length - 1))] ?? null;
   const inboundLeg = procedure && currentFix ? getInboundLeg(procedure, currentFix.id) : null;
   const inboundStart = procedure && inboundLeg ? getProcedureFix(procedure, inboundLeg.from) : null;
@@ -156,8 +161,6 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     if (!procedure || procedure.kind !== "STAR" || !activeTelemetry || autoInitializedRef.current) return;
     autoInitializedRef.current = true;
 
-    // If the aircraft is already established on the first published STAR leg,
-    // do not send it backwards to the procedure entry fix when opened mid-flight.
     const firstLeg = procedure.legs[0];
     if (!firstLeg) return;
     const from = getProcedureFix(procedure, firstLeg.from);
@@ -182,12 +185,40 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     if (!procedure || targetDistanceNm === null || targetDistanceNm > 0.9) return;
 
     if (procedure.kind === "SID") {
-      if (!departureLeg || departureConditionMet) setProcedureComplete(true);
+      if (departureLeg && !departureConditionMet) return;
+
+      if (
+        departureLeg &&
+        !departureTargetReached &&
+        currentFix?.id === departureLeg.targetFix
+      ) {
+        setDepartureTargetReached(true);
+        if (targetIndex < procedure.fixes.length - 1) {
+          setTargetIndex((current) => current + 1);
+        } else {
+          setProcedureComplete(true);
+        }
+        return;
+      }
+
+      if (targetIndex < procedure.fixes.length - 1) {
+        setTargetIndex((current) => current + 1);
+      } else {
+        setProcedureComplete(true);
+      }
       return;
     }
 
     setTargetIndex((current) => Math.min(current + 1, procedure.fixes.length - 1));
-  }, [procedure, departureLeg, departureConditionMet, currentFix?.id, targetDistanceNm]);
+  }, [
+    procedure,
+    departureLeg,
+    departureConditionMet,
+    departureTargetReached,
+    currentFix?.id,
+    targetDistanceNm,
+    targetIndex,
+  ]);
 
   const directHeading = activeTelemetry && currentFix?.mapPoint
     ? bearingToMapPoint({ x: activeTelemetry.mapX, y: activeTelemetry.mapY }, currentFix.mapPoint)
@@ -200,14 +231,19 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
         currentFix.mapPoint,
       )
     : null;
-  const established = Boolean(legCapture && legCapture.progress >= -0.05 && legCapture.progress <= 1.08 && legCapture.distanceNm <= 0.55);
+  const established = Boolean(
+    legCapture &&
+    legCapture.progress >= -0.05 &&
+    legCapture.progress <= 1.08 &&
+    legCapture.distanceNm <= 0.55,
+  );
 
   const navCommand = procedureComplete && procedure?.kind === "SID"
     ? "SID COMPLETE · FOLLOW FPL ROUTE"
     : departureLegActive && departureLeg
       ? `FLY HDG ${paddedHeading(departureLeg.heading)}° · UNTIL ${departureLeg.untilAltitudeFeet.toLocaleString("en-US")} FT`
-      : departureLeg && currentFix
-        ? `FLY ${paddedHeading(departureLeg.afterCourse)}° · ${currentFix.label}`
+      : departureToFixActive && departureLeg && currentFix
+        ? `${departureLeg.afterCourseMode === "HEADING" ? "FLY HDG" : "FLY"} ${paddedHeading(departureLeg.afterCourse)}° · ${currentFix.label}`
         : !currentFix
           ? "NO ACTIVE PROCEDURE"
           : !currentFix.mapPoint
@@ -240,6 +276,10 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   let verticalProfile = "NO DESCENT CALCULATION REQUIRED";
   if (departureLegActive && departureLeg) {
     verticalProfile = `ALTITUDE TRIGGER · TURN AFTER ${departureLeg.untilAltitudeFeet.toLocaleString("en-US")} FT`;
+  } else if (departureToFixActive && currentFix) {
+    verticalProfile = currentFix.altitude
+      ? `CLIMB PROFILE · NEXT ${currentFix.label} ${formatAltitudeRestriction(currentFix.altitude)}`
+      : `DEPARTURE LEG · ${currentFix.label}`;
   } else if (procedure?.kind === "SID" && !procedureComplete) {
     verticalProfile = currentFix?.altitude
       ? `CLIMB PROFILE · NEXT ${currentFix.label} ${formatAltitudeRestriction(currentFix.altitude)}`
@@ -360,7 +400,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
               <p className="mono mt-2 text-2xl font-extrabold text-white">{procedure?.code ?? "NOT LOADED"}</p>
               <p className="mt-1 text-xs text-slate-500">{procedure ? `${procedure.kind} · ${procedure.airport} RWY ${procedure.runway} · ${procedure.chart}` : `${String(plan.departure_icao ?? "----")} → ${String(plan.arrival_icao ?? "----")}`}</p>
             </div>
-            {procedure && procedure.fixes.length > 1 && (
+            {procedure && procedure.fixes.length > 1 && (procedure.kind !== "SID" || departureTargetReached) && (
               <div className="flex gap-1">
                 <button
                   type="button"
@@ -383,9 +423,9 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
           {procedure ? (
             <div className="mt-5 space-y-2">
               {procedure.departureLeg && (
-                <div className={`rounded-xl border p-3 ${departureLegActive ? "border-sky-400/50 bg-sky-400/5" : "border-white/10 bg-[#020617]"}`}>
+                <div className={`rounded-xl border p-3 ${departureLegActive || departureToFixActive ? "border-sky-400/50 bg-sky-400/5" : "border-white/10 bg-[#020617]"}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className={`mono text-xs font-bold ${departureLegActive ? "text-sky-300" : "text-slate-300"}`}>
+                    <span className={`mono text-xs font-bold ${departureLegActive || departureToFixActive ? "text-sky-300" : "text-slate-300"}`}>
                       HDG {paddedHeading(procedure.departureLeg.heading)}°
                     </span>
                     <span className="mono text-[10px] text-slate-500">ALT TRIGGER</span>
@@ -393,7 +433,9 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
                     <span>UNTIL {procedure.departureLeg.untilAltitudeFeet.toLocaleString("en-US")} FT</span>
                     <span>SPD {procedure.departureLeg.speed ? `MAX ${procedure.departureLeg.speed.knots} KT` : "—"}</span>
-                    <span>THEN {paddedHeading(procedure.departureLeg.afterCourse)}° TO {procedure.departureLeg.targetFix}</span>
+                    <span>
+                      THEN {procedure.departureLeg.afterCourseMode === "HEADING" ? "HDG " : ""}{paddedHeading(procedure.departureLeg.afterCourse)}° TO {procedure.departureLeg.targetFix}
+                    </span>
                   </div>
                 </div>
               )}
