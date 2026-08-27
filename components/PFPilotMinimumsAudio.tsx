@@ -108,6 +108,9 @@ export default function PFPilotMinimumsAudio({ plan }: { plan: PilotPlan | null 
       } else if (text === "LOC (GS OUT)") {
         setMode("LOC");
         resetCallout();
+      } else if (text === "RNAV (GNSS)") {
+        setMode("RNAV");
+        resetCallout();
       }
     };
 
