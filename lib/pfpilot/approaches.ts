@@ -41,6 +41,7 @@ export type ApproachProfile = {
   airportElevationFeet: number;
   runwayElevationFeet: number;
   transitionAltitudeFeet: number;
+  thresholdCrossingHeightFeet?: number;
   glideSlope?: {
     checkFix: string;
     checkAltitudeFeet: number;
@@ -105,6 +106,20 @@ function bearingVector(bearing: number): MapPoint {
   return {
     x: Math.sin(radians),
     y: -Math.cos(radians),
+  };
+}
+
+function projectMapPoint(
+  point: MapPoint | undefined,
+  course: number,
+  distanceNm: number,
+): MapPoint | undefined {
+  if (!point) return undefined;
+  const direction = bearingVector(course);
+  const distance = distanceNm * MAP_UNITS_PER_NM;
+  return {
+    x: point.x + direction.x * distance,
+    y: point.y + direction.y * distance,
   };
 }
 
@@ -411,7 +426,104 @@ export const MDST_RNAV_RWY29: ApproachProcedure = {
   },
 };
 
-export const APPROACHES: ApproachProcedure[] = [MDST_ILS_LOC_RWY11, MDST_RNAV_RWY29];
+const mdpcPna = namedFix("PNA");
+const mdpcD30Pna = resolveDmeMapPoint(mdpcPna, 277, 3);
+const mdpcPc199 = namedFix("PC199");
+const mdpcRnav09Map = projectMapPoint(mdpcPc199, 97, 0.6);
+
+export const MDPC_RNAV_RWY09: ApproachProcedure = {
+  id: "MDPC-RNAV-GNSS-RWY09",
+  code: "RNAV09",
+  aliases: ["RNP09", "GNSS09", "RNAVRWY09", "RNAVGNSS09"],
+  airport: "MDPC",
+  runway: "09",
+  kind: "APPROACH",
+  entryFix: "AGNAL",
+  chart: "MDPC 12-2 · 31 JUL 26",
+  fixes: [
+    {
+      id: "AGNAL",
+      label: "AGNAL",
+      mapPoint: namedFix("AGNAL"),
+      altitude: { type: "AT", feet: 2000 },
+      speed: { type: "MAX", knots: 180 },
+      source: "NAMED_FIX",
+    },
+    {
+      id: "D3.0-PNA-RNAV09",
+      label: "D3.0 PNA",
+      mapPoint: mdpcD30Pna,
+      altitude: { type: "AT", feet: 1000 },
+      source: "DME_FIX",
+      dme: {
+        station: "PNA",
+        distanceNm: 3,
+        radial: 277,
+        note: "D3.0 PNA resolved on R-277, reciprocal to the published 097° final approach course.",
+      },
+    },
+    {
+      id: "PC199-RNAV09",
+      label: "PC199",
+      mapPoint: mdpcPc199,
+      source: "NAMED_FIX",
+    },
+    {
+      id: "MAP-RNAV09",
+      label: "MAP",
+      mapPoint: mdpcRnav09Map,
+      source: "DME_FIX",
+      dme: {
+        station: "PC199",
+        distanceNm: 0.6,
+        radial: 97,
+        note: "Published missed-approach point is 0.6 NM after PC199 on the 097° final course.",
+      },
+    },
+  ],
+  legs: [
+    { from: "AGNAL", to: "D3.0-PNA-RNAV09", course: 91 },
+    { from: "D3.0-PNA-RNAV09", to: "PC199-RNAV09", course: 97 },
+    { from: "PC199-RNAV09", to: "MAP-RNAV09", course: 97 },
+  ],
+  approach: {
+    modes: ["RNAV"],
+    defaultMode: "RNAV",
+    modeTokens: {
+      RNAV: ["RNAV09", "RNP09", "GNSS09", "RNAVRWY09", "RNAVGNSS09"],
+    },
+    finalCourse: 97,
+    navigationLabel: "RNAV (GNSS)",
+    airportElevationFeet: 47,
+    runwayElevationFeet: 47,
+    transitionAltitudeFeet: 3000,
+    thresholdCrossingHeightFeet: 50,
+    minima: {
+      RNAV: { type: "MDA", feet: 500, mapFix: "MAP-RNAV09" },
+    },
+    visualAids: {
+      papi: true,
+      note: "If the runway environment is in sight and visibility permits, PAPI may be used as a visual cross-check. It does not replace the published 500 FT MDA or the MAP.",
+    },
+    missedApproach: {
+      initialCourse: 97,
+      turnAltitudeFeet: 1000,
+      turnDirection: "RIGHT",
+      afterMode: "DIRECT",
+      targetFix: "MIBNI",
+      climbAltitudeFeet: 3000,
+      holdFix: "MIBNI",
+      holdCourses: [277, 97],
+      note: "Climb to 3000 FT on course 097°. At 1000 FT turn RIGHT direct MIBNI. Hold over MIBNI or follow ATC instructions.",
+    },
+  },
+};
+
+export const APPROACHES: ApproachProcedure[] = [
+  MDST_ILS_LOC_RWY11,
+  MDST_RNAV_RWY29,
+  MDPC_RNAV_RWY09,
+];
 
 export function selectProcedureMatches(plan: FlightPlanLike | null | undefined): ProcedureMatches {
   if (!plan) return { sid: null, star: null, approach: null };
