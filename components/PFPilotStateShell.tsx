@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import PFPilotMinimumsAudio from "@/components/PFPilotMinimumsAudio";
 import PFPilotPrototype from "@/components/PFPilotPrototype";
 import { supabase } from "@/lib/supabase";
 
@@ -93,6 +94,7 @@ export default function PFPilotStateShell({
           display: none !important;
         }
       `}</style>
+      <PFPilotMinimumsAudio plan={activePlan} />
       <PFPilotPrototype
         pilotId={pilotId}
         pilotName={pilotName}
