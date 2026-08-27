@@ -15,8 +15,12 @@ type Props = {
 type FeedStatusDetail = { connected?: boolean };
 
 const PROJECT_FLIGHT_FEED_EVENT = "pf24-project-flight-feed-status";
-const FEED_STALE_MS = 2500;
-const WATCHDOG_INTERVAL_MS = 500;
+// Project Flight occasionally pauses its traffic stream without closing the
+// WebSocket. Two and a half seconds was too aggressive and could turn normal
+// jitter into a self-inflicted reconnect. Give the feed enough time to recover
+// naturally, then remount only the traffic source if it truly stays stale.
+const FEED_STALE_MS = 12000;
+const WATCHDOG_INTERVAL_MS = 1000;
 
 export default function ProjectFlightTrafficConfigured({ initialPlans, serverId }: Props) {
   // Complete snapshots are calibrated first. The live-update shim then hydrates
@@ -28,19 +32,22 @@ export default function ProjectFlightTrafficConfigured({ initialPlans, serverId 
   const [feedGeneration, setFeedGeneration] = useState(0);
   const lastHealthyUpdateRef = useRef(0);
   const consecutiveHealthyEventsRef = useRef(0);
-  const hasReceivedTrafficRef = useRef(false);
+  // Do not forget that this browser session has already received real traffic.
+  // If a later reconnect opens successfully but never produces another decoded
+  // packet, the old implementation reset this flag and the watchdog could never
+  // recover again without a full page refresh.
+  const everReceivedTrafficRef = useRef(false);
 
   useEffect(() => {
-    const resetHeartbeat = () => {
+    const resetCurrentHeartbeat = () => {
       lastHealthyUpdateRef.current = 0;
       consecutiveHealthyEventsRef.current = 0;
-      hasReceivedTrafficRef.current = false;
     };
 
     const onFeedStatus = (event: Event) => {
       const connected = Boolean((event as CustomEvent<FeedStatusDetail>).detail?.connected);
       if (!connected) {
-        resetHeartbeat();
+        resetCurrentHeartbeat();
         return;
       }
 
@@ -49,21 +56,21 @@ export default function ProjectFlightTrafficConfigured({ initialPlans, serverId 
       consecutiveHealthyEventsRef.current += 1;
 
       // ProjectFlightTrafficV6 emits one healthy event when the socket opens and
-      // another for every successfully decoded traffic message. Requiring the
-      // second event prevents an empty server from being reconnected forever.
-      if (consecutiveHealthyEventsRef.current >= 2) hasReceivedTrafficRef.current = true;
+      // another for every successfully decoded traffic message. Once at least one
+      // real traffic message has been seen, remember that fact across reconnects.
+      if (consecutiveHealthyEventsRef.current >= 2) everReceivedTrafficRef.current = true;
     };
 
     window.addEventListener(PROJECT_FLIGHT_FEED_EVENT, onFeedStatus);
 
     const watchdog = window.setInterval(() => {
-      if (!hasReceivedTrafficRef.current || !lastHealthyUpdateRef.current) return;
+      if (!everReceivedTrafficRef.current || !lastHealthyUpdateRef.current) return;
       if (performance.now() - lastHealthyUpdateRef.current <= FEED_STALE_MS) return;
 
       // A Project Flight socket can remain OPEN after its live updates have
-      // stalled. Remount only the traffic feed so a fresh snapshot/stream is
-      // obtained without refreshing or resetting the rest of the Scope.
-      resetHeartbeat();
+      // stalled. Remount only the traffic feed so a fresh stream is requested,
+      // while retaining the fact that this session previously had live traffic.
+      resetCurrentHeartbeat();
       setFeedGeneration((current) => current + 1);
     }, WATCHDOG_INTERVAL_MS);
 
