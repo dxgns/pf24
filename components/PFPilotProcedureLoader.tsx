@@ -88,7 +88,7 @@ export default function PFPilotProcedureLoader({
     draft.star !== initialSelection.star ||
     draft.approach !== initialSelection.approach;
 
-  async function commitSelection(nextSelection = draft) {
+  async function saveSelection(nextSelection = draft) {
     if (!plan?.id || saving) return;
     setSaving(true);
     setMessage("");
@@ -102,8 +102,8 @@ export default function PFPilotProcedureLoader({
       .maybeSingle();
 
     if (readError || !data) {
-      console.error("PFPilot procedure loader read failed:", readError);
-      setMessage("NO SE PUDO LEER EL FPL ACTIVO");
+      console.error("PFPilot procedure selection read failed:", readError);
+      setMessage("No se pudo leer el plan de vuelo activo.");
       setSaving(false);
       return;
     }
@@ -117,11 +117,11 @@ export default function PFPilotProcedureLoader({
       .neq("status", "FINISHED");
 
     if (error) {
-      console.error("PFPilot procedure loader save failed:", error);
-      setMessage("ERROR AL CARGAR PROCEDIMIENTOS");
+      console.error("PFPilot procedure selection save failed:", error);
+      setMessage("No se pudieron guardar los procedimientos.");
     } else {
       setDraft(nextSelection);
-      setMessage("EXEC COMPLETE · GUIDANCE UPDATED");
+      setMessage("Procedimientos actualizados.");
     }
     setSaving(false);
   }
@@ -129,33 +129,34 @@ export default function PFPilotProcedureLoader({
   function clearAll() {
     const empty = { sid: "", star: "", approach: "" };
     setDraft(empty);
-    void commitSelection(empty);
+    void saveSelection(empty);
   }
 
   if (!plan) return null;
 
   return (
-    <section className="mb-6 rounded-3xl border border-emerald-400/20 bg-[#020817] p-5 shadow-[inset_0_0_40px_rgba(16,185,129,0.035)]">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <section className="panel mb-6 rounded-3xl p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-4">
         <div>
-          <p className="mono text-[10px] tracking-[0.24em] text-emerald-300/70">CABIN · FMS / MCDU</p>
-          <h2 className="mt-2 text-xl font-extrabold text-white">PROCEDURE LOAD</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Carga SID, STAR y APPR asignadas sin modificar la ruta enroute del plan de vuelo.
+          <p className="mono text-xs tracking-[0.22em] text-sky-300/70">PFPILOT</p>
+          <h2 className="mt-1 text-2xl font-extrabold text-white">PROCEDURES</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Carga y edita SID, STAR y aproximación sin modificar la ruta enroute del FPL.
           </p>
         </div>
-        <div className="rounded-xl border border-emerald-400/20 bg-black/30 px-4 py-3 text-right">
-          <p className="mono text-[9px] text-slate-600">ACTIVE FPL</p>
-          <p className="mono mt-1 text-sm font-bold text-emerald-300">{String(plan.callsign ?? "----").toUpperCase()}</p>
+        <div className="rounded-xl border border-white/10 bg-slate-950 px-4 py-3 text-right">
+          <p className="mono text-[9px] text-slate-600">ACTIVE FLIGHT</p>
+          <p className="mono mt-1 text-sm font-bold text-sky-300">{String(plan.callsign ?? "----").toUpperCase()}</p>
           <p className="mono mt-1 text-[10px] text-slate-500">{departure || "----"} → {arrival || "----"}</p>
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 xl:grid-cols-3">
+      <div className="mt-5 grid gap-4 xl:grid-cols-3">
         <ProcedureSelect
-          label="DEP / SID"
+          label="SID"
+          airportLabel={departure}
           value={draft.sid}
-          placeholder={sidChoices.length ? "SELECT SID" : `NO SID LOADED FOR ${departure || "DEP"}`}
+          placeholder={sidChoices.length ? "Sin SID seleccionada" : `No hay SID cargadas para ${departure || "salida"}`}
           options={sidChoices.map((item) => ({
             value: item.code,
             label: procedureLabel(item.code, item.runway, item.chart),
@@ -163,9 +164,10 @@ export default function PFPilotProcedureLoader({
           onChange={(sid) => setDraft((current) => ({ ...current, sid }))}
         />
         <ProcedureSelect
-          label="ARR / STAR"
+          label="STAR"
+          airportLabel={arrival}
           value={draft.star}
-          placeholder={starChoices.length ? "SELECT STAR" : `NO STAR LOADED FOR ${arrival || "ARR"}`}
+          placeholder={starChoices.length ? "Sin STAR seleccionada" : `No hay STAR cargadas para ${arrival || "llegada"}`}
           options={starChoices.map((item) => ({
             value: item.code,
             label: procedureLabel(item.code, item.runway, item.chart),
@@ -173,66 +175,71 @@ export default function PFPilotProcedureLoader({
           onChange={(star) => setDraft((current) => ({ ...current, star }))}
         />
         <ProcedureSelect
-          label="ARR / APPR"
+          label="APPROACH"
+          airportLabel={arrival}
           value={draft.approach}
-          placeholder={approachChoices.length ? "SELECT APPROACH" : `NO APPR LOADED FOR ${arrival || "ARR"}`}
+          placeholder={approachChoices.length ? "Sin aproximación seleccionada" : `No hay aproximaciones cargadas para ${arrival || "llegada"}`}
           options={approachChoices.map((item) => ({ value: item.token, label: item.label }))}
           onChange={(approach) => setDraft((current) => ({ ...current, approach }))}
         />
       </div>
 
-      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
-        <div className="rounded-xl border border-white/10 bg-black/25 p-3">
-          <div className="grid gap-2 sm:grid-cols-3">
-            <FmsLine label="SID" value={draft.sid || "-----"} />
-            <FmsLine label="STAR" value={draft.star || "-----"} />
-            <FmsLine label="APPR" value={draft.approach || "-----"} />
-          </div>
-          {message && <p className="mono mt-3 text-[10px] text-emerald-300">{message}</p>}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950 p-4">
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
+          <SelectedProcedure label="SID" value={draft.sid} />
+          <SelectedProcedure label="STAR" value={draft.star} />
+          <SelectedProcedure label="APPR" value={draft.approach} />
         </div>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={clearAll}
             disabled={saving}
-            className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 mono text-xs font-bold text-slate-400 disabled:opacity-40"
+            className="rounded-xl border border-white/10 bg-[#020617] px-4 py-3 mono text-xs font-bold text-slate-400 hover:text-slate-200 disabled:opacity-40"
           >
-            CLR
+            CLEAR
           </button>
           <button
             type="button"
-            onClick={() => void commitSelection()}
+            onClick={() => void saveSelection()}
             disabled={saving || !dirty}
-            className="rounded-xl border border-emerald-400/50 bg-emerald-400/10 px-5 py-3 mono text-xs font-extrabold text-emerald-200 disabled:cursor-not-allowed disabled:opacity-35"
+            className="rounded-xl border border-sky-400/50 bg-sky-400/10 px-5 py-3 mono text-xs font-extrabold text-sky-200 disabled:cursor-not-allowed disabled:opacity-35"
           >
-            {saving ? "EXEC..." : "EXEC"}
+            {saving ? "SAVING..." : "SAVE PROCEDURES"}
           </button>
         </div>
       </div>
+
+      {message && <p className="mt-3 text-xs text-sky-300">{message}</p>}
     </section>
   );
 }
 
 function ProcedureSelect({
   label,
+  airportLabel,
   value,
   placeholder,
   options,
   onChange,
 }: {
   label: string;
+  airportLabel: string;
   value: string;
   placeholder: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="rounded-2xl border border-white/10 bg-black/25 p-4">
-      <span className="mono text-[9px] tracking-[0.16em] text-slate-600">{label}</span>
+    <label className="rounded-2xl border border-white/10 bg-slate-950 p-4">
+      <span className="flex items-center justify-between gap-3">
+        <span className="mono text-xs font-bold text-slate-300">{label}</span>
+        <span className="mono text-[10px] text-slate-600">{airportLabel || "----"}</span>
+      </span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mono mt-2 w-full rounded-xl border border-emerald-400/20 bg-[#020617] px-3 py-3 text-xs font-bold text-emerald-200 outline-none focus:border-emerald-400/60"
+        className="mono mt-3 w-full rounded-xl border border-white/10 bg-[#020617] px-3 py-3 text-xs font-bold text-slate-200 outline-none focus:border-sky-400/60"
       >
         <option value="">{placeholder}</option>
         {options.map((option) => (
@@ -243,11 +250,11 @@ function ProcedureSelect({
   );
 }
 
-function FmsLine({ label, value }: { label: string; value: string }) {
+function SelectedProcedure({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 sm:block">
-      <span className="mono text-[9px] text-slate-600">{label}</span>
-      <span className="mono text-xs font-bold text-emerald-300 sm:mt-1 sm:block">{value}</span>
+    <div>
+      <p className="mono text-[9px] text-slate-600">{label}</p>
+      <p className="mono mt-1 text-xs font-bold text-sky-300">{value || "NONE"}</p>
     </div>
   );
 }
