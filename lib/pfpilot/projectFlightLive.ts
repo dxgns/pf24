@@ -44,7 +44,8 @@ declare global {
 
 const DEFAULT_SERVER_ID = "2ykygVZiX5";
 const PROJECT_FLIGHT_WS_PREFIX = "wss://v3api.project-flight.com/v3/traffic/server/ws/";
-const FEED_STALE_MS = 12000;
+const FRAME_STALE_MS = 30000;
+const DECODED_TRAFFIC_STALE_MS = 90000;
 const WATCHDOG_INTERVAL_MS = 1000;
 const RECONNECT_DELAY_MS = 1500;
 
@@ -503,18 +504,29 @@ export function connectProjectFlightTraffic({
 
   watchdogTimer = setInterval(() => {
     if (stopped || !socket || socket.readyState !== WebSocket.OPEN) return;
-    // Before the first decoded traffic packet, raw frames prove that the API is
-    // still alive. Once traffic has been decoded, require actual decoded traffic
-    // to keep advancing so a socket that remains OPEN but stops updating cannot
-    // leave PFPilot frozen indefinitely.
-    const lastUsefulActivity = everDecodedTraffic
-      ? (lastDecodedTrafficAt || socketOpenedAt)
-      : (lastFrameAt || socketOpenedAt);
-    if (!lastUsefulActivity || Date.now() - lastUsefulActivity <= FEED_STALE_MS) return;
 
-    console.warn("PF24 Project Flight feed became stale; reconnecting socket.");
-    onState("RECONNECTING");
-    socket.close();
+    const now = Date.now();
+    const lastTransportActivity = lastFrameAt || socketOpenedAt;
+    if (lastTransportActivity && now - lastTransportActivity > FRAME_STALE_MS) {
+      console.warn("PF24 Project Flight socket stopped receiving frames; reconnecting.");
+      onState("RECONNECTING");
+      socket.close();
+      return;
+    }
+
+    // Some Project Flight frames are heartbeat/metadata or packet shapes that do
+    // not decode into traffic rows. Those frames still prove the socket is alive,
+    // so do not tear down a healthy connection every few seconds. Only force a
+    // decoder recovery after a much longer decoded-traffic silence.
+    if (
+      everDecodedTraffic &&
+      lastDecodedTrafficAt &&
+      now - lastDecodedTrafficAt > DECODED_TRAFFIC_STALE_MS
+    ) {
+      console.warn("PF24 Project Flight traffic decoder became stale; reconnecting.");
+      onState("RECONNECTING");
+      socket.close();
+    }
   }, WATCHDOG_INTERVAL_MS);
 
   connect();
