@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import PFPilotMinimumsAudio from "@/components/PFPilotMinimumsAudio";
-import PFPilotProcedureLoader from "@/components/PFPilotProcedureLoader";
 import PFPilotPrototype from "@/components/PFPilotPrototype";
 import { getPFPilotProcedureSelection } from "@/lib/pfpilot/procedureSelection";
 import { supabase } from "@/lib/supabase";
@@ -103,9 +102,7 @@ export default function PFPilotStateShell({
         }
       `}</style>
       <PFPilotMinimumsAudio key={`minimums:${procedureLoadKey}`} plan={activePlan} />
-      {activePlan && <PFPilotProcedureLoader plan={activePlan} pilotId={pilotId} />}
       <PFPilotPrototype
-        key={`prototype:${procedureLoadKey}`}
         pilotId={pilotId}
         pilotName={pilotName}
         initialPlans={currentPlans}
