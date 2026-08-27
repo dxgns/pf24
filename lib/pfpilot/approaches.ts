@@ -7,6 +7,7 @@ import {
   type ProcedureFix,
 } from "@/lib/pfpilot/procedures";
 import { MAP_UNITS_PER_NM } from "@/lib/pfpilot/projectFlightLive";
+import { routeWithPFPilotProcedureSelection } from "@/lib/pfpilot/procedureSelection";
 
 export type ApproachMode = "ILS" | "LOC" | "RNAV";
 
@@ -85,6 +86,7 @@ type FlightPlanLike = {
   departure_icao?: unknown;
   arrival_icao?: unknown;
   route?: unknown;
+  notes?: unknown;
 };
 
 export type ProcedureMatches = {
@@ -416,7 +418,7 @@ export function selectProcedureMatches(plan: FlightPlanLike | null | undefined):
 
   const departure = String(plan.departure_icao ?? "").trim().toUpperCase();
   const arrival = String(plan.arrival_icao ?? "").trim().toUpperCase();
-  const tokens = new Set(routeTokens(plan.route));
+  const tokens = new Set(routeTokens(routeWithPFPilotProcedureSelection(plan.route, plan.notes)));
 
   const sid = PROCEDURES.find((procedure) => (
     procedure.kind === "SID" &&
@@ -442,7 +444,7 @@ export function selectApproachModeForPlan(
   procedure: ApproachProcedure | null | undefined,
 ): ApproachMode | null {
   if (!procedure) return null;
-  const tokens = new Set(routeTokens(plan?.route));
+  const tokens = new Set(routeTokens(routeWithPFPilotProcedureSelection(plan?.route, plan?.notes)));
 
   for (const mode of procedure.approach.modes) {
     const modeTokens = procedure.approach.modeTokens[mode] ?? [];
