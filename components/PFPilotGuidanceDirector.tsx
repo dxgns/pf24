@@ -7,7 +7,6 @@ import {
   getInboundLeg,
   getProcedureFix,
   type AltitudeRestriction,
-  type FlightProcedure,
   type ProcedureKind,
 } from "@/lib/pfpilot/procedures";
 import {
@@ -39,8 +38,8 @@ type PilotPlan = {
   [key: string]: unknown;
 };
 
-function paddedHeading(value: number | null) {
-  if (value === null || !Number.isFinite(value)) return "---";
+function paddedHeading(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "---";
   return String((Math.round(value) + 360) % 360).padStart(3, "0");
 }
 
@@ -92,11 +91,18 @@ function phaseAvailable(matches: ProcedureMatches, kind: ProcedureKind) {
 }
 
 function approachModeLabel(mode: ApproachMode) {
-  return mode === "ILS" ? "ILS" : "LOC (GS OUT)";
+  if (mode === "ILS") return "ILS";
+  if (mode === "LOC") return "LOC (GS OUT)";
+  return "RNAV (GNSS)";
 }
 
 function feetLabel(feet: number) {
   return `${feet.toLocaleString("en-US")} FT`;
+}
+
+function approachFinalCourse(approach: ApproachProcedure | null) {
+  if (!approach) return null;
+  return approach.approach.localizer?.finalCourse ?? approach.approach.finalCourse;
 }
 
 export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | null }) {
@@ -298,7 +304,10 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   useEffect(() => {
     if (!procedure || targetDistanceNm === null || missedApproachActive) return;
 
-    const threshold = procedure.kind === "APPROACH" && currentFix?.id === "D0.3-SGO" ? 0.45 : 0.9;
+    const rnavFinalReference = approachMode === "RNAV" && currentFix?.id === "D0.7-SGO-RNAV29";
+    const threshold = procedure.kind === "APPROACH" && (currentFix?.id === "D0.3-SGO" || rnavFinalReference)
+      ? 0.4
+      : 0.9;
     if (targetDistanceNm > threshold) return;
 
     if (procedure.kind === "SID") {
@@ -329,7 +338,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     if (procedure.kind === "APPROACH") {
       if (targetIndex < procedure.fixes.length - 1) {
         setTargetIndex((current) => current + 1);
-      } else {
+      } else if (approachMode !== "RNAV") {
         setApproachAtMap(true);
       }
       return;
@@ -356,6 +365,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     targetIndex,
     matches.approach,
     missedApproachActive,
+    approachMode,
   ]);
 
   const directHeading = activeTelemetry && currentFix?.mapPoint
@@ -374,6 +384,20 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     legCapture.progress >= -0.05 &&
     legCapture.progress <= 1.08 &&
     legCapture.distanceNm <= 0.55,
+  );
+
+  const rnavTurn = approachProcedure?.approach.rnavTurn;
+  const rnavTurnActive = Boolean(
+    approachMode === "RNAV" &&
+    rnavTurn &&
+    currentFix?.id === rnavTurn.toFix &&
+    inboundStart?.id === rnavTurn.fromFix,
+  );
+  const terrainCritical = approachProcedure?.approach.terrainCritical;
+  const terrainCriticalActive = Boolean(
+    approachMode === "RNAV" &&
+    terrainCritical &&
+    (currentFix?.id === terrainCritical.fromFix || currentFix?.id === terrainCritical.toFix),
   );
 
   const missed = approachProcedure?.approach.missedApproach;
@@ -418,6 +442,16 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
                   ? `INTERCEPT ${paddedHeading(inboundLeg.course)}° · HDG ${paddedHeading(directHeading)}° TO ${currentFix.label}`
                   : `HDG ${paddedHeading(directHeading)}° · DIRECT ${currentFix.label}`;
 
+  if (approachProcedure && approachMode === "RNAV" && !missedApproachActive) {
+    if (rnavTurnActive && rnavTurn) {
+      navCommand = `TURN ${rnavTurn.direction} · FOLLOW PUBLISHED RNAV CURVE · DO NOT SHORTCUT · EXIT ${paddedHeading(rnavTurn.exitCourse)}° TO ${currentFix?.label ?? "D2.7 SGO"}`;
+    } else if (currentFix?.id === "D2.0-SGO-RNAV29") {
+      navCommand = "FLY 060° OUTBOUND FROM SGO · D2.0 SGO · PREPARE PRONOUNCED RIGHT TURN";
+    } else if (currentFix?.id === "D0.7-SGO-RNAV29" && targetDistanceNm !== null && targetDistanceNm <= 0.45) {
+      navCommand = "FINAL 294° · CONTINUE CDFA · LAND IF VISUAL / GO AROUND AT MINIMUMS";
+    }
+  }
+
   if (approachProcedure && !missedApproachActive && approachAtMap && approachMode === "LOC") {
     navCommand = "MAP D0.3 SGO · LAND IF VISUAL · OTHERWISE GO AROUND";
   }
@@ -427,6 +461,8 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
       navCommand = `GO AROUND · FLY ${paddedHeading(missed.initialCourse)}° · TURN ${missed.turnDirection} AFTER ${missed.turnAltitudeFeet.toLocaleString("en-US")} FT`;
     } else if (missedAtHold) {
       navCommand = `${missed.holdFix ?? missed.targetFix} · HOLD / FOLLOW ATC`;
+    } else if (missed.afterMode === "DIRECT") {
+      navCommand = `TURN ${missed.turnDirection} · DIRECT ${missed.targetFix}`;
     } else {
       navCommand = `TURN ${missed.turnDirection} · HDG ${paddedHeading(missed.afterHeading)}° · DIRECT ${missed.targetFix}`;
     }
@@ -449,9 +485,9 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   const glideSlope = approachProcedure?.approach.glideSlope;
 
   if (approachProcedure && activeTelemetry && !missedApproachActive) {
-    const onFinalSequence = currentFix?.id === "D1.5-SGO" || currentFix?.id === "D0.3-SGO" || approachAtMap;
+    const onIlsLocFinal = currentFix?.id === "D1.5-SGO" || currentFix?.id === "D0.3-SGO" || approachAtMap;
 
-    if (approachMode === "ILS" && onFinalSequence && activeMinimum) {
+    if (approachMode === "ILS" && onIlsLocFinal && activeMinimum) {
       if (currentFix?.id === glideSlope?.checkFix && glideSlope) {
         altitudeAdvisory = `FOLLOW ILS GS · CHECK ${feetLabel(glideSlope.checkAltitudeFeet)} AT ${currentFix.label}`;
       } else if (activeTelemetry.altitude <= activeMinimum.feet + 40) {
@@ -463,7 +499,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
       }
     }
 
-    if (approachMode === "LOC" && onFinalSequence && activeMinimum) {
+    if (approachMode === "LOC" && onIlsLocFinal && activeMinimum) {
       if (approachAtMap) {
         altitudeAdvisory = `MAP · ${activeMinimum.type} ${feetLabel(activeMinimum.feet)} · LAND IF VISUAL / GO AROUND`;
       } else if (activeTelemetry.altitude < activeMinimum.feet - 50) {
@@ -472,6 +508,22 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
         altitudeAdvisory = `DESCEND TO ${activeMinimum.type} ${feetLabel(activeMinimum.feet)}`;
       } else {
         altitudeAdvisory = `MAINTAIN ${activeMinimum.type} ${feetLabel(activeMinimum.feet)}`;
+      }
+    }
+
+    if (approachMode === "RNAV" && activeMinimum) {
+      if (rnavTurnActive) {
+        altitudeAdvisory = "DESCENDING RIGHT TURN · TARGET D2.7 SGO 1,800 FT · DO NOT SHORTEN PATH";
+      } else if (currentFix?.id === "D1.7-SGO-RNAV29") {
+        altitudeAdvisory = "DESCEND / CROSS D1.7 SGO AT 1,500 FT · THEN FINAL 294°";
+      } else if (currentFix?.id === "D0.7-SGO-RNAV29") {
+        if (activeTelemetry.altitude <= activeMinimum.feet + 40) {
+          altitudeAdvisory = `MINIMUMS · ${activeMinimum.type} ${feetLabel(activeMinimum.feet)} · LAND IF VISUAL / GO AROUND`;
+        } else if (activeTelemetry.altitude <= activeMinimum.feet + 180) {
+          altitudeAdvisory = `APPROACHING MINIMUMS · ${activeMinimum.type} ${feetLabel(activeMinimum.feet)}`;
+        } else {
+          altitudeAdvisory = `CDFA DESCENT · ${activeMinimum.type} ${feetLabel(activeMinimum.feet)}`;
+        }
       }
     }
   }
@@ -490,20 +542,35 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   ].filter((item): item is number => typeof item === "number");
   const maxSpeed = speedLimits.length > 0 ? Math.min(...speedLimits) : null;
   let speedAdvisory = maxSpeed ? `MAX ${maxSpeed} KT` : "NO PUBLISHED SPEED AT NEXT FIX";
-  if (missedApproachActive && missed) speedAdvisory = `${missed.targetFix} · MAX 200 KT`;
+  if (missedApproachActive && missed) {
+    speedAdvisory = missed.targetSpeedKnots
+      ? `${missed.targetFix} · MAX ${missed.targetSpeedKnots} KT`
+      : "FOLLOW PUBLISHED MISSED / ATC SPEED";
+  }
 
   let verticalProfile = "NO DESCENT CALCULATION REQUIRED";
   if (missedApproachActive && missed) {
+    const afterInstruction = missed.afterMode === "DIRECT"
+      ? `THEN ${missed.turnDirection} DIRECT ${missed.targetFix}`
+      : `THEN ${missed.turnDirection} HDG ${paddedHeading(missed.afterHeading)}°`;
     verticalProfile = !missedTurnAltitudeMet
-      ? `MISSED · ${paddedHeading(missed.initialCourse)}° UNTIL ${feetLabel(missed.turnAltitudeFeet)} · THEN ${missed.turnDirection} HDG ${paddedHeading(missed.afterHeading)}°`
+      ? `MISSED · ${paddedHeading(missed.initialCourse)}° UNTIL ${feetLabel(missed.turnAltitudeFeet)} · ${afterInstruction}`
       : `MISSED · CLIMB ${feetLabel(missed.climbAltitudeFeet)} · DIRECT ${missed.targetFix}`;
   } else if (approachProcedure) {
     if (approachMode === "ILS") {
       verticalProfile = glideSlope && activeMinimum
         ? `ILS GS · ${glideSlope.checkFix.replace("-", " ")} CHECK ${feetLabel(glideSlope.checkAltitudeFeet)} · ${activeMinimum.type} ${feetLabel(activeMinimum.feet)}`
         : "ILS FINAL · FOLLOW PUBLISHED GLIDESLOPE";
-    } else if (activeMinimum) {
+    } else if (approachMode === "LOC" && activeMinimum) {
       verticalProfile = `LOC GS OUT · ${activeMinimum.type} ${feetLabel(activeMinimum.feet)} · MAP ${activeMinimum.mapFix?.replace("-", " ") ?? "PUBLISHED MAP"}`;
+    } else if (approachMode === "RNAV" && activeMinimum) {
+      if (rnavTurnActive) {
+        verticalProfile = "RNAV TERRAIN TURN · 2,500 → 1,800 FT WHILE TURNING RIGHT · MAX 160 KT AT D2.7";
+      } else if (currentFix?.id === "D1.7-SGO-RNAV29") {
+        verticalProfile = "CDFA · D2.7 1,800 → D1.7 1,500 · THEN FINAL 294°";
+      } else {
+        verticalProfile = `CDFA FINAL · ${activeMinimum.type} ${feetLabel(activeMinimum.feet)} · PUBLISHED ALTITUDE CHECKS ONLY`;
+      }
     }
   } else if (departureLegActive && departureLeg) {
     verticalProfile = `ALTITUDE TRIGGER · TURN AFTER ${departureLeg.untilAltitudeFeet.toLocaleString("en-US")} FT`;
@@ -533,6 +600,9 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
 
   const visualAdvisory = approachProcedure?.approach.visualAids?.papi && !missedApproachActive
     ? "PAPI CROSS-CHECK IF RUNWAY IN SIGHT / VISIBILITY PERMITS"
+    : null;
+  const terrainAdvisory = terrainCriticalActive && terrainCritical
+    ? `TERRAIN CRITICAL · ${terrainCritical.approximateClearanceFeet ? `≈${terrainCritical.approximateClearanceFeet} FT CLEARANCE · ` : ""}REMAIN ON PUBLISHED RNAV PATH · DO NOT CUT INSIDE TURN`
     : null;
 
   let nextConstraintLabel = departureLegActive && departureLeg
@@ -569,9 +639,18 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   if (approachProcedure && activeMinimum && !missedApproachActive) {
     if (currentFix?.id === glideSlope?.checkFix && approachMode === "ILS" && glideSlope) {
       nextConstraintAltitude = `GS CHECK ${feetLabel(glideSlope.checkAltitudeFeet)}`;
-    } else if (currentFix?.id === "D0.3-SGO" || approachAtMap) {
-      nextConstraintAltitude = `${activeMinimum.type} ${feetLabel(activeMinimum.feet)}${approachMode === "LOC" ? " · MAP" : ""}`;
+    } else if (approachMode === "LOC" && (currentFix?.id === activeMinimum.mapFix || approachAtMap)) {
+      nextConstraintAltitude = `${activeMinimum.type} ${feetLabel(activeMinimum.feet)} · MAP`;
+    } else if (approachMode === "RNAV" && currentFix?.id === "D0.7-SGO-RNAV29") {
+      nextConstraintAltitude = `${activeMinimum.type} ${feetLabel(activeMinimum.feet)} · CONTINUE PUBLISHED FINAL`;
     }
+  }
+
+  if (rnavTurnActive && rnavTurn) {
+    nextConstraintLabel = currentFix?.label ?? "D2.7 SGO";
+    nextConstraintAltitude = "1,800 FT";
+    nextConstraintSpeed = "MAX 160 KT";
+    nextConstraintDistance = `Curved ${rnavTurn.direction.toLowerCase()} RNAV segment · exit ${paddedHeading(rnavTurn.exitCourse)}° · no direct chord`;
   }
 
   if (missedApproachActive && missed) {
@@ -579,7 +658,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     nextConstraintAltitude = missedTurnAltitudeMet
       ? feetLabel(missed.climbAltitudeFeet)
       : `${feetLabel(missed.turnAltitudeFeet)} TURN TRIGGER`;
-    nextConstraintSpeed = missedTurnAltitudeMet ? "VOGEP MAX 200 KT" : "—";
+    nextConstraintSpeed = missed.targetSpeedKnots ? `MAX ${missed.targetSpeedKnots} KT` : "—";
     nextConstraintDistance = missedTurnAltitudeMet && missedTargetDistanceNm !== null
       ? `${missedTargetDistanceNm.toFixed(1)} NM to ${missed.targetFix}`
       : "Altitude-triggered missed-approach turn";
@@ -597,6 +676,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
   const displayedProjectFlightCallsign = activeTelemetry?.rawCallsign || projectFlightCallsign || gameCallsign || "----";
   const linkedIdentityLabel = activeTelemetry?.username || robloxUsername;
   const availableKinds = (["SID", "STAR", "APPROACH"] as ProcedureKind[]).filter((kind) => phaseAvailable(matches, kind));
+  const finalCourse = approachFinalCourse(approachProcedure);
 
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
@@ -676,6 +756,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
               <AdvisoryRow label="ALT" value={altitudeAdvisory} />
               <AdvisoryRow label="SPD" value={speedAdvisory} />
               <AdvisoryRow label="VNAV" value={verticalProfile} />
+              {terrainAdvisory && <AdvisoryRow label="TERR" value={terrainAdvisory} warning />}
               {visualAdvisory && <AdvisoryRow label="VIS" value={visualAdvisory} />}
             </div>
           )}
@@ -729,16 +810,24 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
             <div className="mt-4 rounded-xl border border-sky-400/20 bg-sky-400/5 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="mono text-xs font-bold text-sky-300">{approachModeLabel(approachMode)} RWY {approachProcedure.runway}</span>
-                <span className="mono text-[10px] text-slate-500">{approachProcedure.approach.localizer.ident} {approachProcedure.approach.localizer.frequency}</span>
+                <span className="mono text-[10px] text-slate-500">
+                  {approachProcedure.approach.localizer
+                    ? `${approachProcedure.approach.localizer.ident} ${approachProcedure.approach.localizer.frequency}`
+                    : approachProcedure.approach.navigationLabel ?? "GNSS"}
+                </span>
               </div>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
-                <span>FINAL {paddedHeading(approachProcedure.approach.localizer.finalCourse)}°</span>
-                <span>ILS DA {approachProcedure.approach.minima.ILS?.feet ?? "—"} FT</span>
-                <span>LOC MDA {approachProcedure.approach.minima.LOC?.feet ?? "—"} FT</span>
+                <span>FINAL {paddedHeading(finalCourse)}°</span>
+                {approachProcedure.approach.minima.ILS && <span>ILS DA {approachProcedure.approach.minima.ILS.feet} FT</span>}
+                {approachProcedure.approach.minima.LOC && <span>LOC MDA {approachProcedure.approach.minima.LOC.feet} FT</span>}
+                {approachProcedure.approach.minima.RNAV && <span>RNAV {approachProcedure.approach.minima.RNAV.type} {approachProcedure.approach.minima.RNAV.feet} FT</span>}
                 {approachProcedure.approach.glideSlope && (
                   <span>GS CHECK {approachProcedure.approach.glideSlope.checkFix.replace("-", " ")} {approachProcedure.approach.glideSlope.checkAltitudeFeet} FT</span>
                 )}
               </div>
+              {approachProcedure.approach.rnavTurn && (
+                <p className="mt-2 text-[10px] leading-4 text-amber-200/80">RNAV TURN: {approachProcedure.approach.rnavTurn.direction} · {paddedHeading(approachProcedure.approach.rnavTurn.entryCourse)}° entry → {paddedHeading(approachProcedure.approach.rnavTurn.exitCourse)}° exit · no shortcut.</p>
+              )}
               {approachProcedure.approach.visualAids?.papi && (
                 <p className="mt-2 text-[10px] leading-4 text-slate-500">PAPI: visual cross-check only when runway environment is in sight and visibility permits.</p>
               )}
@@ -758,9 +847,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
                     <span>UNTIL {procedure.departureLeg.untilAltitudeFeet.toLocaleString("en-US")} FT</span>
                     <span>SPD {procedure.departureLeg.speed ? `MAX ${procedure.departureLeg.speed.knots} KT` : "—"}</span>
-                    <span>
-                      THEN {procedure.departureLeg.afterCourseMode === "HEADING" ? "HDG " : ""}{paddedHeading(procedure.departureLeg.afterCourse)}° TO {procedure.departureLeg.targetFix}
-                    </span>
+                    <span>THEN {procedure.departureLeg.afterCourseMode === "HEADING" ? "HDG " : ""}{paddedHeading(procedure.departureLeg.afterCourse)}° TO {procedure.departureLeg.targetFix}</span>
                   </div>
                 </div>
               )}
@@ -771,9 +858,8 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
                   approachProcedure?.approach.glideSlope &&
                   approachProcedure.approach.glideSlope.checkFix === fix.id,
                 );
-                const isLocMap = Boolean(
-                  approachProcedure?.approach.minima.LOC?.mapFix === fix.id,
-                );
+                const isLocMap = Boolean(approachProcedure?.approach.minima.LOC?.mapFix === fix.id);
+                const isRnavTurnExit = Boolean(approachProcedure?.approach.rnavTurn?.toFix === fix.id);
                 return (
                   <div
                     key={fix.id}
@@ -786,13 +872,12 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
                       <span>ALT {formatAltitudeRestriction(fix.altitude)}</span>
                       <span>SPD {fix.speed ? `MAX ${fix.speed.knots} KT` : "—"}</span>
-                      {isGsCheck && approachProcedure?.approach.glideSlope && (
-                        <span>ILS CHECK {approachProcedure.approach.glideSlope.checkAltitudeFeet} FT</span>
-                      )}
+                      {isGsCheck && approachProcedure?.approach.glideSlope && <span>ILS CHECK {approachProcedure.approach.glideSlope.checkAltitudeFeet} FT</span>}
                       {isLocMap && <span>LOC MAP</span>}
+                      {isRnavTurnExit && <span>RNAV CURVED TURN EXIT</span>}
                     </div>
                     {fix.dme && !fix.mapPoint && (
-                      <p className="mt-2 text-[10px] leading-4 text-amber-200/70">{fix.dme.distanceNm.toFixed(1)} DME {fix.dme.station} · geometric fix definition stored; coordinate resolver will use the station reference.</p>
+                      <p className="mt-2 text-[10px] leading-4 text-amber-200/70">{fix.dme.distanceNm.toFixed(1)} DME {fix.dme.station} · geometry pending resolver.</p>
                     )}
                   </div>
                 );
@@ -822,8 +907,11 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
 
         <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-xs leading-5 text-amber-100/75">
           Las restricciones de velocidad son valores publicados de procedimiento. Project Flight entrega GS al director; PFPilot no la presenta como IAS ni la usa para afirmar cumplimiento de IAS.
-          {approachProcedure && (
-            <span className="mt-2 block">En aproximación, PFPilot usa únicamente restricciones, checks y mínimos publicados. No fabrica una pendiente ILS a partir del dibujo. PAPI es solo una ayuda visual cuando la pista está a la vista y no sustituye DA/MDA ni instrucciones ATC.</span>
+          {approachProcedure && approachMode !== "RNAV" && (
+            <span className="mt-2 block">En aproximación ILS/LOC, PFPilot usa únicamente restricciones, checks y mínimos publicados. No fabrica una pendiente ILS a partir del dibujo. PAPI es solo una ayuda visual cuando la pista está a la vista y no sustituye DA/MDA ni instrucciones ATC.</span>
+          )}
+          {approachProcedure && approachMode === "RNAV" && (
+            <span className="mt-2 block">En RNAV, PFPilot respeta fixes DME, cursos, altitudes y la transición curva publicada. El tramo D2.0→D2.7 no se sustituye por un direct: es un giro descendente terrain-critical. CDFA es advisory y PAPI solo se usa como referencia visual si la pista está a la vista.</span>
           )}
         </div>
       </div>
@@ -840,11 +928,21 @@ function LiveMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function AdvisoryRow({ label, value, primary = false }: { label: string; value: string; primary?: boolean }) {
+function AdvisoryRow({
+  label,
+  value,
+  primary = false,
+  warning = false,
+}: {
+  label: string;
+  value: string;
+  primary?: boolean;
+  warning?: boolean;
+}) {
   return (
-    <div className="grid gap-1 rounded-xl border border-white/10 bg-[#020617] p-4 sm:grid-cols-[52px_1fr] sm:items-center">
-      <span className="mono text-[10px] text-slate-500">{label}</span>
-      <span className={`mono font-bold ${primary ? "text-base text-sky-300" : "text-sm text-slate-200"}`}>{value}</span>
+    <div className={`grid gap-1 rounded-xl border p-4 sm:grid-cols-[52px_1fr] sm:items-center ${warning ? "border-amber-400/40 bg-amber-400/5" : "border-white/10 bg-[#020617]"}`}>
+      <span className={`mono text-[10px] ${warning ? "text-amber-300" : "text-slate-500"}`}>{label}</span>
+      <span className={`mono font-bold ${warning ? "text-sm text-amber-200" : primary ? "text-base text-sky-300" : "text-sm text-slate-200"}`}>{value}</span>
     </div>
   );
 }
