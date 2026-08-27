@@ -53,16 +53,23 @@ type AltitudePlan = {
 
 const TARGET_TELEMETRY_FRESH_MS = 20000;
 const TARGET_TELEMETRY_HOLD_MS = 60000;
-const FIX_CAPTURE_NM: Record<ProcedureKind, number> = {
-  SID: 0.2,
-  STAR: 0.25,
-  APPROACH: 0.14,
+
+// Guidance precision and waypoint-passage tolerance are deliberately separate.
+// HDG keeps pointing to the exact published fix. The wider tolerance is only
+// used after the aircraft has passed abeam so minor tracking error does not
+// leave the director stuck on an already-flown waypoint.
+const EXACT_FIX_CAPTURE_NM: Record<ProcedureKind, number> = {
+  SID: 0.08,
+  STAR: 0.08,
+  APPROACH: 0.05,
 };
-const OVERSHOOT_CAPTURE_NM: Record<ProcedureKind, number> = {
-  SID: 0.34,
-  STAR: 0.4,
-  APPROACH: 0.22,
+const WAYPOINT_PASS_TOLERANCE_NM: Record<ProcedureKind, number> = {
+  SID: 0.85,
+  STAR: 0.75,
+  APPROACH: 0.35,
 };
+const ENROUTE_EXACT_CAPTURE_NM = 0.1;
+const ENROUTE_PASS_TOLERANCE_NM = 1.0;
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -351,6 +358,7 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
   const [enrouteIndex, setEnrouteIndex] = useState(0);
   const routeInitializedRef = useRef(false);
   const targetHistoryRef = useRef({ key: "", min: Number.POSITIVE_INFINITY, last: Number.POSITIVE_INFINITY });
+  const enrouteHistoryRef = useRef({ key: "", min: Number.POSITIVE_INFINITY, last: Number.POSITIVE_INFINITY });
 
   const matches = useMemo(
     () => selectProcedureMatches(plan),
@@ -405,6 +413,8 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
     setMissedTurnAltitudeMet(false);
     setEnrouteIndex(0);
     routeInitializedRef.current = false;
+    targetHistoryRef.current = { key: "", min: Number.POSITIVE_INFINITY, last: Number.POSITIVE_INFINITY };
+    enrouteHistoryRef.current = { key: "", min: Number.POSITIVE_INFINITY, last: Number.POSITIVE_INFINITY };
   }, [plan?.id]);
 
   useEffect(() => {
@@ -485,10 +495,12 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
     }
 
     const min = Math.min(history.min, currentFixDistance);
-    const directCapture = currentFixDistance <= FIX_CAPTURE_NM[procedure.kind];
-    const crossedAfterClosePass = min <= OVERSHOOT_CAPTURE_NM[procedure.kind] && currentFixDistance > history.last + 0.03;
+    const exactCapture = currentFixDistance <= EXACT_FIX_CAPTURE_NM[procedure.kind];
+    const passedWithinTolerance =
+      min <= WAYPOINT_PASS_TOLERANCE_NM[procedure.kind] &&
+      currentFixDistance > history.last + 0.03;
     targetHistoryRef.current = { key, min, last: currentFixDistance };
-    if (!directCapture && !crossedAfterClosePass) return;
+    if (!exactCapture && !passedWithinTolerance) return;
 
     if (targetIndex < procedure.fixes.length - 1) {
       setTargetIndex((index) => index + 1);
@@ -525,7 +537,23 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
   useEffect(() => {
     if (!activeTelemetry || !enrouteTarget || enrouteDistance === null) return;
     const enrouteActive = activeKind === null || (activeKind === "SID" && procedureComplete);
-    if (!enrouteActive || enrouteDistance > 0.25) return;
+    if (!enrouteActive) return;
+
+    const key = `${enrouteIndex}:${enrouteTarget.id}`;
+    const history = enrouteHistoryRef.current;
+    if (history.key !== key) {
+      enrouteHistoryRef.current = { key, min: enrouteDistance, last: enrouteDistance };
+      return;
+    }
+
+    const min = Math.min(history.min, enrouteDistance);
+    const exactCapture = enrouteDistance <= ENROUTE_EXACT_CAPTURE_NM;
+    const passedWithinTolerance =
+      min <= ENROUTE_PASS_TOLERANCE_NM &&
+      enrouteDistance > history.last + 0.03;
+    enrouteHistoryRef.current = { key, min, last: enrouteDistance };
+    if (!exactCapture && !passedWithinTolerance) return;
+
     if (enrouteIndex < enroutePoints.length - 1) setEnrouteIndex((index) => index + 1);
   }, [activeTelemetry, enrouteTarget, enrouteDistance, activeKind, procedureComplete, enrouteIndex, enroutePoints.length]);
 
@@ -715,7 +743,7 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
             </p>
           )}
           <p className="mt-3 text-[10px] leading-4 text-slate-600">
-            HDG apunta al fix activo y no avanza al siguiente hasta cruzarlo. ALT anticipa restricciones posteriores y el nivel de vuelo. SPD conserva límites publicados y anticipa desaceleración, incluyendo energía de descenso. La API de Project Flight entrega GS, no IAS.
+            HDG mantiene el rumbo exacto al fix activo. La tolerancia solo confirma que el waypoint ya fue sobrepasado; no suaviza ni recorta la trayectoria. ALT anticipa restricciones posteriores y el nivel de vuelo. SPD conserva límites publicados y anticipa desaceleración, incluyendo energía de descenso. La API de Project Flight entrega GS, no IAS.
           </p>
         </div>
       </div>
