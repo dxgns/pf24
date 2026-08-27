@@ -506,6 +506,166 @@ export const MDST_ETBOD2W: FlightProcedure = {
   globalSpeed: allRunwaysGlobalSpeed,
 };
 
+const mdpcMarog: ProcedureFix = {
+  id: "MAROG",
+  label: "MAROG",
+  mapPoint: namedFix("MAROG"),
+  altitude: { type: "AT_OR_ABOVE", feet: 1000 },
+  speed: { type: "MAX", knots: 180 },
+  source: "NAMED_FIX",
+};
+
+const mdpcPc114: ProcedureFix = {
+  id: "PC114",
+  label: "PC114",
+  mapPoint: namedFix("PC114"),
+  altitude: { type: "AT", feet: 3000 },
+  speed: { type: "MAX", knots: 220 },
+  source: "NAMED_FIX",
+};
+
+export const MDPC_PIXES2T: FlightProcedure = {
+  id: "MDPC-PIXES2T-RWY08-09",
+  code: "PIXES2T",
+  aliases: ["PIXE2T"],
+  airport: "MDPC",
+  runway: "08/09",
+  kind: "SID",
+  entryFix: "MAROG",
+  chart: "MDPC 10-1 · 15 JUL 26",
+  fixes: [
+    mdpcMarog,
+    mdpcPc114,
+    {
+      id: "PIXES",
+      label: "PIXES",
+      mapPoint: namedFix("PIXES"),
+      altitude: { type: "AT_OR_BELOW", feet: 4000 },
+      source: "NAMED_FIX",
+    },
+  ],
+  legs: [
+    { from: "MAROG", to: "PC114", course: 2 },
+    { from: "PC114", to: "PIXES", course: 297 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const MDPC_PC202T: FlightProcedure = {
+  id: "MDPC-PC202T-RWY08-09",
+  code: "PC202T",
+  airport: "MDPC",
+  runway: "08/09",
+  kind: "SID",
+  entryFix: "MAROG",
+  chart: "MDPC 10-1 · 15 JUL 26",
+  fixes: [
+    mdpcMarog,
+    mdpcPc114,
+    {
+      id: "PC202",
+      label: "PC202",
+      mapPoint: namedFix("PC202"),
+      altitude: { type: "AT_OR_BELOW", feet: 4000 },
+      source: "NAMED_FIX",
+    },
+  ],
+  legs: [
+    { from: "MAROG", to: "PC114", course: 2 },
+    { from: "PC114", to: "PC202", course: 317 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const MDPC_LETAD2T: FlightProcedure = {
+  id: "MDPC-LETAD2T-RWY08-09",
+  code: "LETAD2T",
+  aliases: ["LETA2T"],
+  airport: "MDPC",
+  runway: "08/09",
+  kind: "SID",
+  entryFix: "MAROG",
+  chart: "MDPC 10-1 · 15 JUL 26",
+  fixes: [
+    mdpcMarog,
+    {
+      id: "VIRTO",
+      label: "VIRTO",
+      mapPoint: namedFix("VIRTO"),
+      speed: { type: "MAX", knots: 220 },
+      source: "NAMED_FIX",
+    },
+    {
+      id: "LETAD",
+      label: "LETAD",
+      mapPoint: namedFix("LETAD"),
+      altitude: { type: "AT_OR_BELOW", feet: 4000 },
+      source: "NAMED_FIX",
+    },
+  ],
+  legs: [
+    { from: "MAROG", to: "VIRTO", course: 79 },
+    { from: "VIRTO", to: "LETAD", course: 15 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const MDPC_ETBOD2T: FlightProcedure = {
+  id: "MDPC-ETBOD2T-RWY08-09",
+  code: "ETBOD2T",
+  aliases: ["ETBO2T"],
+  airport: "MDPC",
+  runway: "08/09",
+  kind: "SID",
+  entryFix: "MAROG",
+  chart: "MDPC 10-1 · 15 JUL 26",
+  fixes: [
+    mdpcMarog,
+    {
+      id: "PC103",
+      label: "PC103",
+      mapPoint: namedFix("PC103"),
+      source: "NAMED_FIX",
+    },
+    {
+      id: "PC106",
+      label: "PC106",
+      mapPoint: namedFix("PC106"),
+      speed: { type: "MAX", knots: 200 },
+      source: "NAMED_FIX",
+    },
+    {
+      id: "MIBNI",
+      label: "MIBNI",
+      mapPoint: namedFix("MIBNI"),
+      speed: { type: "MAX", knots: 220 },
+      source: "NAMED_FIX",
+    },
+    {
+      id: "PC200",
+      label: "PC200",
+      mapPoint: namedFix("PC200"),
+      altitude: { type: "AT_OR_ABOVE", feet: 3000 },
+      source: "NAMED_FIX",
+    },
+    {
+      id: "ETBOD",
+      label: "ETBOD",
+      mapPoint: namedFix("ETBOD"),
+      altitude: { type: "AT_OR_BELOW", feet: 4000 },
+      source: "NAMED_FIX",
+    },
+  ],
+  legs: [
+    { from: "MAROG", to: "PC103", course: 150 },
+    { from: "PC103", to: "PC106", course: 237 },
+    { from: "PC106", to: "MIBNI", course: 278 },
+    { from: "MIBNI", to: "PC200", course: 279 },
+    { from: "PC200", to: "ETBOD", course: 283 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
 export const PROCEDURES: FlightProcedure[] = [
   MDST_PIXES4B,
   MDST_ETBOD4B,
@@ -518,6 +678,10 @@ export const PROCEDURES: FlightProcedure[] = [
   MDST_PIXES2W,
   MDST_VOGEP2W,
   MDST_ETBOD2W,
+  MDPC_PIXES2T,
+  MDPC_PC202T,
+  MDPC_ETBOD2T,
+  MDPC_LETAD2T,
 ];
 
 function routeTokens(route: unknown) {
