@@ -666,6 +666,178 @@ export const MDPC_ETBOD2T: FlightProcedure = {
   globalSpeed: allRunwaysGlobalSpeed,
 };
 
+const mdpcStarDasvo: ProcedureFix = {
+  id: "DASVO",
+  label: "DASVO",
+  mapPoint: namedFix("DASVO"),
+  altitude: { type: "AT", feet: 4000 },
+  speed: { type: "MAX", knots: 200 },
+  source: "NAMED_FIX",
+};
+
+const mdpcStarBerel: ProcedureFix = {
+  id: "BEREL",
+  label: "BEREL",
+  mapPoint: namedFix("BEREL"),
+  altitude: { type: "AT", feet: 3500 },
+  source: "NAMED_FIX",
+};
+
+const mdpcStarAgnal: ProcedureFix = {
+  id: "AGNAL",
+  label: "AGNAL",
+  mapPoint: namedFix("AGNAL"),
+  altitude: { type: "AT", feet: 2000 },
+  speed: { type: "MAX", knots: 180 },
+  source: "NAMED_FIX",
+};
+
+const mdpcStarPc203: ProcedureFix = {
+  id: "PC203",
+  label: "PC203",
+  mapPoint: namedFix("PC203"),
+  altitude: { type: "AT", feet: 4000 },
+  source: "NAMED_FIX",
+};
+
+export const MDPC_PIXES1W: FlightProcedure = {
+  id: "MDPC-PIXES1W-RWY08-09",
+  code: "PIXES1W",
+  aliases: ["PIXE1W"],
+  airport: "MDPC",
+  runway: "08/09",
+  kind: "STAR",
+  entryFix: "PIXES",
+  chart: "MDPC 12-1 · 16 JUL 26",
+  fixes: [
+    {
+      id: "PIXES",
+      label: "PIXES",
+      mapPoint: namedFix("PIXES"),
+      altitude: { type: "AT_OR_BELOW", feet: 5000 },
+      speed: { type: "MAX", knots: 220 },
+      source: "NAMED_FIX",
+    },
+    mdpcStarDasvo,
+    mdpcStarBerel,
+    mdpcStarAgnal,
+  ],
+  legs: [
+    { from: "PIXES", to: "DASVO", course: 155 },
+    { from: "DASVO", to: "BEREL", course: 267 },
+    { from: "BEREL", to: "AGNAL", course: 157 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const MDPC_PC2021W: FlightProcedure = {
+  id: "MDPC-PC2021W-RWY08-09",
+  code: "PC2021W",
+  aliases: ["PC201W"],
+  airport: "MDPC",
+  runway: "08/09",
+  kind: "STAR",
+  entryFix: "PC202",
+  chart: "MDPC 12-1 · 16 JUL 26",
+  fixes: [
+    {
+      id: "PC202",
+      label: "PC202",
+      mapPoint: namedFix("PC202"),
+      altitude: { type: "AT_OR_BELOW", feet: 5000 },
+      speed: { type: "MAX", knots: 220 },
+      source: "NAMED_FIX",
+    },
+    mdpcStarDasvo,
+    mdpcStarBerel,
+    mdpcStarAgnal,
+  ],
+  legs: [
+    { from: "PC202", to: "DASVO", course: 213 },
+    { from: "DASVO", to: "BEREL", course: 267 },
+    { from: "BEREL", to: "AGNAL", course: 157 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const MDPC_LETAD1W: FlightProcedure = {
+  id: "MDPC-LETAD1W-RWY08-09",
+  code: "LETAD1W",
+  aliases: ["LETA1W"],
+  airport: "MDPC",
+  runway: "08/09",
+  kind: "STAR",
+  entryFix: "LETAD",
+  chart: "MDPC 12-1 · 16 JUL 26",
+  fixes: [
+    {
+      id: "LETAD",
+      label: "LETAD",
+      mapPoint: namedFix("LETAD"),
+      altitude: { type: "AT_OR_BELOW", feet: 5000 },
+      speed: { type: "MAX", knots: 220 },
+      source: "NAMED_FIX",
+    },
+    mdpcStarPc203,
+    mdpcStarDasvo,
+    mdpcStarBerel,
+    mdpcStarAgnal,
+  ],
+  legs: [
+    { from: "LETAD", to: "PC203", course: 260 },
+    { from: "PC203", to: "DASVO", course: 293 },
+    { from: "DASVO", to: "BEREL", course: 267 },
+    { from: "BEREL", to: "AGNAL", course: 157 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
+export const MDPC_ETBOD1W: FlightProcedure = {
+  id: "MDPC-ETBOD1W-RWY08-09",
+  code: "ETBOD1W",
+  aliases: ["ETBO1W"],
+  airport: "MDPC",
+  runway: "08/09",
+  kind: "STAR",
+  entryFix: "ETBOD",
+  chart: "MDPC 12-1 · 16 JUL 26",
+  fixes: [
+    {
+      id: "ETBOD",
+      label: "ETBOD",
+      mapPoint: namedFix("ETBOD"),
+      source: "NAMED_FIX",
+    },
+    {
+      id: "PC200",
+      label: "PC200",
+      mapPoint: namedFix("PC200"),
+      source: "NAMED_FIX",
+    },
+    {
+      id: "MIBNI",
+      label: "MIBNI",
+      mapPoint: namedFix("MIBNI"),
+      altitude: { type: "AT_OR_BELOW", feet: 5000 },
+      speed: { type: "MAX", knots: 220 },
+      source: "NAMED_FIX",
+    },
+    mdpcStarPc203,
+    mdpcStarDasvo,
+    mdpcStarBerel,
+    mdpcStarAgnal,
+  ],
+  legs: [
+    { from: "ETBOD", to: "PC200", course: 103 },
+    { from: "PC200", to: "MIBNI", course: 99 },
+    { from: "MIBNI", to: "PC203", course: 29 },
+    { from: "PC203", to: "DASVO", course: 293 },
+    { from: "DASVO", to: "BEREL", course: 267 },
+    { from: "BEREL", to: "AGNAL", course: 157 },
+  ],
+  globalSpeed: allRunwaysGlobalSpeed,
+};
+
 export const PROCEDURES: FlightProcedure[] = [
   MDST_PIXES4B,
   MDST_ETBOD4B,
@@ -682,6 +854,10 @@ export const PROCEDURES: FlightProcedure[] = [
   MDPC_PC202T,
   MDPC_ETBOD2T,
   MDPC_LETAD2T,
+  MDPC_PIXES1W,
+  MDPC_PC2021W,
+  MDPC_ETBOD1W,
+  MDPC_LETAD1W,
 ];
 
 function routeTokens(route: unknown) {
