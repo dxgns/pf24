@@ -206,31 +206,42 @@ export default function ScopeGlidePath() {
 
   useEffect(() => {
     setViewport(readViewport());
-    setRunwayState(readRunwayState());
+    const initialRunways = readRunwayState();
+    setRunwayState(initialRunways);
+    let lastSerialized = JSON.stringify(initialRunways);
 
     const onViewport = (event: Event) => {
       const detail = (event as CustomEvent<Viewport>).detail;
       if (detail) setViewport(detail);
     };
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === RUNWAY_STORAGE_KEY) setRunwayState(readRunwayState());
-    };
-
-    let lastSerialized = JSON.stringify(readRunwayState());
-    const runwayTimer = window.setInterval(() => {
+    const syncRunways = () => {
       const next = readRunwayState();
       const serialized = JSON.stringify(next);
       if (serialized === lastSerialized) return;
       lastSerialized = serialized;
       setRunwayState(next);
-    }, 150);
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === RUNWAY_STORAGE_KEY) syncRunways();
+    };
+    const onScopeClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest("main.fixed button")) return;
+      // Runway changes are written to localStorage by PF24Scope after the React
+      // commit. Recheck after the interaction instead of parsing storage every
+      // 150 ms for the entire lifetime of the scope. The short second check
+      // covers browsers that defer passive effects beyond the first task.
+      window.setTimeout(syncRunways, 0);
+      window.setTimeout(syncRunways, 80);
+    };
 
     window.addEventListener(VIEWPORT_EVENT, onViewport);
     window.addEventListener("storage", onStorage);
+    document.addEventListener("click", onScopeClick, true);
     return () => {
-      window.clearInterval(runwayTimer);
       window.removeEventListener(VIEWPORT_EVENT, onViewport);
       window.removeEventListener("storage", onStorage);
+      document.removeEventListener("click", onScopeClick, true);
     };
   }, []);
 
