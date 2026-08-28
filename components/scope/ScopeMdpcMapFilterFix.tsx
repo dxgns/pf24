@@ -74,17 +74,19 @@ function applyVisibility(text: SVGTextElement, kind: LabelKind, taxiVisible: boo
 export default function ScopeMdpcMapFilterFix() {
   useEffect(() => {
     let frame = 0;
+    let radar: HTMLElement | null = null;
+    let radarObserver: MutationObserver | null = null;
+    let locateObserver: MutationObserver | null = null;
 
     const sync = () => {
       frame = 0;
-      const radar = document.querySelector<HTMLElement>("main.fixed > section");
+      if (!radar) return;
       const { taxiVisible, gatesVisible } = filterVisibility(radar);
-      const root: ParentNode = radar ?? document;
 
       // MDPC is rendered in two places: the original vector-map copy and the
       // low airport layer used for the final stacking order. The latter is the
       // visible one, so both groups must always receive the same filter state.
-      for (const group of Array.from(root.querySelectorAll<SVGGElement>(MDPC_LABEL_GROUPS))) {
+      for (const group of Array.from(radar.querySelectorAll<SVGGElement>(MDPC_LABEL_GROUPS))) {
         for (const text of Array.from(group.querySelectorAll<SVGTextElement>("text"))) {
           applyVisibility(text, mdpcLabelKind(text.textContent ?? ""), taxiVisible, gatesVisible);
         }
@@ -92,7 +94,7 @@ export default function ScopeMdpcMapFilterFix() {
 
       // LEMH labels are rendered outside the SVG to stay upright. Apply the
       // same filter state directly so Taxi Ways Letters reliably hides them.
-      for (const group of Array.from(root.querySelectorAll<SVGGElement>(LEMH_LABEL_GROUP))) {
+      for (const group of Array.from(radar.querySelectorAll<SVGGElement>(LEMH_LABEL_GROUP))) {
         for (const text of Array.from(group.querySelectorAll<SVGTextElement>("text"))) {
           applyVisibility(text, lemhLabelKind(text), taxiVisible, gatesVisible);
         }
@@ -104,29 +106,43 @@ export default function ScopeMdpcMapFilterFix() {
       frame = window.requestAnimationFrame(sync);
     };
 
-    const observer = new MutationObserver(queueSync);
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: [
-        "data-pf24-map-filter-taxi-letters",
-        "data-pf24-map-filter-gate-numbers",
-      ],
-    });
+    const bindRadar = () => {
+      const next = document.querySelector<HTMLElement>("main.fixed > section");
+      if (!next || next === radar) return Boolean(next);
 
-    const onPointer = () => window.setTimeout(queueSync, 0);
-    document.addEventListener("click", onPointer, true);
+      radarObserver?.disconnect();
+      radar = next;
+      radarObserver = new MutationObserver(queueSync);
+      radarObserver.observe(radar, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: [
+          "data-pf24-map-filter-taxi-letters",
+          "data-pf24-map-filter-gate-numbers",
+        ],
+      });
+      queueSync();
+      return true;
+    };
+
+    if (!bindRadar()) {
+      // Only observe page structure until the radar exists. Unlike the previous
+      // implementation this does not poll the whole DOM every 150 ms forever.
+      locateObserver = new MutationObserver(() => {
+        if (!bindRadar()) return;
+        locateObserver?.disconnect();
+        locateObserver = null;
+      });
+      locateObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
     window.addEventListener("storage", queueSync);
 
-    sync();
-    const timer = window.setInterval(sync, 150);
-
     return () => {
-      observer.disconnect();
-      document.removeEventListener("click", onPointer, true);
+      locateObserver?.disconnect();
+      radarObserver?.disconnect();
       window.removeEventListener("storage", queueSync);
-      window.clearInterval(timer);
       if (frame) window.cancelAnimationFrame(frame);
 
       const selectors = `${MDPC_LABEL_GROUPS} text, ${LEMH_LABEL_GROUP} text`;
