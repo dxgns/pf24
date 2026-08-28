@@ -106,11 +106,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       const discordId = String(token.discordId ?? discordProfile?.id ?? token.sub ?? "").trim();
       let robloxIdentity = await readLinkedRobloxCookie();
 
-      if (account?.access_token && discordId) {
-        if (robloxIdentity) {
+      // Roblox is the persistent identity used by PFPilot to find the pilot's
+      // aircraft in Project Flight. Do not depend on a new Discord login to make
+      // that identity available: recover it from the JWT or the identity table on
+      // every session refresh when the cookie is not present.
+      if (!robloxIdentity && token.robloxUserId && token.robloxUsername) {
+        robloxIdentity = {
+          userId: String(token.robloxUserId),
+          username: String(token.robloxUsername),
+          displayName: String(token.robloxDisplayName ?? token.robloxUsername),
+          linkedAt: 0,
+        };
+      }
+
+      if (!robloxIdentity && discordId) {
+        robloxIdentity = await loadStoredRobloxIdentity(discordId);
+      }
+
+      if (robloxIdentity && discordId) {
+        const identityChanged =
+          String(token.robloxUserId ?? "") !== robloxIdentity.userId ||
+          String(token.robloxUsername ?? "") !== robloxIdentity.username;
+        if (account?.access_token || identityChanged) {
           await saveStoredRobloxIdentity(discordId, robloxIdentity);
-        } else {
-          robloxIdentity = await loadStoredRobloxIdentity(discordId);
         }
       }
 
