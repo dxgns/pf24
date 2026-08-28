@@ -130,6 +130,16 @@ function altitudeLabel(feet: number) {
   return `${rounded.toLocaleString("en-US")} FT`;
 }
 
+function filedAltitudeLabel(value: unknown, feet: number) {
+  const text = String(value ?? "").trim().toUpperCase();
+  const numeric = Number(text.replace(/[^0-9.]/g, ""));
+  const filedAsFlightLevel = text.includes("FL") || (
+    Number.isFinite(numeric) && numeric > 0 && numeric <= 600 && !text.includes("FT")
+  );
+  if (!filedAsFlightLevel) return altitudeLabel(feet);
+  return `FL${String(Math.round(feet / 100)).padStart(3, "0")}`;
+}
+
 function speedLabel(knots: number) {
   return `${Math.max(0, Math.round(knots / 10) * 10)} KT`;
 }
@@ -216,8 +226,12 @@ function findSidAltitudeTarget(
   altitude: number,
   filedAltitude: number | null,
   position: { x: number; y: number },
+  departureFloorFeet = 0,
 ): AltitudePlan {
-  let highestFloor = 0;
+  // AT OR ABOVE values and heading-until-altitude triggers are climb floors, not
+  // level-off commands. Keep climbing toward the filed level unless a later AT or
+  // AT OR BELOW restriction creates a real ceiling/level-off requirement.
+  let highestFloor = Math.max(0, departureFloorFeet);
 
   for (let index = targetIndex; index < procedure.fixes.length; index += 1) {
     const restriction = procedure.fixes[index].altitude;
@@ -767,13 +781,6 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
         requiredNm: 0,
       };
     }
-    if (departureLegActive && departureLeg) {
-      return {
-        targetFeet: departureLeg.untilAltitudeFeet,
-        distanceNm: null,
-        requiredNm: 0,
-      };
-    }
     if (!procedure || (procedure.kind === "SID" && procedureComplete)) {
       return {
         targetFeet: filedAltitude ?? Math.round(activeTelemetry.altitude / 100) * 100,
@@ -782,7 +789,14 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
       };
     }
     if (procedure.kind === "SID") {
-      return findSidAltitudeTarget(procedure, targetIndex, activeTelemetry.altitude, filedAltitude, position);
+      return findSidAltitudeTarget(
+        procedure,
+        targetIndex,
+        activeTelemetry.altitude,
+        filedAltitude,
+        position,
+        departureLeg?.untilAltitudeFeet ?? 0,
+      );
     }
     return findArrivalAltitudeTarget(
       procedure,
@@ -793,7 +807,7 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
       approachProcedure,
       approachMode,
     );
-  }, [activeTelemetry, position?.x, position?.y, filedAltitude, procedure, procedureComplete, targetIndex, departureLegActive, departureLeg, approachProcedure, approachMode, missedApproachActive]);
+  }, [activeTelemetry, position?.x, position?.y, filedAltitude, procedure, procedureComplete, targetIndex, departureLeg, approachProcedure, approachMode, missedApproachActive]);
 
   const missed = approachProcedure?.approach.missedApproach;
   const missedTarget = approachProcedure && missed ? getProcedureFix(approachProcedure, missed.targetFix) : null;
@@ -896,7 +910,11 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
     : enrouteTarget?.id ?? "ENROUTE";
 
   const commandHeading = enabled && activeTelemetry ? `${paddedHeading(headingTarget)}°` : "---°";
-  const commandAltitude = enabled && activeTelemetry ? altitudeLabel(altitudePlan.targetFeet) : "-----";
+  const commandAltitude = enabled && activeTelemetry
+    ? filedAltitude !== null && Math.abs(altitudePlan.targetFeet - filedAltitude) < 50
+      ? filedAltitudeLabel(plan.flight_level, altitudePlan.targetFeet)
+      : altitudeLabel(altitudePlan.targetFeet)
+    : "-----";
   const commandSpeed = enabled && activeTelemetry ? speedLabel(speedTarget) : "--- KT";
 
   return (
