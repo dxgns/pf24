@@ -17,8 +17,6 @@ const MAX_ZOOM = 512;
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 const WHEEL_ZOOM_SENSITIVITY = 0.0019;
 const WHEEL_COMMIT_DELAY_MS = 120;
-const VIEWPORT_EVENT_MIN_INTERVAL_MS = 1000 / 30;
-const COMPOSITED_MAP_ATTR = "data-pf24-composited-map";
 
 // Airport detail SVGs are intentionally preloaded independently from their zoom
 // visibility. Several airport renderers mount/unmount external <image> elements
@@ -118,14 +116,6 @@ function wheelDeltaPixels(event: WheelEvent, pageHeight: number) {
   return event.deltaY;
 }
 
-function isCompositedMapSvg(svg: SVGSVGElement) {
-  // Map-coordinate layers explicitly use xMidYMid meet. Screen-coordinate layers
-  // such as traffic vectors use preserveAspectRatio="none", while QDM overlays do
-  // not carry this explicit viewport transform. Restricting the compositor to the
-  // explicit map layers avoids scaling labels or interaction overlays twice.
-  return svg.getAttribute("preserveAspectRatio") === "xMidYMid meet" && svg.style.transform.includes("scale(");
-}
-
 export default function RadarViewport() {
   useEffect(() => {
     const airportPreloads = AIRPORT_SVG_ASSETS.map((src) => {
@@ -145,18 +135,6 @@ export default function RadarViewport() {
       };
     }
 
-    const compositorStyle = document.createElement("style");
-    compositorStyle.dataset.pf24RadarCompositor = "true";
-    compositorStyle.textContent = `
-      [${COMPOSITED_MAP_ATTR}='true'] {
-        transform: translate3d(var(--pf24-radar-pan-x, 0px), var(--pf24-radar-pan-y, 0px), 0) scale(var(--pf24-radar-zoom, 1)) !important;
-        transform-origin: 0 0 !important;
-        will-change: transform;
-        backface-visibility: hidden;
-      }
-    `;
-    document.head.appendChild(compositorStyle);
-
     let viewport = readViewport();
     let radarSize = scopeElementLocalSize(radar);
     let panning = false;
@@ -166,69 +144,47 @@ export default function RadarViewport() {
     let lastY = 0;
     let renderFrame = 0;
     let wheelCommitTimer: number | null = null;
-    let lastRendered: Viewport | null = null;
-    let lastViewportEventAt = Number.NEGATIVE_INFINITY;
-    let compositedMapSvgs: SVGSVGElement[] = [];
+    let lastPublished: Viewport | null = null;
 
-    const refreshCompositedLayers = () => {
-      // Query all SVGs and let getAttribute perform the SVG-aware check. Some
-      // browsers normalize camel-cased SVG attribute names in CSS selectors
-      // differently, which could otherwise silently disable the compositor path.
-      const next = Array.from(radar.querySelectorAll<SVGSVGElement>("svg"))
-        .filter(isCompositedMapSvg);
+    const publishNow = () => {
+      renderFrame = 0;
+      if (
+        lastPublished &&
+        lastPublished.zoom === viewport.zoom &&
+        lastPublished.panX === viewport.panX &&
+        lastPublished.panY === viewport.panY
+      ) return;
 
-      for (const svg of compositedMapSvgs) {
-        if (next.includes(svg)) continue;
-        svg.removeAttribute(COMPOSITED_MAP_ATTR);
-      }
-      compositedMapSvgs = next;
-      for (const svg of compositedMapSvgs) svg.setAttribute(COMPOSITED_MAP_ATTR, "true");
-    };
-
-    const applyVisualViewport = () => {
+      const detail = { ...viewport };
+      lastPublished = detail;
       radar.dataset.pf24RadarZoom = viewport.zoom.toFixed(3);
       radar.style.setProperty("--pf24-radar-zoom", String(viewport.zoom));
       radar.style.setProperty("--pf24-radar-pan-x", `${viewport.panX}px`);
       radar.style.setProperty("--pf24-radar-pan-y", `${viewport.panY}px`);
-    };
-
-    const dispatchViewport = (force = false) => {
-      const now = performance.now();
-      if (!force && now - lastViewportEventAt < VIEWPORT_EVENT_MIN_INTERVAL_MS) return;
-      lastViewportEventAt = now;
-      window.dispatchEvent(new CustomEvent<Viewport>(VIEWPORT_EVENT, { detail: { ...viewport } }));
-    };
-
-    const publishNow = (forceEvent = false) => {
-      renderFrame = 0;
-      const changed = !lastRendered ||
-        lastRendered.zoom !== viewport.zoom ||
-        lastRendered.panX !== viewport.panX ||
-        lastRendered.panY !== viewport.panY;
-
-      if (changed) {
-        lastRendered = { ...viewport };
-        applyVisualViewport();
-      }
-      if (changed || forceEvent) dispatchViewport(forceEvent);
+      window.dispatchEvent(new CustomEvent<Viewport>(VIEWPORT_EVENT, { detail }));
     };
 
     // Pointer and trackpad events can arrive much faster than the display can
-    // paint. Collapse them to one compositor update per animation frame. The map
-    // SVGs are driven directly by CSS variables while React consumers are limited
-    // to 30 Hz, cutting the viewport render fan-out roughly in half without making
-    // the actual map movement 30 Hz.
+    // paint. Collapsing them to one viewport publication per animation frame
+    // prevents every map/traffic overlay from re-rendering multiple times before
+    // the browser has had a chance to draw the previous frame. The map and airport
+    // layers keep their native SVG transforms so vectors stay sharp at every zoom.
     const schedulePublish = () => {
       if (renderFrame) return;
-      renderFrame = window.requestAnimationFrame(() => publishNow(false));
+      renderFrame = window.requestAnimationFrame(publishNow);
     };
 
-    const flushPublish = (forceEvent = false) => {
+    const flushPublish = () => {
       if (renderFrame) {
         window.cancelAnimationFrame(renderFrame);
         renderFrame = 0;
       }
-      publishNow(forceEvent);
+      publishNow();
+    };
+
+    const forcePublish = () => {
+      lastPublished = null;
+      flushPublish();
     };
 
     const persist = () => {
@@ -241,7 +197,7 @@ export default function RadarViewport() {
 
     const commitWheel = () => {
       wheelCommitTimer = null;
-      flushPublish(true);
+      flushPublish();
       persist();
     };
 
@@ -273,17 +229,10 @@ export default function RadarViewport() {
       schedulePublish();
     };
 
-    refreshCompositedLayers();
-    flushPublish(true);
+    flushPublish();
     // Some portal overlays attach their listener just after the viewport effect.
     // Replay the initial state once so they do not remain at 1x until first input.
-    const initialRetry = window.setTimeout(() => flushPublish(true), 300);
-
-    // Map layers are normally stable nodes. Observe only structural changes so a
-    // late portal or airport layer can join the compositor without scanning DOM
-    // attributes on every traffic or viewport update.
-    const layerObserver = new MutationObserver(refreshCompositedLayers);
-    layerObserver.observe(radar, { childList: true, subtree: true });
+    const initialRetry = window.setTimeout(forcePublish, 300);
 
     const onWheel = (event: WheelEvent) => {
       if (isScopeWindowOrFormControl(event.target)) return;
@@ -340,7 +289,7 @@ export default function RadarViewport() {
       panning = false;
       suppressTrafficClick = movedDuringPan;
       movedDuringPan = false;
-      flushPublish(true);
+      flushPublish();
       persist();
     };
 
@@ -374,7 +323,6 @@ export default function RadarViewport() {
       window.clearTimeout(initialRetry);
       if (wheelCommitTimer !== null) window.clearTimeout(wheelCommitTimer);
       if (renderFrame) window.cancelAnimationFrame(renderFrame);
-      layerObserver.disconnect();
       resizeObserver?.disconnect();
       radar.removeEventListener("wheel", onWheel);
       radar.removeEventListener("mousedown", onMouseDown);
@@ -387,8 +335,6 @@ export default function RadarViewport() {
       radar.style.removeProperty("--pf24-radar-pan-x");
       radar.style.removeProperty("--pf24-radar-pan-y");
       delete radar.dataset.pf24RadarZoom;
-      for (const svg of compositedMapSvgs) svg.removeAttribute(COMPOSITED_MAP_ATTR);
-      compositorStyle.remove();
       airportPreloads.forEach((image) => {
         image.onload = null;
         image.onerror = null;
