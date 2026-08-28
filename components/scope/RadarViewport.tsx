@@ -18,6 +18,7 @@ const VIEWPORT_EVENT = "pf24-radar-viewport";
 const WHEEL_ZOOM_SENSITIVITY = 0.0019;
 const WHEEL_COMMIT_DELAY_MS = 120;
 const VIEWPORT_EVENT_MIN_INTERVAL_MS = 1000 / 30;
+const COMPOSITED_MAP_ATTR = "data-pf24-composited-map";
 
 // Airport detail SVGs are intentionally preloaded independently from their zoom
 // visibility. Several airport renderers mount/unmount external <image> elements
@@ -144,6 +145,18 @@ export default function RadarViewport() {
       };
     }
 
+    const compositorStyle = document.createElement("style");
+    compositorStyle.dataset.pf24RadarCompositor = "true";
+    compositorStyle.textContent = `
+      [${COMPOSITED_MAP_ATTR}='true'] {
+        transform: translate3d(var(--pf24-radar-pan-x, 0px), var(--pf24-radar-pan-y, 0px), 0) scale(var(--pf24-radar-zoom, 1)) !important;
+        transform-origin: 0 0 !important;
+        will-change: transform;
+        backface-visibility: hidden;
+      }
+    `;
+    document.head.appendChild(compositorStyle);
+
     let viewport = readViewport();
     let radarSize = scopeElementLocalSize(radar);
     let panning = false;
@@ -163,26 +176,17 @@ export default function RadarViewport() {
 
       for (const svg of compositedMapSvgs) {
         if (next.includes(svg)) continue;
-        svg.style.removeProperty("will-change");
-        svg.style.removeProperty("backface-visibility");
+        svg.removeAttribute(COMPOSITED_MAP_ATTR);
       }
       compositedMapSvgs = next;
-      for (const svg of compositedMapSvgs) {
-        svg.style.setProperty("will-change", "transform");
-        svg.style.setProperty("backface-visibility", "hidden");
-      }
+      for (const svg of compositedMapSvgs) svg.setAttribute(COMPOSITED_MAP_ATTR, "true");
     };
 
     const applyVisualViewport = () => {
-      const transform = `translate3d(${viewport.panX}px, ${viewport.panY}px, 0) scale(${viewport.zoom})`;
       radar.dataset.pf24RadarZoom = viewport.zoom.toFixed(3);
       radar.style.setProperty("--pf24-radar-zoom", String(viewport.zoom));
       radar.style.setProperty("--pf24-radar-pan-x", `${viewport.panX}px`);
       radar.style.setProperty("--pf24-radar-pan-y", `${viewport.panY}px`);
-      for (const svg of compositedMapSvgs) {
-        svg.style.transformOrigin = "0 0";
-        svg.style.transform = transform;
-      }
     };
 
     const dispatchViewport = (force = false) => {
@@ -208,8 +212,8 @@ export default function RadarViewport() {
 
     // Pointer and trackpad events can arrive much faster than the display can
     // paint. Collapse them to one compositor update per animation frame. The map
-    // SVGs move directly on the compositor while React consumers are limited to
-    // 30 Hz, cutting the viewport re-render fan-out roughly in half without making
+    // SVGs are driven directly by CSS variables while React consumers are limited
+    // to 30 Hz, cutting the viewport render fan-out roughly in half without making
     // the actual map movement 30 Hz.
     const schedulePublish = () => {
       if (renderFrame) return;
@@ -380,10 +384,8 @@ export default function RadarViewport() {
       radar.style.removeProperty("--pf24-radar-pan-x");
       radar.style.removeProperty("--pf24-radar-pan-y");
       delete radar.dataset.pf24RadarZoom;
-      for (const svg of compositedMapSvgs) {
-        svg.style.removeProperty("will-change");
-        svg.style.removeProperty("backface-visibility");
-      }
+      for (const svg of compositedMapSvgs) svg.removeAttribute(COMPOSITED_MAP_ATTR);
+      compositorStyle.remove();
       airportPreloads.forEach((image) => {
         image.onload = null;
         image.onerror = null;
