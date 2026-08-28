@@ -59,6 +59,11 @@ type AltitudePlan = {
   requiredNm: number;
 };
 
+type SpeedPlan = {
+  targetKnots: number;
+  isMaxRestriction: boolean;
+};
+
 type ProcedureContinuation = {
   point: { x: number; y: number };
   course: number | null;
@@ -140,8 +145,9 @@ function filedAltitudeLabel(value: unknown, feet: number) {
   return `FL${String(Math.round(feet / 100)).padStart(3, "0")}`;
 }
 
-function speedLabel(knots: number) {
-  return `${Math.max(0, Math.round(knots / 10) * 10)} KT`;
+function speedLabel(knots: number, isMaxRestriction = false) {
+  const value = `${Math.max(0, Math.round(knots / 10) * 10)} KT`;
+  return isMaxRestriction ? `${value} MAX` : value;
 }
 
 function routePoints(route: unknown): RoutePoint[] {
@@ -340,25 +346,34 @@ function predictiveSpeedTarget({
   altitudePlan: AltitudePlan;
   position: { x: number; y: number };
   departureSpeed?: number;
-}) {
+}): SpeedPlan {
   const currentGs = Math.max(0, telemetry.groundSpeed);
   const roundedCurrent = Math.max(0, Math.round(currentGs / 10) * 10);
 
-  // SPD is a command/target, not a mirror of the current groundspeed. Starting
-  // from current GS made a taxiing aircraft at 38 kt receive a nonsensical 40 kt
-  // command even when the SID required MAX 180. Build the target from operational
-  // limits first, then use GS only to decide how early a future deceleration must
-  // start.
+  // SPD is a command/target, not a mirror of the current groundspeed. The flag
+  // records whether the displayed number is a maximum restriction so the UI can
+  // make clear that a lower speed remains permissible.
   if (!procedure) {
     return telemetry.altitude < 10000
-      ? 250
-      : Math.max(250, roundedCurrent);
+      ? { targetKnots: 250, isMaxRestriction: true }
+      : { targetKnots: Math.max(250, roundedCurrent), isMaxRestriction: false };
   }
 
   let target: number | null = null;
-  const constrain = (limit: number | null | undefined) => {
+  let isMaxRestriction = false;
+  const constrain = (
+    limit: number | null | undefined,
+    maximumRestriction = true,
+  ) => {
     if (!limit || !Number.isFinite(limit) || limit <= 0) return;
-    target = target === null ? limit : Math.min(target, limit);
+    if (target === null || limit < target) {
+      target = limit;
+      isMaxRestriction = maximumRestriction;
+      return;
+    }
+    if (Math.abs(limit - target) < 0.01 && maximumRestriction) {
+      isMaxRestriction = true;
+    }
   };
 
   const activeFixLimit = procedure.fixes[targetIndex]?.speed?.knots;
@@ -383,10 +398,13 @@ function predictiveSpeedTarget({
       // With no published approach speed available, hold a realistic flight
       // target rather than propagating taxi/roll speed into the command box.
       target = currentGs >= 120 ? roundedCurrent : 160;
+      isMaxRestriction = false;
     } else if (telemetry.altitude < 10000) {
       target = procedure.globalSpeed?.maxKnots ?? 250;
+      isMaxRestriction = true;
     } else {
       target = Math.max(250, roundedCurrent);
+      isMaxRestriction = false;
     }
   }
 
@@ -417,11 +435,14 @@ function predictiveSpeedTarget({
         150,
         Math.floor((referenceSpeed - 20 - Math.min(40, shortfall * 10)) / 10) * 10,
       );
-      constrain(energyTarget);
+      constrain(energyTarget, false);
     }
   }
 
-  return Math.max(0, target ?? roundedCurrent);
+  return {
+    targetKnots: Math.max(0, target ?? roundedCurrent),
+    isMaxRestriction,
+  };
 }
 
 function turnHeading(
@@ -812,9 +833,11 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
   const missed = approachProcedure?.approach.missedApproach;
   const missedTarget = approachProcedure && missed ? getProcedureFix(approachProcedure, missed.targetFix) : null;
 
-  const speedTarget = useMemo(() => {
-    if (!activeTelemetry || !position) return 0;
-    if (missedApproachActive && missed?.targetSpeedKnots) return missed.targetSpeedKnots;
+  const speedPlan = useMemo<SpeedPlan>(() => {
+    if (!activeTelemetry || !position) return { targetKnots: 0, isMaxRestriction: false };
+    if (missedApproachActive && missed?.targetSpeedKnots) {
+      return { targetKnots: missed.targetSpeedKnots, isMaxRestriction: false };
+    }
     return predictiveSpeedTarget({
       procedure: procedureComplete && procedure?.kind === "SID" ? null : procedure,
       targetIndex,
@@ -865,7 +888,7 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
     }
     if (approachProcedure) return approachProcedure.approach.finalCourse;
     return activeTelemetry.heading;
-  }, [activeTelemetry, position?.x, position?.y, missedApproachActive, missed, missedTurnAltitudeMet, missedTarget?.mapPoint, departureLegActive, departureLeg, departureConditionMet, currentFix?.id, currentFix?.mapPoint, approachProcedure, approachMode, procedure, procedureComplete, activeKind, enrouteTarget, enrouteContinuation, enroutePrevious, procedureNextPoint, previousProcedureFix?.mapPoint, procedureInboundCourse, procedureOutboundCourse, speedTarget]);
+  }, [activeTelemetry, position?.x, position?.y, missedApproachActive, missed, missedTurnAltitudeMet, missedTarget?.mapPoint, departureLegActive, departureLeg, departureConditionMet, currentFix?.id, currentFix?.mapPoint, approachProcedure, approachMode, procedure, procedureComplete, activeKind, enrouteTarget, enrouteContinuation, enroutePrevious, procedureNextPoint, previousProcedureFix?.mapPoint, procedureInboundCourse, procedureOutboundCourse, speedPlan.targetKnots]);
 
   const toggleGuidance = () => {
     setEnabled((current) => {
@@ -915,7 +938,9 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
       ? filedAltitudeLabel(plan.flight_level, altitudePlan.targetFeet)
       : altitudeLabel(altitudePlan.targetFeet)
     : "-----";
-  const commandSpeed = enabled && activeTelemetry ? speedLabel(speedTarget) : "--- KT";
+  const commandSpeed = enabled && activeTelemetry
+    ? speedLabel(speedPlan.targetKnots, speedPlan.isMaxRestriction)
+    : "--- KT";
 
   return (
     <div className="mt-6 grid gap-5 xl:grid-cols-[1.25fr_.75fr]">
