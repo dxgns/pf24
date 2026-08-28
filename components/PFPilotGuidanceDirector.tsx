@@ -73,6 +73,15 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
         .pf24-autopilot-composite > .pf24-guidance-host > div > :nth-child(2) {
           display: none !important;
         }
+        .pf24-autopilot-composite > .pf24-guidance-host > div > :first-child > :nth-child(3) > :first-child > :nth-child(1) {
+          order: 2;
+        }
+        .pf24-autopilot-composite > .pf24-guidance-host > div > :first-child > :nth-child(3) > :first-child > :nth-child(2) {
+          order: 1;
+        }
+        .pf24-autopilot-composite > .pf24-guidance-host > div > :first-child > :nth-child(3) > :first-child > :nth-child(3) {
+          order: 3;
+        }
       `}</style>
       <div className="pf24-autopilot-composite mt-6 grid gap-5 xl:grid-cols-[1.25fr_.75fr]">
         <div className="pf24-guidance-host">
