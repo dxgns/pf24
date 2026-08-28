@@ -22,6 +22,7 @@ const LIVE_ROOT = "[data-pf24-live-traffic='true']";
 const SECTOR_LIST = "[data-pf24-live-sector-list='true']";
 const STBY_COLOR = "#ffff00";
 const ACTIVE_COLOR = "#00e000";
+const PLAN_FALLBACK_REFRESH_MS = 5000;
 
 function norm(value: string | null | undefined) {
   return normalizeGameCallsign(String(value ?? ""));
@@ -115,6 +116,17 @@ function important(element: HTMLElement | null | undefined, property: string, va
   if (!element) return;
   if (element.style.getPropertyValue(property) === value && element.style.getPropertyPriority(property) === "important") return;
   element.style.setProperty(property, value, "important");
+}
+
+function mutationAddsRoot(records: MutationRecord[]) {
+  return records.some((record) => Array.from(record.addedNodes).some((node) =>
+    node instanceof Element && (
+      node.matches(LIVE_ROOT) ||
+      node.matches(SECTOR_LIST) ||
+      Boolean(node.querySelector(LIVE_ROOT)) ||
+      Boolean(node.querySelector(SECTOR_LIST))
+    ),
+  ));
 }
 
 export default function ScopeTransponderModeSync({ initialPlans }: Props) {
@@ -279,10 +291,12 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
 
   useEffect(() => {
     void loadPlans();
-    const poll = window.setInterval(() => void loadPlans(), 1000);
+    // Realtime remains primary. This slower fallback only covers a missed
+    // postgres event instead of issuing a full active-plan query every second.
+    const fallback = window.setInterval(() => void loadPlans(), PLAN_FALLBACK_REFRESH_MS);
 
     const channel = supabase
-      .channel("scope-transponder-mode-sync-v3")
+      .channel("scope-transponder-mode-sync-v4")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "flight_plans" },
@@ -291,22 +305,78 @@ export default function ScopeTransponderModeSync({ initialPlans }: Props) {
       .subscribe();
 
     return () => {
-      window.clearInterval(poll);
+      window.clearInterval(fallback);
       void supabase.removeChannel(channel);
       if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
     };
   }, [loadPlans, scheduleRefresh]);
 
   useEffect(() => {
-    sync();
-    const interval = window.setInterval(sync, 70);
+    let frame = 0;
+    let trafficRoot: HTMLElement | null = null;
+    let sectorList: HTMLElement | null = null;
+    let trafficObserver: MutationObserver | null = null;
+    let sectorObserver: MutationObserver | null = null;
 
-    const observer = new MutationObserver(() => sync());
-    observer.observe(document.body, { childList: true, subtree: true });
+    const scheduleSync = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        sync();
+      });
+    };
+
+    const bindRoots = () => {
+      const nextTraffic = document.querySelector<HTMLElement>(LIVE_ROOT);
+      if (nextTraffic !== trafficRoot) {
+        trafficObserver?.disconnect();
+        trafficRoot = nextTraffic;
+        trafficObserver = null;
+        if (trafficRoot) {
+          trafficObserver = new MutationObserver(scheduleSync);
+          trafficObserver.observe(trafficRoot, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+          });
+        }
+      }
+
+      const nextSectorList = document.querySelector<HTMLElement>(SECTOR_LIST);
+      if (nextSectorList !== sectorList) {
+        sectorObserver?.disconnect();
+        sectorList = nextSectorList;
+        sectorObserver = null;
+        if (sectorList) {
+          sectorObserver = new MutationObserver(scheduleSync);
+          sectorObserver.observe(sectorList, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+          });
+        }
+      }
+      scheduleSync();
+    };
+
+    bindRoots();
+    const main = document.querySelector<HTMLElement>("main.fixed");
+    const hostObserver = main ? new MutationObserver((records) => {
+      if (
+        !trafficRoot?.isConnected ||
+        !sectorList?.isConnected ||
+        mutationAddsRoot(records)
+      ) bindRoots();
+    }) : null;
+    hostObserver?.observe(main!, { childList: true, subtree: true });
+
+    scheduleSync();
 
     return () => {
-      window.clearInterval(interval);
-      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      hostObserver?.disconnect();
+      trafficObserver?.disconnect();
+      sectorObserver?.disconnect();
     };
   }, [sync]);
 
