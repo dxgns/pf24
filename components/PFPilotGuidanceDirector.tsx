@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import PFPilotAutopilotProcedures from "@/components/PFPilotAutopilotProcedures";
 import PFPilotGuidanceDirectorV2 from "@/components/PFPilotGuidanceDirectorV2";
 import {
+  setPFPilotDirectTargetInNotes,
+  type PFPilotDirectTarget,
+} from "@/lib/pfpilot/directTo";
+import {
   getPFPilotProcedureSelection,
   setPFPilotProcedureSelectionInNotes,
 } from "@/lib/pfpilot/procedureSelection";
@@ -28,11 +32,11 @@ function routeFromWaypoint(route: unknown, waypoint: string) {
 }
 
 export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | null }) {
-  const [directTarget, setDirectTarget] = useState("");
+  const [directTarget, setDirectTarget] = useState<PFPilotDirectTarget | null>(null);
   const [skipSid, setSkipSid] = useState(false);
 
   useEffect(() => {
-    setDirectTarget("");
+    setDirectTarget(null);
     setSkipSid(false);
   }, [plan?.id]);
 
@@ -41,15 +45,21 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
     if (!skipSid && !directTarget) return plan;
 
     const selection = getPFPilotProcedureSelection(plan.notes);
-    const notes = skipSid
+    let notes = skipSid
       ? setPFPilotProcedureSelectionInNotes(plan.notes, { ...selection, sid: "" })
-      : plan.notes;
-    const route = directTarget ? routeFromWaypoint(plan.route, directTarget) : plan.route;
+      : String(plan.notes ?? "");
+    notes = setPFPilotDirectTargetInNotes(notes, directTarget);
+
+    const route = directTarget?.kind === "ENROUTE"
+      ? routeFromWaypoint(plan.route, directTarget.waypoint)
+      : plan.route;
 
     return { ...plan, notes, route };
-  }, [plan, directTarget, skipSid]);
+  }, [plan, directTarget?.kind, directTarget?.waypoint, skipSid]);
 
   if (!plan) return <PFPilotGuidanceDirectorV2 plan={null} />;
+
+  const directKey = directTarget ? `${directTarget.kind}:${directTarget.waypoint}` : "none";
 
   return (
     <>
@@ -67,7 +77,7 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
       <div className="pf24-autopilot-composite mt-6 grid gap-5 xl:grid-cols-[1.25fr_.75fr]">
         <div className="pf24-guidance-host">
           <PFPilotGuidanceDirectorV2
-            key={`guidance:${plan.id}:${skipSid ? "enroute" : "normal"}:${directTarget || "none"}`}
+            key={`guidance:${plan.id}:${skipSid ? "sid-skipped" : "normal"}:${directKey}`}
             plan={guidancePlan}
           />
         </div>
@@ -75,11 +85,11 @@ export default function PFPilotGuidanceDirector({ plan }: { plan: PilotPlan | nu
           plan={plan}
           pilotId={plan.created_by}
           directTarget={directTarget}
-          onDirectTo={(waypoint) => {
-            setSkipSid(true);
-            setDirectTarget(waypoint);
+          onDirectTo={(target) => {
+            setSkipSid(target.kind !== "SID");
+            setDirectTarget(target);
           }}
-          onCancelDirect={() => setDirectTarget("")}
+          onCancelDirect={() => setDirectTarget(null)}
         />
       </div>
     </>
