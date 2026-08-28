@@ -9,6 +9,10 @@ import {
   type ProcedureMatches,
 } from "@/lib/pfpilot/approaches";
 import {
+  applyPFPilotDirectTarget,
+  getPFPilotDirectTarget,
+} from "@/lib/pfpilot/directTo";
+import {
   getProcedureFix,
   type AltitudeRestriction,
   type FlightProcedure,
@@ -372,9 +376,13 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
   const targetHistoryRef = useRef({ key: "", min: Number.POSITIVE_INFINITY, last: Number.POSITIVE_INFINITY });
   const enrouteHistoryRef = useRef({ key: "", min: Number.POSITIVE_INFINITY, last: Number.POSITIVE_INFINITY });
 
+  const directTarget = useMemo(
+    () => getPFPilotDirectTarget(plan?.notes),
+    [plan?.notes],
+  );
   const matches = useMemo(
-    () => selectProcedureMatches(plan),
-    [plan?.departure_icao, plan?.arrival_icao, plan?.route, plan?.notes],
+    () => applyPFPilotDirectTarget(selectProcedureMatches(plan), directTarget),
+    [plan?.departure_icao, plan?.arrival_icao, plan?.route, plan?.notes, directTarget?.kind, directTarget?.waypoint],
   );
   const procedure = useMemo(
     () => procedureForKind(matches, activeKind),
@@ -417,7 +425,17 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
   useEffect(() => {
     setTelemetry(null);
     setLastSeen(0);
-    setActiveKind(matches.sid ? "SID" : null);
+    setActiveKind(
+      directTarget?.kind === "SID"
+        ? "SID"
+        : directTarget?.kind === "STAR"
+          ? "STAR"
+          : directTarget?.kind === "ENROUTE"
+            ? null
+            : matches.sid
+              ? "SID"
+              : null,
+    );
     setTargetIndex(0);
     setProcedureComplete(false);
     setDepartureConditionMet(false);
@@ -427,7 +445,7 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
     routeInitializedRef.current = false;
     targetHistoryRef.current = { key: "", min: Number.POSITIVE_INFINITY, last: Number.POSITIVE_INFINITY };
     enrouteHistoryRef.current = { key: "", min: Number.POSITIVE_INFINITY, last: Number.POSITIVE_INFINITY };
-  }, [plan?.id]);
+  }, [plan?.id, directTarget?.kind, directTarget?.waypoint]);
 
   useEffect(() => {
     const selected = selectApproachModeForPlan(plan, matches.approach);
