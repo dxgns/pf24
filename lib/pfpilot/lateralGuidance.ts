@@ -15,6 +15,7 @@ type LateralGuidanceInput = {
   publishedInboundCourse?: number | null;
   publishedOutboundCourse?: number | null;
   maxInterceptDegrees?: number;
+  turnLeadExtraNm?: number;
 };
 
 type TurnGeometryInput = Pick<
@@ -148,30 +149,44 @@ export function computeLateralGuidance(input: LateralGuidanceInput) {
   if (!geometry || !input.next) return baseHeading;
 
   const distanceToFixNm = mapDistanceNm(input.position, input.target);
-  if (distanceToFixNm > geometry.leadNm) return baseHeading;
+  // The mathematical tangent lead assumes the aircraft reacts immediately to a
+  // heading change. PFPilot is advisory, so add a small GS-derived roll-in/reaction
+  // allowance. A caller can add extra lead for especially capture-critical turns
+  // such as a base-to-localizer intercept.
+  const reactionLeadNm = clamp(Math.max(0, input.groundSpeedKnots) * 7 / 3600, 0.12, 0.55);
+  const commandLeadNm = Math.min(
+    5.5,
+    geometry.leadNm + reactionLeadNm + clamp(input.turnLeadExtraNm ?? 0, 0, 1.5),
+  );
+  if (distanceToFixNm > commandLeadNm) return baseHeading;
 
   // If the aircraft is materially displaced from the inbound path, regain the
   // route first. Turn anticipation must not reward a shortcut from well off leg.
   if (input.inboundStart) {
     const leg = distanceToMapLegNm(input.position, input.inboundStart, input.target);
-    const regainThresholdNm = Math.max(1.5, geometry.leadNm * 0.9);
+    const regainThresholdNm = Math.max(1.5, commandLeadNm * 0.9);
     if (leg.distanceNm > regainThresholdNm) return baseHeading;
   }
 
-  const turnProgress = smoothstep((geometry.leadNm - distanceToFixNm) / Math.max(0.1, geometry.leadNm));
-  const aheadNm = Math.min(
-    geometry.outboundLengthNm * 0.45,
-    Math.max(0.35, geometry.radiusNm * (0.8 + geometry.turnAngle / 140)),
+  // Previous guidance aimed at a point just beyond the fix. That produced almost
+  // no heading change at the beginning of the anticipation zone and, on sharp
+  // approach turns, effectively delayed the real turn until the fix was crossed.
+  // Rotate the commanded heading itself through the published turn instead. This
+  // gives the aircraft time to establish bank and lets it roll toward the outbound
+  // course before reaching the waypoint/localizer crossing.
+  const turnProgress = smoothstep(
+    (commandLeadNm - distanceToFixNm) / Math.max(0.1, commandLeadNm),
   );
-  const fraction = geometry.outboundLengthNm > 0.01
-    ? clamp((aheadNm / geometry.outboundLengthNm) * turnProgress, 0, 0.45)
-    : 0;
-  const aimPoint = {
-    x: input.target.x + (input.next.x - input.target.x) * fraction,
-    y: input.target.y + (input.next.y - input.target.y) * fraction,
-  };
-
-  return bearingToMapPoint(input.position, aimPoint);
+  const inboundCorrection = clamp(
+    signedAngleDelta(geometry.inboundCourse, baseHeading),
+    -(input.maxInterceptDegrees ?? 30),
+    input.maxInterceptDegrees ?? 30,
+  );
+  return normalize360(
+    geometry.inboundCourse +
+    inboundCorrection * (1 - turnProgress) +
+    geometry.signedTurn * turnProgress,
+  );
 }
 
 export function dynamicWaypointPassToleranceNm(
