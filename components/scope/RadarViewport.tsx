@@ -143,7 +143,7 @@ export default function RadarViewport() {
     let lastX = 0;
     let lastY = 0;
     let renderFrame = 0;
-    let wheelCommitTimer: ReturnType<typeof setTimeout> | null = null;
+    let wheelCommitTimer: number | null = null;
     let lastPublished: Viewport | null = null;
 
     const publishNow = () => {
@@ -179,6 +179,11 @@ export default function RadarViewport() {
         renderFrame = 0;
       }
       publishNow();
+    };
+
+    const forcePublish = () => {
+      lastPublished = null;
+      flushPublish();
     };
 
     const persist = () => {
@@ -224,7 +229,9 @@ export default function RadarViewport() {
     };
 
     flushPublish();
-    const initialRetry = window.setTimeout(schedulePublish, 300);
+    // Some portal overlays attach their listener just after the viewport effect.
+    // Replay the initial state once so they do not remain at 1x until first input.
+    const initialRetry = window.setTimeout(forcePublish, 300);
 
     const onWheel = (event: WheelEvent) => {
       if (isScopeWindowOrFormControl(event.target)) return;
@@ -247,7 +254,7 @@ export default function RadarViewport() {
       };
       schedulePublish();
 
-      if (wheelCommitTimer) window.clearTimeout(wheelCommitTimer);
+      if (wheelCommitTimer !== null) window.clearTimeout(wheelCommitTimer);
       wheelCommitTimer = window.setTimeout(commitWheel, WHEEL_COMMIT_DELAY_MS);
     };
 
@@ -313,7 +320,7 @@ export default function RadarViewport() {
 
     return () => {
       window.clearTimeout(initialRetry);
-      if (wheelCommitTimer) window.clearTimeout(wheelCommitTimer);
+      if (wheelCommitTimer !== null) window.clearTimeout(wheelCommitTimer);
       if (renderFrame) window.cancelAnimationFrame(renderFrame);
       resizeObserver?.disconnect();
       radar.removeEventListener("wheel", onWheel);
