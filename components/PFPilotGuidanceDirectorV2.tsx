@@ -59,6 +59,11 @@ type AltitudePlan = {
   requiredNm: number;
 };
 
+type ProcedureContinuation = {
+  point: { x: number; y: number };
+  course: number | null;
+};
+
 const TARGET_TELEMETRY_FRESH_MS = 20000;
 const TARGET_TELEMETRY_HOLD_MS = 60000;
 
@@ -180,6 +185,31 @@ function publishedLegCourse(
   return procedure.legs.find((leg) => leg.from === fromId && leg.to === toId)?.course ?? null;
 }
 
+function continuationIntoProcedure(
+  currentPoint: { x: number; y: number },
+  nextProcedure: FlightProcedure | null,
+): ProcedureContinuation | null {
+  if (!nextProcedure) return null;
+  const entryIndex = nextProcedure.fixes.findIndex((fix) => fix.id === nextProcedure.entryFix);
+  const entry = entryIndex >= 0 ? nextProcedure.fixes[entryIndex] : null;
+  if (!entry?.mapPoint) return null;
+
+  // If the previous phase terminates exactly where the next procedure begins,
+  // the duplicate bridge fix is not an enroute leg. Look through it to the first
+  // real leg of the next procedure so fly-by geometry can be computed before the
+  // common fix is crossed (for example ETBO2T -> ETBOD -> ETBO4B).
+  if (mapDistanceNm(entry.mapPoint, currentPoint) <= 0.15) {
+    const afterEntry = nextProcedure.fixes[entryIndex + 1] ?? null;
+    if (!afterEntry?.mapPoint) return null;
+    return {
+      point: afterEntry.mapPoint,
+      course: publishedLegCourse(nextProcedure, entry.id, afterEntry.id),
+    };
+  }
+
+  return { point: entry.mapPoint, course: null };
+}
+
 function findSidAltitudeTarget(
   procedure: FlightProcedure,
   targetIndex: number,
@@ -240,8 +270,6 @@ function findArrivalAltitudeTarget(
     const distanceNm = distanceToProcedureFix(procedure, targetIndex, index, position);
     const requiredNm = Math.max(0, altitude - target) / 300;
 
-    // Do not command an early descent hundreds of miles before a restriction.
-    // The 3:1 rule plus a 2 NM stabilization buffer is deliberately conservative.
     if (target < altitude - 150 && distanceNm !== null && distanceNm > requiredNm + 2) {
       return {
         targetFeet: filedAltitude && Math.abs(altitude - filedAltitude) < 1500
@@ -504,27 +532,28 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
   const nextProcedureFix = procedure && targetIndex < procedure.fixes.length - 1 ? procedure.fixes[targetIndex + 1] ?? null : null;
   const currentFixDistance = position && currentFix?.mapPoint ? mapDistanceNm(position, currentFix.mapPoint) : null;
 
-  const procedureContinuationPoint = useMemo(() => {
+  const procedureContinuation = useMemo<ProcedureContinuation | null>(() => {
     if (!procedure || !currentFix?.mapPoint || targetIndex < procedure.fixes.length - 1) return null;
 
     if (procedure.kind === "SID") {
-      return enroutePoints.find((point) => mapDistanceNm(point, currentFix.mapPoint!) > 0.15) ?? null;
+      const distinctEnroute = enroutePoints.find((point) => mapDistanceNm(point, currentFix.mapPoint!) > 0.15) ?? null;
+      if (distinctEnroute) return { point: distinctEnroute, course: null };
+
+      // A route may contain only the common boundary waypoint, e.g.
+      // ETBO2T ETBOD ETBO4B. In that case there is no real enroute segment to
+      // guide toward, so use the first STAR leg as the SID's continuation for
+      // turn anticipation instead of waiting until ETBOD has already been passed.
+      return continuationIntoProcedure(currentFix.mapPoint, matches.star);
     }
 
-    if (procedure.kind === "STAR" && matches.approach) {
-      const entryIndex = matches.approach.fixes.findIndex((fix) => fix.id === matches.approach!.entryFix);
-      const entry = entryIndex >= 0 ? matches.approach.fixes[entryIndex] : null;
-      if (!entry?.mapPoint) return null;
-      if (mapDistanceNm(entry.mapPoint, currentFix.mapPoint) <= 0.15) {
-        return matches.approach.fixes[entryIndex + 1]?.mapPoint ?? null;
-      }
-      return entry.mapPoint;
+    if (procedure.kind === "STAR") {
+      return continuationIntoProcedure(currentFix.mapPoint, matches.approach);
     }
 
     return null;
-  }, [procedure, currentFix?.id, currentFix?.mapPoint, targetIndex, enroutePoints, matches.approach]);
+  }, [procedure, currentFix?.id, currentFix?.mapPoint, targetIndex, enroutePoints, matches.star, matches.approach]);
 
-  const procedureNextPoint = nextProcedureFix?.mapPoint ?? procedureContinuationPoint;
+  const procedureNextPoint = nextProcedureFix?.mapPoint ?? procedureContinuation?.point ?? null;
   const procedureInboundCourse = publishedLegCourse(
     procedure,
     previousProcedureFix?.id,
@@ -541,7 +570,7 @@ export default function PFPilotGuidanceDirectorV2({ plan }: { plan: PilotPlan | 
     procedure,
     currentFix?.id,
     nextProcedureFix?.id,
-  );
+  ) ?? procedureContinuation?.course ?? null;
 
   const procedurePassTolerance = useMemo(() => {
     if (!procedure || !activeTelemetry || !position || !currentFix?.mapPoint) {
