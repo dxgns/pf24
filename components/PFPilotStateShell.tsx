@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import PFPilotMinimumsAudio from "@/components/PFPilotMinimumsAudio";
 import PFPilotPrototype from "@/components/PFPilotPrototype";
@@ -11,6 +11,7 @@ type ActivePlan = {
   id: string;
   callsign: string;
   status: string;
+  created_by?: string | null;
   notes?: string | null;
   [key: string]: unknown;
 };
@@ -30,8 +31,10 @@ export default function PFPilotStateShell({
 }) {
   const initialActivePlan = (initialPlans.find((plan) => plan.status !== "FINISHED") ?? null) as ActivePlan | null;
   const [activePlan, setActivePlan] = useState<ActivePlan | null>(initialActivePlan);
+  const refreshSerialRef = useRef(0);
 
   const refreshActivePlan = useCallback(async () => {
+    const serial = ++refreshSerialRef.current;
     const { data, error } = await supabase
       .from("flight_plans")
       .select("*")
@@ -40,6 +43,7 @@ export default function PFPilotStateShell({
       .order("created_at", { ascending: false })
       .limit(1);
 
+    if (serial !== refreshSerialRef.current) return;
     if (error) {
       console.error("PFPilot active-plan shell refresh failed:", error);
       return;
@@ -49,16 +53,46 @@ export default function PFPilotStateShell({
   }, [pilotId]);
 
   useEffect(() => {
+    void refreshActivePlan();
+
     const channel = supabase
       .channel(`pfpilot-active-plan-shell-${pilotId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "flight_plans" },
-        () => void refreshActivePlan(),
+        (payload) => {
+          const next = payload.new as ActivePlan | undefined;
+          const previous = payload.old as ActivePlan | undefined;
+          const belongsToPilot = next?.created_by === pilotId || previous?.created_by === pilotId;
+
+          if (belongsToPilot && next?.created_by === pilotId) {
+            refreshSerialRef.current += 1;
+            setActivePlan(next.status === "FINISHED" ? null : next);
+          }
+
+          // Re-read after every relevant mutation so inserts, deletes and partial
+          // realtime payloads converge on the database truth immediately.
+          if (belongsToPilot || payload.eventType === "DELETE") void refreshActivePlan();
+        },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") void refreshActivePlan();
+      });
+
+    // Realtime is the fast path. A short fallback poll prevents a dropped
+    // websocket event from leaving PFPilot frozen on an old flight state.
+    const fallback = window.setInterval(() => void refreshActivePlan(), 1500);
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void refreshActivePlan();
+    };
+
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
+      window.clearInterval(fallback);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
       void supabase.removeChannel(channel);
     };
   }, [pilotId, refreshActivePlan]);
