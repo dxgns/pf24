@@ -14,6 +14,8 @@ type PilotPlan = {
   [key: string]: unknown;
 };
 
+const MINIMUMS_AUDIO_SRC = "/audio/minimums-g1000.m4a";
+
 function parseAltitude(value: string | null | undefined) {
   const numeric = Number(String(value ?? "").replace(/[^0-9.-]/g, ""));
   return Number.isFinite(numeric) ? numeric : null;
@@ -54,7 +56,7 @@ function isMissedApproachActive(root: HTMLElement) {
   );
 }
 
-function speakMinimums() {
+function speakMinimumsFallback() {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
 
   const utterance = new SpeechSynthesisUtterance("Minimums");
@@ -72,6 +74,21 @@ function speakMinimums() {
   window.speechSynthesis.speak(utterance);
 }
 
+function playMinimums(audio: HTMLAudioElement | null) {
+  if (!audio) {
+    speakMinimumsFallback();
+    return;
+  }
+
+  audio.pause();
+  audio.currentTime = 0;
+  audio.volume = 1;
+  const playback = audio.play();
+  if (playback) {
+    playback.catch(() => speakMinimumsFallback());
+  }
+}
+
 export default function PFPilotMinimumsAudio({ plan }: { plan: PilotPlan | null }) {
   const matches = useMemo(
     () => selectProcedureMatches(plan),
@@ -82,6 +99,7 @@ export default function PFPilotMinimumsAudio({ plan }: { plan: PilotPlan | null 
     [plan?.id, plan?.route, matches.approach?.id],
   );
   const [mode, setMode] = useState<ApproachMode>(initialMode);
+  const minimumsAudioRef = useRef<HTMLAudioElement | null>(null);
   const previousAltitudeRef = useRef<number | null>(null);
   const armedRef = useRef(false);
   const calledRef = useRef(false);
@@ -91,6 +109,19 @@ export default function PFPilotMinimumsAudio({ plan }: { plan: PilotPlan | null 
     armedRef.current = false;
     calledRef.current = false;
   };
+
+  useEffect(() => {
+    const audio = new Audio(MINIMUMS_AUDIO_SRC);
+    audio.preload = "auto";
+    audio.volume = 1;
+    minimumsAudioRef.current = audio;
+    audio.load();
+
+    return () => {
+      audio.pause();
+      minimumsAudioRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     setMode(initialMode);
@@ -160,7 +191,7 @@ export default function PFPilotMinimumsAudio({ plan }: { plan: PilotPlan | null 
 
       if (armedRef.current && !calledRef.current && descending && crossedMinimum) {
         calledRef.current = true;
-        speakMinimums();
+        playMinimums(minimumsAudioRef.current);
       }
 
       previousAltitudeRef.current = altitude;
