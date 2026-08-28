@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { APPROACHES, type ApproachMode } from "@/lib/pfpilot/approaches";
+import {
+  APPROACHES,
+  selectProcedureMatches,
+  type ApproachMode,
+} from "@/lib/pfpilot/approaches";
+import type { PFPilotDirectTarget } from "@/lib/pfpilot/directTo";
 import {
   getPFPilotProcedureSelection,
   setPFPilotProcedureSelectionInNotes,
@@ -27,6 +32,10 @@ type ApproachChoice = {
   label: string;
 };
 
+type DirectChoice = PFPilotDirectTarget & {
+  label: string;
+};
+
 const NAV_WAYPOINT_NAMES = new Set(WAYPOINTS.map((point) => point.name.toUpperCase()));
 
 function airport(value: unknown) {
@@ -39,6 +48,10 @@ function routeTokens(value: unknown) {
     .split(/\s+/)
     .map((token) => token.replace(/[^A-Z0-9]/g, ""))
     .filter(Boolean);
+}
+
+function directKey(target: PFPilotDirectTarget) {
+  return `${target.kind}:${target.waypoint}`;
 }
 
 function procedureLabel(code: string, runway: string) {
@@ -54,19 +67,23 @@ function approachModeLabel(mode: ApproachMode) {
 export default function PFPilotAutopilotProcedures({
   plan,
   pilotId,
-  directTarget = "",
+  directTarget = null,
   onDirectTo,
   onCancelDirect,
 }: {
   plan: PilotPlan | null;
   pilotId: string | null | undefined;
-  directTarget?: string;
-  onDirectTo?: (waypoint: string) => void;
+  directTarget?: PFPilotDirectTarget | null;
+  onDirectTo?: (target: PFPilotDirectTarget) => void;
   onCancelDirect?: () => void;
 }) {
   const initialSelection = useMemo(
     () => getPFPilotProcedureSelection(plan?.notes),
     [plan?.id, plan?.notes],
+  );
+  const procedureMatches = useMemo(
+    () => selectProcedureMatches(plan),
+    [plan?.departure_icao, plan?.arrival_icao, plan?.route, plan?.notes],
   );
   const [draft, setDraft] = useState<PFPilotProcedureSelection>(initialSelection);
   const [saving, setSaving] = useState(false);
@@ -74,6 +91,24 @@ export default function PFPilotAutopilotProcedures({
   const routeWaypoints = useMemo(
     () => Array.from(new Set(routeTokens(plan?.route).filter((token) => NAV_WAYPOINT_NAMES.has(token)))),
     [plan?.route],
+  );
+
+  const sidDirectChoices = useMemo<DirectChoice[]>(() => (
+    procedureMatches.sid?.fixes
+      .filter((fix) => Boolean(fix.mapPoint))
+      .map((fix) => ({ kind: "SID", waypoint: fix.id, label: fix.label })) ?? []
+  ), [procedureMatches.sid]);
+  const routeDirectChoices = useMemo<DirectChoice[]>(() => (
+    routeWaypoints.map((waypoint) => ({ kind: "ENROUTE", waypoint, label: waypoint }))
+  ), [routeWaypoints]);
+  const starDirectChoices = useMemo<DirectChoice[]>(() => (
+    procedureMatches.star?.fixes
+      .filter((fix) => Boolean(fix.mapPoint))
+      .map((fix) => ({ kind: "STAR", waypoint: fix.id, label: fix.label })) ?? []
+  ), [procedureMatches.star]);
+  const directChoices = useMemo(
+    () => [...sidDirectChoices, ...routeDirectChoices, ...starDirectChoices],
+    [sidDirectChoices, routeDirectChoices, starDirectChoices],
   );
   const [directDraft, setDirectDraft] = useState("");
 
@@ -83,12 +118,13 @@ export default function PFPilotAutopilotProcedures({
   }, [initialSelection.sid, initialSelection.star, initialSelection.approach, plan?.id]);
 
   useEffect(() => {
+    const activeKey = directTarget ? directKey(directTarget) : "";
     setDirectDraft((current) => {
-      if (directTarget && routeWaypoints.includes(directTarget)) return directTarget;
-      if (current && routeWaypoints.includes(current)) return current;
-      return routeWaypoints[0] ?? "";
+      if (activeKey && directChoices.some((choice) => directKey(choice) === activeKey)) return activeKey;
+      if (current && directChoices.some((choice) => directKey(choice) === current)) return current;
+      return directChoices[0] ? directKey(directChoices[0]) : "";
     });
-  }, [plan?.id, plan?.route, directTarget, routeWaypoints]);
+  }, [plan?.id, plan?.route, directTarget?.kind, directTarget?.waypoint, directChoices]);
 
   const departure = airport(plan?.departure_icao);
   const arrival = airport(plan?.arrival_icao);
@@ -160,6 +196,12 @@ export default function PFPilotAutopilotProcedures({
     void saveSelection(empty);
   }
 
+  function activateDirect() {
+    const target = directChoices.find((choice) => directKey(choice) === directDraft);
+    if (!target) return;
+    onDirectTo?.({ kind: target.kind, waypoint: target.waypoint });
+  }
+
   if (!plan) return null;
 
   return (
@@ -179,24 +221,42 @@ export default function PFPilotAutopilotProcedures({
         <div className="flex items-center justify-between gap-3">
           <p className="mono text-[10px] font-bold text-slate-300">DIRECT TO</p>
           <span className={`mono text-[9px] ${directTarget ? "text-amber-300" : "text-slate-600"}`}>
-            {directTarget ? `ACTIVE · ${directTarget}` : "ROUTE WAYPOINT"}
+            {directTarget ? `ACTIVE · ${directTarget.kind} · ${directTarget.waypoint}` : "SID · ROUTE · STAR"}
           </span>
         </div>
         <div className="mt-2 flex gap-2">
           <select
             value={directDraft}
             onChange={(event) => setDirectDraft(event.target.value)}
-            disabled={routeWaypoints.length === 0}
+            disabled={directChoices.length === 0}
             className="mono min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-[10px] font-bold text-slate-200 outline-none focus:border-sky-400/60 disabled:opacity-35"
           >
-            {routeWaypoints.length === 0 && <option value="">NO WAYPOINTS</option>}
-            {routeWaypoints.map((waypoint) => (
-              <option key={waypoint} value={waypoint}>{waypoint}</option>
-            ))}
+            {directChoices.length === 0 && <option value="">NO WAYPOINTS</option>}
+            {sidDirectChoices.length > 0 && (
+              <optgroup label={`SID · ${procedureMatches.sid?.code ?? ""}`}>
+                {sidDirectChoices.map((choice) => (
+                  <option key={directKey(choice)} value={directKey(choice)}>{choice.label}</option>
+                ))}
+              </optgroup>
+            )}
+            {routeDirectChoices.length > 0 && (
+              <optgroup label="ROUTE">
+                {routeDirectChoices.map((choice) => (
+                  <option key={directKey(choice)} value={directKey(choice)}>{choice.label}</option>
+                ))}
+              </optgroup>
+            )}
+            {starDirectChoices.length > 0 && (
+              <optgroup label={`STAR · ${procedureMatches.star?.code ?? ""}`}>
+                {starDirectChoices.map((choice) => (
+                  <option key={directKey(choice)} value={directKey(choice)}>{choice.label}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <button
             type="button"
-            onClick={() => directDraft && onDirectTo?.(directDraft)}
+            onClick={activateDirect}
             disabled={!directDraft || !onDirectTo}
             className="rounded-lg border border-sky-400/50 bg-sky-400/10 px-3 py-2 mono text-[10px] font-extrabold text-sky-200 disabled:opacity-35"
           >
@@ -209,7 +269,7 @@ export default function PFPilotAutopilotProcedures({
             onClick={() => onCancelDirect?.()}
             className="mt-2 mono text-[9px] font-bold text-slate-500 hover:text-slate-300"
           >
-            CANCEL DIRECT · RESUME ENROUTE
+            CANCEL DIRECT · RESUME NAVIGATION
           </button>
         )}
       </div>
