@@ -24,8 +24,10 @@ export default function ScopeTrafficFooterPlacement() {
   useEffect(() => {
     let savedHtml = "";
     let savedClass = "";
+    let frame = 0;
 
     const sync = () => {
+      frame = 0;
       const footer = document.querySelector<HTMLElement>("main.fixed footer");
       const detailedTag = document.querySelector<HTMLElement>("[data-pf24-traffic-detail='true']");
       const realInfo = footer?.querySelector<HTMLElement>(`${INFO_SELECTOR}:not([${CLONE_ATTR}='true'])`) ?? null;
@@ -59,22 +61,29 @@ export default function ScopeTrafficFooterPlacement() {
       }
     };
 
-    sync();
-    const first = window.setTimeout(sync, 60);
-    const second = window.setTimeout(sync, 250);
-    const timer = window.setInterval(sync, 180);
-    const onResize = () => sync();
-    const onClick = () => window.setTimeout(sync, 0);
+    const schedule = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(sync);
+    };
 
-    window.addEventListener("resize", onResize);
-    document.addEventListener("click", onClick, true);
+    sync();
+    const first = window.setTimeout(schedule, 60);
+    const second = window.setTimeout(schedule, 250);
+
+    const main = document.querySelector<HTMLElement>("main.fixed");
+    const observer = main ? new MutationObserver(schedule) : null;
+    observer?.observe(main!, { childList: true, subtree: true });
+
+    window.addEventListener("resize", schedule);
+    document.addEventListener("click", schedule, true);
 
     return () => {
       window.clearTimeout(first);
       window.clearTimeout(second);
-      window.clearInterval(timer);
-      window.removeEventListener("resize", onResize);
-      document.removeEventListener("click", onClick, true);
+      if (frame) window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("resize", schedule);
+      document.removeEventListener("click", schedule, true);
       document.querySelectorAll<HTMLElement>(`[${CLONE_ATTR}='true']`).forEach((node) => node.remove());
     };
   }, []);
