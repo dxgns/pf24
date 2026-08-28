@@ -328,26 +328,68 @@ function predictiveSpeedTarget({
   departureSpeed?: number;
 }) {
   const currentGs = Math.max(0, telemetry.groundSpeed);
-  let target = Math.max(0, Math.round(currentGs / 10) * 10);
+  const roundedCurrent = Math.max(0, Math.round(currentGs / 10) * 10);
 
-  if (!procedure) return target;
-
-  const sticky = latestPublishedSpeed(procedure, targetIndex);
-  if (sticky !== null) target = Math.min(target || sticky, sticky);
-  if (departureSpeed) target = Math.min(target || departureSpeed, departureSpeed);
-
-  if (procedure.globalSpeed && telemetry.altitude < procedure.globalSpeed.belowFeet) {
-    target = Math.min(target || procedure.globalSpeed.maxKnots, procedure.globalSpeed.maxKnots);
+  // SPD is a command/target, not a mirror of the current groundspeed. Starting
+  // from current GS made a taxiing aircraft at 38 kt receive a nonsensical 40 kt
+  // command even when the SID required MAX 180. Build the target from operational
+  // limits first, then use GS only to decide how early a future deceleration must
+  // start.
+  if (!procedure) {
+    return telemetry.altitude < 10000
+      ? 250
+      : Math.max(250, roundedCurrent);
   }
 
-  for (let index = targetIndex; index < procedure.fixes.length; index += 1) {
+  let target: number | null = null;
+  const constrain = (limit: number | null | undefined) => {
+    if (!limit || !Number.isFinite(limit) || limit <= 0) return;
+    target = target === null ? limit : Math.min(target, limit);
+  };
+
+  const activeFixLimit = procedure.fixes[targetIndex]?.speed?.knots;
+  constrain(activeFixLimit);
+  constrain(departureSpeed);
+
+  // Approach speed restrictions are normally intended to remain conservative
+  // after the restricted fix unless a later published value replaces them. SID
+  // and STAR fix restrictions, however, are not kept "sticky" forever: once the
+  // fix is passed the director may accelerate again while still looking ahead to
+  // the next restriction.
+  if (procedure.kind === "APPROACH" && !activeFixLimit) {
+    constrain(latestPublishedSpeed(procedure, targetIndex));
+  }
+
+  if (procedure.globalSpeed && telemetry.altitude < procedure.globalSpeed.belowFeet) {
+    constrain(procedure.globalSpeed.maxKnots);
+  }
+
+  if (target === null) {
+    if (procedure.kind === "APPROACH") {
+      // With no published approach speed available, hold a realistic flight
+      // target rather than propagating taxi/roll speed into the command box.
+      target = currentGs >= 120 ? roundedCurrent : 160;
+    } else if (telemetry.altitude < 10000) {
+      target = procedure.globalSpeed?.maxKnots ?? 250;
+    } else {
+      target = Math.max(250, roundedCurrent);
+    }
+  }
+
+  for (let index = targetIndex + 1; index < procedure.fixes.length; index += 1) {
     const limit = procedure.fixes[index].speed?.knots;
     if (!limit) continue;
     const distanceNm = distanceToProcedureFix(procedure, targetIndex, index, position);
     if (distanceNm === null) continue;
-    const excess = Math.max(0, currentGs - limit);
+
+    // Look ahead using whichever is faster: the actual aircraft or the speed we
+    // are currently commanding. This prevents an aircraft that is still slow from
+    // being told to accelerate to 250 when a 180/200/220 kt restriction is already
+    // too close to make that acceleration useful.
+    const referenceSpeed = Math.max(currentGs, target);
+    const excess = Math.max(0, referenceSpeed - limit);
     const decelerationDistance = 1.5 + excess * 0.1;
-    if (distanceNm <= decelerationDistance) target = Math.min(target || limit, limit);
+    if (distanceNm <= decelerationDistance) constrain(limit);
   }
 
   if (
@@ -356,15 +398,16 @@ function predictiveSpeedTarget({
   ) {
     const shortfall = altitudePlan.requiredNm - altitudePlan.distanceNm;
     if (shortfall > 0.5) {
+      const referenceSpeed = Math.max(currentGs, target ?? currentGs);
       const energyTarget = Math.max(
         150,
-        Math.floor((currentGs - 20 - Math.min(40, shortfall * 10)) / 10) * 10,
+        Math.floor((referenceSpeed - 20 - Math.min(40, shortfall * 10)) / 10) * 10,
       );
-      target = Math.min(target || energyTarget, energyTarget);
+      constrain(energyTarget);
     }
   }
 
-  return Math.max(0, target);
+  return Math.max(0, target ?? roundedCurrent);
 }
 
 function turnHeading(
