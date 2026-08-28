@@ -114,6 +114,31 @@ function turnGeometry(input: TurnGeometryInput) {
   };
 }
 
+function courseInterceptHeading({
+  position,
+  start,
+  end,
+  course,
+  groundSpeedKnots,
+  maxInterceptDegrees,
+}: {
+  position: LateralPoint;
+  start: LateralPoint;
+  end: LateralPoint;
+  course: number;
+  groundSpeedKnots: number;
+  maxInterceptDegrees: number;
+}) {
+  const crossTrackNm = signedCrossTrackNm(position, start, end);
+  const lookAheadNm = clamp(Math.max(1.2, groundSpeedKnots / 95), 1.2, 4.5);
+  const correction = clamp(
+    Math.atan2(crossTrackNm, lookAheadNm) * 180 / Math.PI,
+    -maxInterceptDegrees,
+    maxInterceptDegrees,
+  );
+  return normalize360(course + correction);
+}
+
 function interceptHeading(input: LateralGuidanceInput) {
   const direct = bearingToMapPoint(input.position, input.target);
   if (!input.inboundStart) return direct;
@@ -124,17 +149,30 @@ function interceptHeading(input: LateralGuidanceInput) {
   const course = typeof input.publishedInboundCourse === "number"
     ? normalize360(input.publishedInboundCourse)
     : bearingToMapPoint(input.inboundStart, input.target);
-  const crossTrackNm = signedCrossTrackNm(input.position, input.inboundStart, input.target);
-  const lookAheadNm = clamp(Math.max(1.2, input.groundSpeedKnots / 95), 1.2, 4.5);
-  const correction = clamp(
-    Math.atan2(crossTrackNm, lookAheadNm) * 180 / Math.PI,
-    -(input.maxInterceptDegrees ?? 30),
-    input.maxInterceptDegrees ?? 30,
-  );
 
-  // Positive cross-track means the aircraft is left of course; adding heading
-  // turns right toward the published leg. Negative does the reciprocal.
-  return normalize360(course + correction);
+  return courseInterceptHeading({
+    position: input.position,
+    start: input.inboundStart,
+    end: input.target,
+    course,
+    groundSpeedKnots: input.groundSpeedKnots,
+    maxInterceptDegrees: input.maxInterceptDegrees ?? 30,
+  });
+}
+
+function outboundRecoveryHeading(input: LateralGuidanceInput) {
+  if (!input.next) return null;
+  const course = nominalOutboundCourse(input);
+  if (course === null) return null;
+
+  return courseInterceptHeading({
+    position: input.position,
+    start: input.target,
+    end: input.next,
+    course,
+    groundSpeedKnots: input.groundSpeedKnots,
+    maxInterceptDegrees: input.maxInterceptDegrees ?? 30,
+  });
 }
 
 function remainingInboundNm(input: LateralGuidanceInput) {
@@ -148,6 +186,18 @@ function remainingInboundNm(input: LateralGuidanceInput) {
 }
 
 export function computeLateralGuidance(input: LateralGuidanceInput) {
+  // Once the aircraft has crossed the abeam plane of the active waypoint, never
+  // command a turn back toward that old waypoint. Recover the outbound published
+  // leg instead. This also covers the short render/state window before the
+  // waypoint sequencer advances to the next fix.
+  if (input.inboundStart && input.next) {
+    const inboundLeg = distanceToMapLegNm(input.position, input.inboundStart, input.target);
+    if (inboundLeg.progress > 1.0) {
+      const recovery = outboundRecoveryHeading(input);
+      if (recovery !== null) return recovery;
+    }
+  }
+
   const baseHeading = interceptHeading(input);
   const geometry = turnGeometry(input);
   if (!geometry || !input.next) return baseHeading;
@@ -194,13 +244,30 @@ export function dynamicWaypointPassToleranceNm(
   input: TurnGeometryInput,
 ) {
   const geometry = turnGeometry(input);
-  if (!geometry) return baseToleranceNm;
+  let tolerance = geometry
+    ? Math.max(
+        baseToleranceNm,
+        Math.min(baseToleranceNm * 2.5, geometry.leadNm * 0.9),
+      )
+    : baseToleranceNm;
 
-  // A real fly-by does not cross the waypoint coordinate. The acceptance radius
-  // therefore grows with the speed-derived turn lead, while guidance itself
-  // continues to target/intercept the exact published route.
-  return Math.max(
-    baseToleranceNm,
-    Math.min(baseToleranceNm * 2.5, geometry.leadNm * 0.9),
-  );
+  // If the aircraft has already crossed the waypoint abeam plane, allow the
+  // sequencer to accept the closest fly-by even when turn dynamics carried it a
+  // little outside the normal radius. Without this recovery, the target could
+  // remain stuck on the old fix and eventually command a turn backwards.
+  if (input.inboundStart) {
+    const inboundLeg = distanceToMapLegNm(input.position, input.inboundStart, input.target);
+    if (inboundLeg.progress > 1.0) {
+      const crossTrackNm = Math.abs(signedCrossTrackNm(input.position, input.inboundStart, input.target));
+      const recoveryCapNm = clamp(baseToleranceNm * 6, 1.5, 6);
+      if (crossTrackNm <= recoveryCapNm) {
+        tolerance = Math.max(
+          tolerance,
+          Math.min(recoveryCapNm, crossTrackNm + 0.25),
+        );
+      }
+    }
+  }
+
+  return tolerance;
 }
