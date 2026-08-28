@@ -151,12 +151,20 @@ export function computeLateralGuidance(input: LateralGuidanceInput) {
   const distanceToFixNm = mapDistanceNm(input.position, input.target);
   // The mathematical tangent lead assumes the aircraft reacts immediately to a
   // heading change. PFPilot is advisory, so add a small GS-derived roll-in/reaction
-  // allowance. A caller can add extra lead for especially capture-critical turns
-  // such as a base-to-localizer intercept.
+  // allowance. Sharp approach captures use an additional stabilization margin:
+  // the final/localizer turn has to be underway before the fix, not merely start
+  // at the theoretical tangent point.
   const reactionLeadNm = clamp(Math.max(0, input.groundSpeedKnots) * 7 / 3600, 0.12, 0.55);
+  const approachCaptureExtraNm =
+    (input.maxInterceptDegrees ?? 30) <= 20 && geometry.turnAngle >= 45
+      ? clamp(0.35 + Math.max(0, input.groundSpeedKnots) / 600, 0.45, 0.75)
+      : 0;
   const commandLeadNm = Math.min(
     5.5,
-    geometry.leadNm + reactionLeadNm + clamp(input.turnLeadExtraNm ?? 0, 0, 1.5),
+    geometry.leadNm +
+      reactionLeadNm +
+      approachCaptureExtraNm +
+      clamp(input.turnLeadExtraNm ?? 0, 0, 1.5),
   );
   if (distanceToFixNm > commandLeadNm) return baseHeading;
 
