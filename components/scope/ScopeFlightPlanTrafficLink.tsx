@@ -17,7 +17,8 @@ type Match = {
   sourceKey: string;
 };
 
-const LIVE_LABEL_SELECTOR = "[data-pf24-live-traffic='true'] [data-pf24-traffic-label='true']";
+const LIVE_ROOT_SELECTOR = "[data-pf24-live-traffic='true']";
+const LIVE_LABEL_SELECTOR = "[data-pf24-traffic-label='true']";
 
 function norm(value: string | null | undefined) {
   return normalizeGameCallsign(String(value ?? ""));
@@ -116,6 +117,15 @@ function paintImmediatePlanData(label: HTMLElement, plan: ScopeFlightPlan) {
   setTextIfChanged(spans.at(-1), arrival);
 }
 
+function mutationAddsLiveRoot(records: MutationRecord[]) {
+  return records.some((record) => Array.from(record.addedNodes).some((node) =>
+    node instanceof Element && (
+      node.matches(LIVE_ROOT_SELECTOR) ||
+      Boolean(node.querySelector(LIVE_ROOT_SELECTOR))
+    ),
+  ));
+}
+
 export default function ScopeFlightPlanTrafficLink({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const linkingRef = useRef(new Set<string>());
@@ -174,7 +184,10 @@ export default function ScopeFlightPlanTrafficLink({ initialPlans }: Props) {
   }, []);
 
   const sync = useCallback(() => {
-    const labels = Array.from(document.querySelectorAll<HTMLElement>(LIVE_LABEL_SELECTOR));
+    const root = document.querySelector<HTMLElement>(LIVE_ROOT_SELECTOR);
+    if (!root) return;
+
+    const labels = Array.from(root.querySelectorAll<HTMLElement>(LIVE_LABEL_SELECTOR));
     for (const label of labels) {
       const button = callsignButton(label);
       if (!button) continue;
@@ -197,7 +210,7 @@ export default function ScopeFlightPlanTrafficLink({ initialPlans }: Props) {
 
   useEffect(() => {
     const channel = supabase
-      .channel("scope-flight-plan-traffic-link-v1")
+      .channel("scope-flight-plan-traffic-link-v2")
       .on("postgres_changes", { event: "*", schema: "public", table: "flight_plans" }, () => void loadPlans())
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
@@ -205,6 +218,8 @@ export default function ScopeFlightPlanTrafficLink({ initialPlans }: Props) {
 
   useEffect(() => {
     let frame: number | null = null;
+    let root: HTMLElement | null = null;
+    let rootObserver: MutationObserver | null = null;
 
     const queueSync = () => {
       if (frame !== null) return;
@@ -214,17 +229,35 @@ export default function ScopeFlightPlanTrafficLink({ initialPlans }: Props) {
       });
     };
 
-    sync();
-    // Slow fallback poll. Normal updates are driven by the DOM observer and
-    // flight-plan realtime channel. Keeping this coarse prevents unnecessary
-    // work while live traffic is moving.
-    const timer = window.setInterval(queueSync, 1000);
-    const observer = new MutationObserver(queueSync);
-    observer.observe(document.body, { childList: true, subtree: true });
+    const bindRoot = () => {
+      const next = document.querySelector<HTMLElement>(LIVE_ROOT_SELECTOR);
+      if (next === root) return;
+
+      rootObserver?.disconnect();
+      rootObserver = null;
+      root = next;
+      if (!next) return;
+
+      rootObserver = new MutationObserver(queueSync);
+      rootObserver.observe(next, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+      queueSync();
+    };
+
+    bindRoot();
+    const main = document.querySelector<HTMLElement>("main.fixed");
+    const hostObserver = main ? new MutationObserver((records) => {
+      if (!root?.isConnected || mutationAddsLiveRoot(records)) bindRoot();
+    }) : null;
+    hostObserver?.observe(main!, { childList: true, subtree: true });
+    queueSync();
 
     return () => {
-      window.clearInterval(timer);
-      observer.disconnect();
+      rootObserver?.disconnect();
+      hostObserver?.disconnect();
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
   }, [sync]);
