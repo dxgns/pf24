@@ -15,6 +15,8 @@ const STORAGE_KEY = "pf24_scope_radar_viewport_v1";
 const MIN_ZOOM = 0.55;
 const MAX_ZOOM = 512;
 const VIEWPORT_EVENT = "pf24-radar-viewport";
+const WHEEL_ZOOM_SENSITIVITY = 0.0019;
+const WHEEL_COMMIT_DELAY_MS = 120;
 
 // Airport detail SVGs are intentionally preloaded independently from their zoom
 // visibility. Several airport renderers mount/unmount external <image> elements
@@ -108,6 +110,12 @@ function isPanBlocked(target: EventTarget | null) {
   return Boolean(isScopeWindowOrFormControl(target) || target.closest("[data-pf24-traffic-detail='true']"));
 }
 
+function wheelDeltaPixels(event: WheelEvent, pageHeight: number) {
+  if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) return event.deltaY * 16;
+  if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) return event.deltaY * Math.max(1, pageHeight);
+  return event.deltaY;
+}
+
 export default function RadarViewport() {
   useEffect(() => {
     const airportPreloads = AIRPORT_SVG_ASSETS.map((src) => {
@@ -134,21 +142,63 @@ export default function RadarViewport() {
     let suppressTrafficClick = false;
     let lastX = 0;
     let lastY = 0;
+    let renderFrame = 0;
+    let wheelCommitTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastPublished: Viewport | null = null;
 
-    const publish = () => {
-      window.dispatchEvent(new CustomEvent<Viewport>(VIEWPORT_EVENT, { detail: { ...viewport } }));
+    const publishNow = () => {
+      renderFrame = 0;
+      if (
+        lastPublished &&
+        lastPublished.zoom === viewport.zoom &&
+        lastPublished.panX === viewport.panX &&
+        lastPublished.panY === viewport.panY
+      ) return;
+
+      const detail = { ...viewport };
+      lastPublished = detail;
       radar.dataset.pf24RadarZoom = viewport.zoom.toFixed(3);
       radar.style.setProperty("--pf24-radar-zoom", String(viewport.zoom));
       radar.style.setProperty("--pf24-radar-pan-x", `${viewport.panX}px`);
       radar.style.setProperty("--pf24-radar-pan-y", `${viewport.panY}px`);
+      window.dispatchEvent(new CustomEvent<Viewport>(VIEWPORT_EVENT, { detail }));
     };
 
-    const persist = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(viewport));
+    // Pointer and trackpad events can arrive much faster than the display can
+    // paint. Collapsing them to one viewport publication per animation frame
+    // prevents every map/traffic overlay from re-rendering multiple times before
+    // the browser has had a chance to draw the previous frame.
+    const schedulePublish = () => {
+      if (renderFrame) return;
+      renderFrame = window.requestAnimationFrame(publishNow);
+    };
+
+    const flushPublish = () => {
+      if (renderFrame) {
+        window.cancelAnimationFrame(renderFrame);
+        renderFrame = 0;
+      }
+      publishNow();
+    };
+
+    const persist = () => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(viewport));
+      } catch {
+        // The live viewport remains usable when storage is blocked or full.
+      }
+    };
+
+    const commitWheel = () => {
+      wheelCommitTimer = null;
+      flushPublish();
+      persist();
+    };
 
     const reframeForSize = () => {
       const nextSize = scopeElementLocalSize(radar);
       if (sameSize(radarSize, nextSize)) {
-        publish();
+        schedulePublish();
         return;
       }
 
@@ -170,20 +220,24 @@ export default function RadarViewport() {
       }
 
       radarSize = nextSize;
-      publish();
+      schedulePublish();
     };
 
-    publish();
-    const initialRetry = window.setTimeout(publish, 300);
+    flushPublish();
+    const initialRetry = window.setTimeout(schedulePublish, 300);
 
     const onWheel = (event: WheelEvent) => {
       if (isScopeWindowOrFormControl(event.target)) return;
       event.preventDefault();
+
       const cursor = scopeClientPointToLocal(radar, event.clientX, event.clientY);
       const oldZoom = viewport.zoom;
-      const factor = event.deltaY < 0 ? 1.208 : 1 / 1.208;
+      const rawDelta = wheelDeltaPixels(event, radarSize.y);
+      const boundedDelta = clamp(rawDelta, -240, 240);
+      const factor = Math.exp(-boundedDelta * WHEEL_ZOOM_SENSITIVITY);
       const nextZoom = clamp(oldZoom * factor, MIN_ZOOM, MAX_ZOOM);
-      if (nextZoom === oldZoom) return;
+      if (Math.abs(nextZoom - oldZoom) < 1e-9) return;
+
       const worldX = (cursor.x - viewport.panX) / oldZoom;
       const worldY = (cursor.y - viewport.panY) / oldZoom;
       viewport = {
@@ -191,8 +245,10 @@ export default function RadarViewport() {
         panX: cursor.x - worldX * nextZoom,
         panY: cursor.y - worldY * nextZoom,
       };
-      publish();
-      persist();
+      schedulePublish();
+
+      if (wheelCommitTimer) window.clearTimeout(wheelCommitTimer);
+      wheelCommitTimer = window.setTimeout(commitWheel, WHEEL_COMMIT_DELAY_MS);
     };
 
     const onMouseDown = (event: MouseEvent) => {
@@ -217,7 +273,7 @@ export default function RadarViewport() {
         panX: viewport.panX + delta.x,
         panY: viewport.panY + delta.y,
       };
-      publish();
+      schedulePublish();
     };
 
     const stopPan = () => {
@@ -225,6 +281,7 @@ export default function RadarViewport() {
       panning = false;
       suppressTrafficClick = movedDuringPan;
       movedDuringPan = false;
+      flushPublish();
       persist();
     };
 
@@ -256,6 +313,8 @@ export default function RadarViewport() {
 
     return () => {
       window.clearTimeout(initialRetry);
+      if (wheelCommitTimer) window.clearTimeout(wheelCommitTimer);
+      if (renderFrame) window.cancelAnimationFrame(renderFrame);
       resizeObserver?.disconnect();
       radar.removeEventListener("wheel", onWheel);
       radar.removeEventListener("mousedown", onMouseDown);
