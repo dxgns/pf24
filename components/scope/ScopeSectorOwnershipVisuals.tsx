@@ -92,16 +92,6 @@ function rowCallsign(wrapper: HTMLElement) {
   return row.firstElementChild?.textContent?.trim().toUpperCase() ?? "";
 }
 
-function mutationTouchesSectorList(mutations: MutationRecord[]) {
-  return mutations.some((mutation) => {
-    const target = mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
-    if (target?.closest(LIST_SELECTOR)) return true;
-    return Array.from(mutation.addedNodes).some((node) =>
-      node instanceof Element && (node.matches(LIST_SELECTOR) || Boolean(node.querySelector(LIST_SELECTOR))),
-    );
-  });
-}
-
 export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
@@ -223,17 +213,43 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
     `;
     document.head.appendChild(style);
 
-    sync();
-    const timer = window.setInterval(sync, 100);
-    const observer = new MutationObserver((mutations) => {
-      if (mutationTouchesSectorList(mutations)) sync();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+    let frame = 0;
+    let list: HTMLElement | null = null;
+    let listObserver: MutationObserver | null = null;
+
+    const schedule = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        sync();
+      });
+    };
+
+    const bindList = () => {
+      const next = document.querySelector<HTMLElement>(LIST_SELECTOR);
+      if (next === list) return;
+
+      listObserver?.disconnect();
+      listObserver = null;
+      list = next;
+      if (!next) return;
+
+      listObserver = new MutationObserver(schedule);
+      listObserver.observe(next, { childList: true, subtree: true, characterData: true });
+      schedule();
+    };
+
+    bindList();
+    const main = document.querySelector<HTMLElement>("main.fixed");
+    const hostObserver = main ? new MutationObserver(bindList) : null;
+    hostObserver?.observe(main!, { childList: true, subtree: true });
+    schedule();
 
     return () => {
       style.remove();
-      window.clearInterval(timer);
-      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      hostObserver?.disconnect();
+      listObserver?.disconnect();
     };
   }, [sync]);
 
