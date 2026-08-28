@@ -171,7 +171,10 @@ export default function RadarViewport() {
     let compositedMapSvgs: SVGSVGElement[] = [];
 
     const refreshCompositedLayers = () => {
-      const next = Array.from(radar.querySelectorAll<SVGSVGElement>("svg[preserveAspectRatio='xMidYMid meet']"))
+      // Query all SVGs and let getAttribute perform the SVG-aware check. Some
+      // browsers normalize camel-cased SVG attribute names in CSS selectors
+      // differently, which could otherwise silently disable the compositor path.
+      const next = Array.from(radar.querySelectorAll<SVGSVGElement>("svg"))
         .filter(isCompositedMapSvg);
 
       for (const svg of compositedMapSvgs) {
