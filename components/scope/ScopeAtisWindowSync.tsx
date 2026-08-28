@@ -108,9 +108,9 @@ export default function ScopeAtisWindowSync() {
       .on("postgres_changes", { event: "*", schema: "public", table: "atis_messages" }, () => void refresh())
       .subscribe();
 
-    // Realtime remains the primary source, but a short fallback also covers
-    // browsers where the publication succeeds before the postgres event arrives.
-    const fallback = window.setInterval(() => void refresh(), 1500);
+    // Realtime is the primary source. Keep a slower fallback for browsers where
+    // a publication event is missed without continuously querying during radar use.
+    const fallback = window.setInterval(() => void refresh(), 5000);
 
     const refreshBurst = () => {
       [100, 450, 1000, 2200].forEach((delay) => {
@@ -140,10 +140,12 @@ export default function ScopeAtisWindowSync() {
 
   useEffect(() => {
     let frame: number | null = null;
+    let weatherWindow: HTMLElement | null = null;
+    let windowObserver: MutationObserver | null = null;
 
     const sync = () => {
       frame = null;
-      const windowElement = document.querySelector<HTMLElement>(WEATHER_WINDOW_SELECTOR);
+      const windowElement = weatherWindow;
       if (!windowElement) return;
 
       const header = windowElement.firstElementChild as HTMLElement | null;
@@ -185,14 +187,29 @@ export default function ScopeAtisWindowSync() {
       frame = window.requestAnimationFrame(sync);
     };
 
+    const bindWindow = () => {
+      const next = document.querySelector<HTMLElement>(WEATHER_WINDOW_SELECTOR);
+      if (next === weatherWindow) return;
+
+      windowObserver?.disconnect();
+      windowObserver = null;
+      weatherWindow = next;
+      if (!next) return;
+
+      windowObserver = new MutationObserver(queueSync);
+      windowObserver.observe(next, { childList: true, subtree: true, characterData: true });
+      queueSync();
+    };
+
+    bindWindow();
+    const main = document.querySelector<HTMLElement>("main.fixed");
+    const hostObserver = main ? new MutationObserver(bindWindow) : null;
+    hostObserver?.observe(main!, { childList: true, subtree: true });
     queueSync();
-    const observer = new MutationObserver(queueSync);
-    observer.observe(document.body, { childList: true, subtree: true });
-    const timer = window.setInterval(queueSync, 500);
 
     return () => {
-      observer.disconnect();
-      window.clearInterval(timer);
+      windowObserver?.disconnect();
+      hostObserver?.disconnect();
       if (frame !== null) window.cancelAnimationFrame(frame);
       document.querySelectorAll<HTMLElement>("[data-pf24-atis-sync-row]").forEach((row) => row.remove());
     };
