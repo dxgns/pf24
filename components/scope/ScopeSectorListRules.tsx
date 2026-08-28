@@ -128,6 +128,17 @@ function rowCallsign(row: HTMLElement) {
   return grid.firstElementChild?.textContent?.trim().toUpperCase() ?? "";
 }
 
+function mutationTouchesSectorList(mutations: MutationRecord[]) {
+  return mutations.some((mutation) => {
+    const target = mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
+    if (target?.closest(LIST_SELECTOR)) return true;
+
+    return [...mutation.addedNodes, ...mutation.removedNodes].some((node) =>
+      node instanceof Element && (node.matches(LIST_SELECTOR) || Boolean(node.querySelector(LIST_SELECTOR))),
+    );
+  });
+}
+
 export default function ScopeSectorListRules({ initialPlans }: Props) {
   const [plans, setPlans] = useState(initialPlans);
   const [position, setPosition] = useState("");
@@ -167,16 +178,19 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
       const key = norm(rowCallsign(row));
       const plan = key ? plansByCallsign.get(key) : undefined;
       const visible = Boolean(plan && visibleToPosition(plan, position));
-      row.style.display = visible ? "" : "none";
+      if (row.style.display !== (visible ? "" : "none")) row.style.display = visible ? "" : "none";
       if (!plan || !visible) continue;
 
       const owner = effectiveOwner(plan, now);
       const mine = Boolean(position && owner === position);
-      row.dataset.pf24Editable = mine ? "true" : "false";
+      const editable = mine ? "true" : "false";
+      if (row.dataset.pf24Editable !== editable) row.dataset.pf24Editable = editable;
       row.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
-        button.disabled = !mine;
-        button.setAttribute("aria-disabled", mine ? "false" : "true");
-        button.style.cursor = mine ? "pointer" : "default";
+        if (button.disabled === mine) button.disabled = !mine;
+        const ariaDisabled = mine ? "false" : "true";
+        if (button.getAttribute("aria-disabled") !== ariaDisabled) button.setAttribute("aria-disabled", ariaDisabled);
+        const cursor = mine ? "pointer" : "default";
+        if (button.style.cursor !== cursor) button.style.cursor = cursor;
       });
     }
   }, [effectiveOwner, plansByCallsign, position]);
@@ -216,15 +230,19 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
   }, [loadPlans]);
 
   useEffect(() => {
-    const cleanup = window.setInterval(() => {
+    const expiries = Object.values(optimisticOwners).map((value) => value.expiresAt);
+    if (expiries.length === 0) return;
+
+    const delay = Math.max(0, Math.min(...expiries) - Date.now() + 20);
+    const cleanup = window.setTimeout(() => {
       setOptimisticOwners((current) => {
         const now = Date.now();
         const next = Object.fromEntries(Object.entries(current).filter(([, value]) => value.expiresAt > now));
         return Object.keys(next).length === Object.keys(current).length ? current : next;
       });
-    }, 500);
-    return () => window.clearInterval(cleanup);
-  }, []);
+    }, delay);
+    return () => window.clearTimeout(cleanup);
+  }, [optimisticOwners]);
 
   useEffect(() => {
     const channel = supabase
@@ -235,8 +253,21 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
   }, [loadPlans]);
 
   useEffect(() => {
+    let frame = 0;
+    const queueApplyRules = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        applyRules();
+      });
+    };
+
     applyRules();
-    const timer = window.setInterval(applyRules, 100);
+    const observer = new MutationObserver((mutations) => {
+      if (mutationTouchesSectorList(mutations)) queueApplyRules();
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
     const onClickCapture = (event: MouseEvent) => {
       const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>(`${LIST_SELECTOR} button`) : null;
       const row = button?.closest<HTMLElement>(`${LIST_SELECTOR} > div.relative`);
@@ -247,7 +278,8 @@ export default function ScopeSectorListRules({ initialPlans }: Props) {
     };
     window.addEventListener("click", onClickCapture, true);
     return () => {
-      window.clearInterval(timer);
+      if (frame) window.cancelAnimationFrame(frame);
+      observer.disconnect();
       window.removeEventListener("click", onClickCapture, true);
     };
   }, [applyRules]);
