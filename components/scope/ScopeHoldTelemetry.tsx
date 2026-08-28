@@ -9,6 +9,7 @@ type ControlMap = Record<string, ControlState>;
 const CONTROLS_KEY = "pf24_scope_traffic_controls_v1";
 const HOLD_SELECTOR = "[data-pf24-live-hold-list='true']";
 const TRAFFIC_SELECTOR = "[data-pf24-traffic-label='true']";
+const LIVE_TRAFFIC_SELECTOR = "[data-pf24-live-traffic='true']";
 
 function norm(value: string) {
   return normalizeGameCallsign(value);
@@ -41,9 +42,27 @@ function currentFlightLevel(label: HTMLElement) {
   return match?.[0] ?? "---";
 }
 
+function mutationTouchesHoldTelemetry(mutations: MutationRecord[]) {
+  return mutations.some((mutation) => {
+    const target = mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
+    if (target?.closest(HOLD_SELECTOR) || target?.closest(LIVE_TRAFFIC_SELECTOR)) return true;
+
+    return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => {
+      if (!(node instanceof Element)) return false;
+      return node.matches(HOLD_SELECTOR) ||
+        node.matches(LIVE_TRAFFIC_SELECTOR) ||
+        Boolean(node.querySelector(HOLD_SELECTOR)) ||
+        Boolean(node.querySelector(LIVE_TRAFFIC_SELECTOR));
+    });
+  });
+}
+
 export default function ScopeHoldTelemetry() {
   useEffect(() => {
+    let frame = 0;
+
     const sync = () => {
+      frame = 0;
       const hold = document.querySelector<HTMLElement>(HOLD_SELECTOR);
       if (!hold) return;
 
@@ -68,17 +87,41 @@ export default function ScopeHoldTelemetry() {
         const callsign = cells[1]?.textContent?.trim().toUpperCase() ?? "";
         const values = telemetry.get(norm(callsign));
         if (!values) return;
-        if (cells[2]) cells[2].textContent = values.fl;
-        if (cells[3]) cells[3].textContent = values.afl;
+        if (cells[2] && cells[2].textContent !== values.fl) cells[2].textContent = values.fl;
+        if (cells[3] && cells[3].textContent !== values.afl) cells[3].textContent = values.afl;
       });
     };
 
+    const queueSync = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(sync);
+    };
+
     sync();
-    const timer = window.setInterval(sync, 250);
-    window.addEventListener("pf24-hold-sync", sync);
+    const observer = new MutationObserver((mutations) => {
+      if (mutationTouchesHoldTelemetry(mutations)) queueSync();
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    const onHoldSync = () => queueSync();
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === CONTROLS_KEY) queueSync();
+    };
+    const onTrafficInteraction = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest(LIVE_TRAFFIC_SELECTOR)) return;
+      window.setTimeout(queueSync, 0);
+    };
+
+    window.addEventListener("pf24-hold-sync", onHoldSync);
+    window.addEventListener("storage", onStorage);
+    document.addEventListener("click", onTrafficInteraction, true);
     return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("pf24-hold-sync", sync);
+      if (frame) window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("pf24-hold-sync", onHoldSync);
+      window.removeEventListener("storage", onStorage);
+      document.removeEventListener("click", onTrafficInteraction, true);
     };
   }, []);
 
