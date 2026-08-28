@@ -137,7 +137,8 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
 
       const optimistic = optimisticOwnerForPlan(plan, now);
       const owner = optimistic.matched ? optimistic.owner : normalizeOwner(plan.assumed_by);
-      wrapper.dataset.pf24SectorOwnership = position && owner === position ? "mine" : owner ? "other" : "free";
+      const ownership = position && owner === position ? "mine" : owner ? "other" : "free";
+      if (wrapper.dataset.pf24SectorOwnership !== ownership) wrapper.dataset.pf24SectorOwnership = ownership;
     }
   }, [optimisticOwnerForPlan, planByKey, position]);
 
@@ -176,15 +177,19 @@ export default function ScopeSectorOwnershipVisuals({ initialPlans }: Props) {
   }, [loadPlans]);
 
   useEffect(() => {
-    const cleanup = window.setInterval(() => {
+    const expiries = Object.values(optimisticOwners).map((value) => value.expiresAt);
+    if (expiries.length === 0) return;
+
+    const delay = Math.max(0, Math.min(...expiries) - Date.now() + 20);
+    const cleanup = window.setTimeout(() => {
       setOptimisticOwners((current) => {
         const now = Date.now();
         const next = Object.fromEntries(Object.entries(current).filter(([, value]) => value.expiresAt > now));
         return Object.keys(next).length === Object.keys(current).length ? current : next;
       });
-    }, 500);
-    return () => window.clearInterval(cleanup);
-  }, []);
+    }, delay);
+    return () => window.clearTimeout(cleanup);
+  }, [optimisticOwners]);
 
   useEffect(() => {
     const channel = supabase
