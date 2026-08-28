@@ -35,11 +35,6 @@ function signedAngleDelta(from: number, to: number) {
   return ((to - from + 540) % 360) - 180;
 }
 
-function smoothstep(value: number) {
-  const t = clamp(value, 0, 1);
-  return t * t * (3 - 2 * t);
-}
-
 function bankAngleForSpeed(speedKnots: number) {
   const speed = Math.max(0, speedKnots);
   if (speed < 140) return 18;
@@ -95,9 +90,8 @@ function turnGeometry(input: TurnGeometryInput) {
   if (turnAngle < 5) return null;
 
   const radiusNm = turnRadiusNm(input.groundSpeedKnots);
-  // Very large course reversals would otherwise create an unrealistic lead
-  // distance. They still receive anticipation, but the geometry is capped to a
-  // transport-aircraft-sized fly-by rather than cutting miles off the route.
+  // Large reversals are capped so the fly-by lead never cuts several miles off
+  // the route. Procedure-specific reversals/holds should keep their own logic.
   const geometryAngle = Math.min(turnAngle, 140);
   let leadNm = radiusNm * Math.tan((geometryAngle / 2) * Math.PI / 180);
 
@@ -143,58 +137,56 @@ function interceptHeading(input: LateralGuidanceInput) {
   return normalize360(course + correction);
 }
 
+function remainingInboundNm(input: LateralGuidanceInput) {
+  if (!input.inboundStart) return mapDistanceNm(input.position, input.target);
+
+  const leg = distanceToMapLegNm(input.position, input.inboundStart, input.target);
+  if (leg.progress < -0.2 || leg.progress > 1.2) return mapDistanceNm(input.position, input.target);
+
+  const inboundLengthNm = mapDistanceNm(input.inboundStart, input.target);
+  return Math.max(0, inboundLengthNm * (1 - leg.progress));
+}
+
 export function computeLateralGuidance(input: LateralGuidanceInput) {
   const baseHeading = interceptHeading(input);
   const geometry = turnGeometry(input);
   if (!geometry || !input.next) return baseHeading;
 
-  const distanceToFixNm = mapDistanceNm(input.position, input.target);
-  // The mathematical tangent lead assumes the aircraft reacts immediately to a
-  // heading change. PFPilot is advisory, so add a small GS-derived roll-in/reaction
-  // allowance. Sharp approach captures use an additional stabilization margin:
-  // the final/localizer turn has to be underway before the fix, not merely start
-  // at the theoretical tangent point.
-  const reactionLeadNm = clamp(Math.max(0, input.groundSpeedKnots) * 7 / 3600, 0.12, 0.55);
-  const approachCaptureExtraNm =
-    (input.maxInterceptDegrees ?? 30) <= 20 && geometry.turnAngle >= 45
-      ? clamp(0.35 + Math.max(0, input.groundSpeedKnots) / 600, 0.45, 0.75)
-      : 0;
-  const commandLeadNm = Math.min(
-    5.5,
-    geometry.leadNm +
-      reactionLeadNm +
-      approachCaptureExtraNm +
-      clamp(input.turnLeadExtraNm ?? 0, 0, 1.5),
-  );
-  if (distanceToFixNm > commandLeadNm) return baseHeading;
+  // Use along-track distance to the leg intersection whenever possible. Radial
+  // distance to the fix delays a turn when the aircraft is a little off the
+  // inbound centerline, which is exactly what caused late localizer captures.
+  const remainingNm = remainingInboundNm(input);
 
-  // If the aircraft is materially displaced from the inbound path, regain the
-  // route first. Turn anticipation must not reward a shortcut from well off leg.
+  // Tangent lead is the physical turn requirement. Add only a short roll-in /
+  // command-response allowance; unlike the previous progressive-heading model,
+  // the director now commands the outbound heading immediately once this point
+  // is reached, so a large artificial extra lead is neither needed nor desirable.
+  const rollInSeconds = clamp(2.5 + geometry.turnAngle / 90, 2.5, 4.0);
+  const rollInLeadNm = clamp(
+    Math.max(0, input.groundSpeedKnots) * rollInSeconds / 3600,
+    0.08,
+    0.3,
+  );
+  const commandLeadNm = Math.min(
+    5.25,
+    geometry.leadNm + rollInLeadNm + clamp(input.turnLeadExtraNm ?? 0, 0, 1.0),
+  );
+  if (remainingNm > commandLeadNm) return baseHeading;
+
+  // If materially displaced from the inbound leg, recover it first instead of
+  // using turn anticipation as a shortcut from well outside the procedure.
   if (input.inboundStart) {
     const leg = distanceToMapLegNm(input.position, input.inboundStart, input.target);
-    const regainThresholdNm = Math.max(1.5, commandLeadNm * 0.9);
+    const regainThresholdNm = Math.max(1.25, commandLeadNm * 0.8);
     if (leg.distanceNm > regainThresholdNm) return baseHeading;
   }
 
-  // Previous guidance aimed at a point just beyond the fix. That produced almost
-  // no heading change at the beginning of the anticipation zone and, on sharp
-  // approach turns, effectively delayed the real turn until the fix was crossed.
-  // Rotate the commanded heading itself through the published turn instead. This
-  // gives the aircraft time to establish bank and lets it roll toward the outbound
-  // course before reaching the waypoint/localizer crossing.
-  const turnProgress = smoothstep(
-    (commandLeadNm - distanceToFixNm) / Math.max(0.1, commandLeadNm),
-  );
-  const inboundCorrection = clamp(
-    signedAngleDelta(geometry.inboundCourse, baseHeading),
-    -(input.maxInterceptDegrees ?? 30),
-    input.maxInterceptDegrees ?? 30,
-  );
-  return normalize360(
-    geometry.inboundCourse +
-    inboundCorrection * (1 - turnProgress) +
-    geometry.signedTurn * turnProgress,
-  );
+  // Once the speed-derived anticipation point is reached, give the pilot/AP the
+  // actual heading required for the next leg immediately. The aircraft's own
+  // turn dynamics create the curved fly-by path. After sequencing, normal
+  // cross-track logic applies only the small corrections needed to capture and
+  // hold the outbound course/localizer.
+  return geometry.outboundCourse;
 }
 
 export function dynamicWaypointPassToleranceNm(
