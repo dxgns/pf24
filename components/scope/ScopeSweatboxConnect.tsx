@@ -12,6 +12,21 @@ import {
   type ScopeServerMode,
 } from "@/lib/scope/sweatbox";
 
+const NORMAL_ATIS_CONFIG_KEY = "pf24_scope_atis_configs_v1";
+
+function deactivateNormalAtisConfigs() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(NORMAL_ATIS_CONFIG_KEY) ?? "{}") as Record<string, Record<string, unknown>>;
+    const next = Object.fromEntries(
+      Object.entries(parsed).map(([icao, config]) => [icao, { ...config, active: false }]),
+    );
+    localStorage.setItem(NORMAL_ATIS_CONFIG_KEY, JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent("pf24-atis-config-sync"));
+  } catch {
+    // SweatBox remains isolated even if the normal ATIS cache is unavailable.
+  }
+}
+
 export default function ScopeSweatboxConnect({ controllerName, canInstruct }: { controllerName: string; canInstruct: boolean }) {
   const [mode, setMode] = useState<ScopeServerMode>(() => readScopeServerMode());
   const [room, setRoom] = useState(() => readSweatboxRoom());
@@ -79,6 +94,7 @@ export default function ScopeSweatboxConnect({ controllerName, canInstruct }: { 
         localStorage.setItem(SCOPE_SERVER_MODE_KEY, effectiveMode);
         if (cleanRoom) localStorage.setItem(SWEATBOX_ROOM_KEY, cleanRoom);
         else localStorage.removeItem(SWEATBOX_ROOM_KEY);
+        if (effectiveMode !== "AUTOMATIC") deactivateNormalAtisConfigs();
         setMode(effectiveMode);
         setRoom(cleanRoom);
         setError("");
