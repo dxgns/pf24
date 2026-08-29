@@ -282,7 +282,7 @@ export default function ScopeSweatboxInstructorUiFixes({ canInstruct }: { canIns
         return;
       }
       const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("[data-pf24-callsign-menu='true']")) return;
+      if (target?.closest("button,input,select,textarea,[data-pf24-callsign-menu='true']")) return;
       const id = label.dataset.pf24SweatboxId ?? "";
       if (!id) return;
       const marker = markerFor(id);
