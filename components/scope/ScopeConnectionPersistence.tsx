@@ -54,20 +54,47 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
   select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+function rowByLabel(dialog: HTMLElement, label: string) {
+  const target = label.trim().toUpperCase();
+  return Array.from(dialog.querySelectorAll<HTMLElement>("div.grid")).find((row) => {
+    const first = row.firstElementChild?.textContent?.trim().toUpperCase() ?? "";
+    return first === target;
+  }) ?? null;
+}
+
+function inputByLabel(dialog: HTMLElement, label: string) {
+  return rowByLabel(dialog, label)?.querySelector<HTMLInputElement>("input") ?? null;
+}
+
+function selectByLabel(dialog: HTMLElement, label: string) {
+  return rowByLabel(dialog, label)?.querySelector<HTMLSelectElement>("select") ?? null;
+}
+
+function connectionFields(dialog: HTMLElement) {
+  return {
+    callsign: inputByLabel(dialog, "Callsign"),
+    facility: selectByLabel(dialog, "Facility"),
+    rating: inputByLabel(dialog, "Rating"),
+    password: inputByLabel(dialog, "Password"),
+    discordName: inputByLabel(dialog, "DISCORD name"),
+    robloxName: inputByLabel(dialog, "ROBLOX name"),
+    info4: inputByLabel(dialog, "INFO line 4"),
+  };
+}
+
 function readDialogConnection(): StoredConnection | null {
   const dialog = connectDialog();
   if (!dialog) return null;
-  const inputs = Array.from(dialog.querySelectorAll<HTMLInputElement>("input"));
-  const facility = dialog.querySelector<HTMLSelectElement>("select");
-  if (!inputs[0] || !facility) return null;
+  const fields = connectionFields(dialog);
+  if (!fields.callsign || !fields.facility) return null;
   return {
-    callsign: inputs[0].value.trim().toUpperCase(),
-    facility: facility.value,
-    rating: inputs[1]?.value ?? "",
-    password: inputs[2]?.value ?? "",
-    discordName: inputs[3]?.value ?? "",
-    robloxName: inputs[4]?.value ?? "",
-    info4: inputs[5]?.value ?? "",
+    callsign: fields.callsign.value.trim().toUpperCase(),
+    facility: fields.facility.value,
+    rating: fields.rating?.value ?? "",
+    password: fields.password?.value ?? "",
+    discordName: fields.discordName?.value ?? "",
+    robloxName: fields.robloxName?.value ?? "",
+    info4: fields.info4?.value ?? "",
   };
 }
 
@@ -109,17 +136,16 @@ export default function ScopeConnectionPersistence() {
       window.setTimeout(() => {
         const dialog = connectDialog();
         if (!dialog) { restoringRef.current = false; return; }
-        const inputs = Array.from(dialog.querySelectorAll<HTMLInputElement>("input"));
-        const facility = dialog.querySelector<HTMLSelectElement>("select");
-        if (!inputs[0] || !facility) { restoringRef.current = false; return; }
+        const fields = connectionFields(dialog);
+        if (!fields.callsign || !fields.facility) { restoringRef.current = false; return; }
 
-        setInputValue(inputs[0], stored.callsign);
-        setSelectValue(facility, stored.facility);
-        if (inputs[1]) setInputValue(inputs[1], stored.rating);
-        if (inputs[2]) setInputValue(inputs[2], stored.password);
-        if (inputs[3]) setInputValue(inputs[3], stored.discordName);
-        if (inputs[4]) setInputValue(inputs[4], stored.robloxName);
-        if (inputs[5]) setInputValue(inputs[5], stored.info4);
+        setInputValue(fields.callsign, stored.callsign);
+        setSelectValue(fields.facility, stored.facility);
+        if (fields.rating) setInputValue(fields.rating, stored.rating);
+        if (fields.password) setInputValue(fields.password, stored.password);
+        if (fields.discordName) setInputValue(fields.discordName, stored.discordName);
+        if (fields.robloxName) setInputValue(fields.robloxName, stored.robloxName);
+        if (fields.info4) setInputValue(fields.info4, stored.info4);
 
         window.setTimeout(() => {
           const connect = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Connect");
