@@ -521,7 +521,6 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
 
         const menu = menuOpen ? <div
           data-pf24-sweatbox-native-menu="true"
-          data-pf24-callsign-menu="true"
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
           className="pointer-events-auto absolute left-0 top-[10px] z-[50] w-[118px] border border-[#f2f2f2] bg-[#555c60] font-mono text-[10px] leading-[18px] text-[#ededed] shadow-[0_2px_8px_rgba(0,0,0,.45)]"
