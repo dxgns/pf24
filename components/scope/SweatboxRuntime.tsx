@@ -521,9 +521,9 @@ export default function SweatboxRuntime({ controllerName, canInstruct }: Props) 
     return () => host.removeEventListener("click", create, true);
   }, [host, instructor, createArmed, viewport]);
 
-  const select = (item: SweatboxAircraft) => {
+  const select = (item: SweatboxAircraft, closeMenu = true) => {
     setSelectedId(item.id);
-    setMenuId(null);
+    if (closeMenu) setMenuId(null);
     window.dispatchEvent(new CustomEvent(SWEATBOX_SELECTION_EVENT, { detail: { id: item.id, aircraft: item } }));
   };
 
@@ -576,8 +576,17 @@ export default function SweatboxRuntime({ controllerName, canInstruct }: Props) 
           </button>
           <div data-pf24-traffic-label="true" data-pf24-traffic-id={item.id} data-pf24-sweatbox-id={item.id} className={`pointer-events-auto absolute z-[11] font-mono text-[9px] leading-[9px] text-[#00e000] ${active ? "w-[108px]" : "w-[72px]"}`} style={{ left: labelLeft, top: labelTop }} onClick={(event) => { event.stopPropagation(); select(item); }}>
             <div className="relative">
-              <button type="button" onDoubleClick={(event) => { event.stopPropagation(); setMenuId(menuId === item.id ? null : item.id); }} className="block max-w-[86px] overflow-hidden text-ellipsis whitespace-nowrap bg-transparent text-left text-[#00e000]">{item.callsign}</button>
-              {menuId === item.id && <div data-pf24-callsign-menu="true" className="absolute left-0 top-[10px] z-[90] w-[118px] border border-[#f2f2f2] bg-[#555c60] text-[10px] leading-[18px] text-[#ededed] shadow-lg">
+              <button
+                type="button"
+                data-pf24-sweatbox-callsign="true"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  select(item, false);
+                  setMenuId((current) => current === item.id ? null : item.id);
+                }}
+                className="block max-w-[86px] overflow-hidden text-ellipsis whitespace-nowrap bg-transparent text-left text-[#00e000]"
+              >{item.callsign}</button>
+              {menuId === item.id && <div data-pf24-callsign-menu="true" onClick={(event) => event.stopPropagation()} className="absolute left-0 top-[10px] z-[90] w-[118px] border border-[#f2f2f2] bg-[#555c60] text-[10px] leading-[18px] text-[#ededed] shadow-lg">
                 <div className="border-b border-[#f2f2f2] px-2 text-center text-[#22e000]">{item.callsign}</div>
                 <button type="button" onClick={(event) => { event.stopPropagation(); openFpl(item); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">FPL</button>
                 <button type="button" onClick={(event) => { event.stopPropagation(); if (instructor) setTrafficBoth((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, assumedBy: controllerName } : candidate)); setMenuId(null); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Assume</button>
