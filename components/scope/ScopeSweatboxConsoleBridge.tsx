@@ -8,6 +8,7 @@ import {
   SWEATBOX_ATIS_EVENT,
   readScopeServerMode,
   readSweatboxRoom,
+  type SweatboxAircraft,
   type SweatboxSessionDetail,
 } from "@/lib/scope/sweatbox";
 
@@ -70,6 +71,8 @@ const TL_TABLE = [
   { min: 1013.3, max: 1031.6, ta3000: 40, ta4000: 50 },
   { min: 1031.7, max: 1050.3, ta3000: 35, ta4000: 45 },
 ] as const;
+
+const SECTOR_GRID = "grid-cols-[50px_38px_25px_39px_39px_31px_29px_1fr_40px_31px_18px]";
 
 function qnh(raw: string) {
   const q = raw.match(/\bQ(\d{4})\b/i)?.[1];
@@ -150,6 +153,27 @@ function uniquePresence(state: Record<string, unknown[]>) {
   return rows.sort((a, b) => String(a.callsign ?? a.controllerName ?? "").localeCompare(String(b.callsign ?? b.controllerName ?? "")));
 }
 
+function flightRule(value: string) {
+  const upper = value.toUpperCase();
+  if (upper === "IFR") return "I";
+  if (upper === "VFR") return "V";
+  return upper.slice(0, 1);
+}
+
+function filedLevel(item: SweatboxAircraft) {
+  const value = item.flightPlan.flightLevel.replace(/\D/g, "");
+  return value || String(Math.max(0, Math.round(item.altitude / 100))).padStart(3, "0");
+}
+
+function botStatus(item: SweatboxAircraft) {
+  if (item.navMode === "LAND") return "APP";
+  if (item.navMode === "TAKEOFF") return item.speed < 105 ? "DEP" : "CLB";
+  if (item.navMode === "GO_AROUND") return "GA";
+  if (item.navMode === "DIRECT") return "DCT";
+  if (item.speed <= 2) return "STBY";
+  return "MAN";
+}
+
 export default function ScopeSweatboxConsoleBridge({ controllerName, canInstruct }: { controllerName: string; canInstruct: boolean }) {
   const [session, setSession] = useState<SweatboxSessionDetail>(() => sessionFromStorage());
   const [host, setHost] = useState<HTMLElement | null>(null);
@@ -159,6 +183,7 @@ export default function ScopeSweatboxConsoleBridge({ controllerName, canInstruct
   const [drafts, setDrafts] = useState<Record<string, AtisConfig>>({});
   const [published, setPublished] = useState<Record<string, AtisConfig>>({});
   const [members, setMembers] = useState<PresenceMeta[]>([]);
+  const [traffic, setTraffic] = useState<SweatboxAircraft[]>([]);
   const [busy, setBusy] = useState(false);
 
   const sweatbox = session.connected && session.mode !== "AUTOMATIC" && Boolean(session.room);
@@ -186,6 +211,7 @@ export default function ScopeSweatboxConsoleBridge({ controllerName, canInstruct
       if (!detail.connected || detail.mode === "AUTOMATIC") {
         setOpen(false);
         setMembers([]);
+        setTraffic([]);
         setPublished({});
       }
     };
@@ -201,15 +227,13 @@ export default function ScopeSweatboxConsoleBridge({ controllerName, canInstruct
 
   useEffect(() => {
     if (!sweatbox) return;
-    // Join the exact same topic as the simulation runtime. The console is a
-    // read-only listener here; the runtime remains the single broadcaster for
-    // traffic/ATIS snapshots and the single presence tracker for this browser.
     const channel = supabase.channel(`pf24-sweatbox-${session.room}`, {
       config: { broadcast: { self: false } },
     });
     channel
       .on("broadcast", { event: "snapshot" }, ({ payload }) => {
-        const snapshot = payload as { atis?: Record<string, unknown> };
+        const snapshot = payload as { atis?: Record<string, unknown>; traffic?: SweatboxAircraft[] };
+        if (Array.isArray(snapshot?.traffic)) setTraffic(snapshot.traffic);
         const next: Record<string, AtisConfig> = {};
         for (const [icao, value] of Object.entries(snapshot?.atis ?? {})) {
           if (value && typeof value === "object") next[icao] = value as AtisConfig;
@@ -301,13 +325,22 @@ export default function ScopeSweatboxConsoleBridge({ controllerName, canInstruct
   };
 
   const sectorLayer = sweatbox && sectorHost ? createPortal(
-    <div data-pf24-sweatbox-sector-layer="true" className="min-h-[72px] bg-[#555c61] font-mono text-[10px] leading-[16px] text-[#e8e8e8]">
-      <div className="grid grid-cols-[110px_1fr_75px] border-b border-[#d9d9d9] text-[9px] text-[#d8d8d8]"><span className="px-1">POSITION</span><span>CONTROLLER</span><span>MODE</span></div>
-      {members.length === 0 ? <div className="px-1 py-2 text-[#bcbcbc]">SWEATBOX ROOM {session.room}</div> : members.map((member, index) => <div key={`${member.controllerName}-${member.callsign}-${index}`} className="grid grid-cols-[110px_1fr_75px] border-b border-[#6a7073]">
-        <span className="truncate px-1 text-[#00efff]">{member.callsign || "SWEATBOX"}</span>
-        <span className="truncate">{member.controllerName || "ATC"}</span>
-        <span className={member.instructor ? "text-[#ffff00]" : "text-[#9cff9c]"}>{member.instructor ? "INSTRUCTOR" : "STUDENT"}</span>
+    <div data-pf24-sweatbox-sector-layer="true" data-pf24-live-sector-list="true" className="px-1 py-1 font-mono text-[9px] leading-[13px]">
+      <div className={`grid ${SECTOR_GRID} text-[#d8d8d8]`}><span>CALLSIGN</span><span>ATYP</span><span>FR</span><span>DEP</span><span>ARR</span><span>FL</span><span>RWY</span><span>PROCS</span><span>ASSR</span><span>STS</span><span className="text-center">C</span></div>
+      {traffic.map((item) => <div key={item.id} className={`grid ${SECTOR_GRID} text-[#00e000]`} data-pf24-sweatbox-sector-row={item.id}>
+        <span className="truncate">{item.callsign}</span>
+        <span className="truncate">{item.flightPlan.aircraft || item.aircraftType}</span>
+        <span>{flightRule(item.flightPlan.flightRules)}</span>
+        <span className="truncate">{item.flightPlan.departure}</span>
+        <span className="truncate">{item.flightPlan.arrival}</span>
+        <span>{filedLevel(item)}</span>
+        <span className="truncate">{item.runway || ""}</span>
+        <span className="truncate">{item.procedureCode || (item.navMode === "DIRECT" ? item.navTarget || "DCT" : "")}</span>
+        <span className="truncate">{item.assumedBy ? item.assumedBy.slice(0, 4).toUpperCase() : "----"}</span>
+        <span className="truncate">{botStatus(item)}</span>
+        <span className={`mx-auto mt-[2px] h-[8px] w-[8px] border border-[#00e000] ${item.assumedBy ? "bg-[#00d600]" : ""}`} />
       </div>)}
+      <div className="mt-1 border-t border-[#73787b] pt-1 text-[8px] text-[#b8b8b8]">ROOM {session.room} · {traffic.length} TRAFFIC · {members.length} CONTROLLERS</div>
     </div>,
     sectorHost,
   ) : null;
