@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { scopeIsSweatbox } from "@/lib/scope/sweatbox";
 
 const ATIS_CONFIG_STORAGE_KEY = "pf24_scope_atis_configs_v1";
 
@@ -28,6 +29,9 @@ function deactivateAllLocalAtis() {
 export default function ScopeAtisDisconnectCleanup({ controllerName }: { controllerName: string }) {
   useEffect(() => {
     const onDisconnect = async () => {
+      // Training ATIS never lives in atis_messages, so a SweatBox disconnect must
+      // not remove the controller's live-network ATIS from another Scope session.
+      if (scopeIsSweatbox()) return;
       deactivateAllLocalAtis();
       const { error } = await supabase.from("atis_messages").delete().eq("created_by", controllerName);
       if (error) console.error("PF24 Scope owned ATIS cleanup failed:", error);
