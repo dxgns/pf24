@@ -97,5 +97,6 @@ export default function ProjectFlightTrafficConfigured({ initialPlans, serverId,
       />
       <GroundHeadingVectorFix />
     </>}
+    <style jsx global>{`html[data-pf24-sweatbox-active='true'] [data-pf24-sweatbox-toolbar='true']{top:0!important;right:0!important}`}</style>
   </>;
 }
