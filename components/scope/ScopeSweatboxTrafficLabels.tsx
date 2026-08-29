@@ -13,6 +13,7 @@ import { MAP_BOUNDS } from "@/lib/scope/mapData";
 import { scopeClientPointToLocal } from "@/lib/scope/domCoordinates";
 import {
   SCOPE_SERVER_EVENT,
+  SWEATBOX_COMMAND_EVENT,
   SWEATBOX_SNAPSHOT_EVENT,
   readScopeServerMode,
   type SweatboxAircraft,
@@ -22,6 +23,7 @@ import {
 
 type Point = { x: number; y: number };
 type Viewport = { zoom: number; panX: number; panY: number };
+type TrailPoint = Point & { time: number };
 type LabelDrag = {
   id: string;
   dx: number;
@@ -36,6 +38,7 @@ type Props = { canInstruct: boolean };
 const VIEWPORT_KEY = "pf24_scope_radar_viewport_v1";
 const VIEWPORT_EVENT = "pf24-radar-viewport";
 const LABEL_OFFSETS_KEY = "pf24_sweatbox_label_offsets_v1";
+const MAPP_KEY = "pf24_scope_sweatbox_mapp_v1";
 const TARGET_SIZE = 18;
 const SIMPLE_WIDTH = 66;
 const SIMPLE_HEIGHT = 30;
@@ -44,6 +47,7 @@ const DETAIL_HEIGHT = 45;
 const VECTOR_PIXELS_PER_NM = 28;
 const GROUND_VECTOR_PIXELS = 10;
 const GROUND_ALTITUDE_FT = 100;
+const TRAIL_SAMPLE_MS = 1200;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -74,6 +78,15 @@ function readViewport(): Viewport {
 function readOffsets(): Record<string, Point> {
   try {
     const parsed = JSON.parse(localStorage.getItem(LABEL_OFFSETS_KEY) ?? "{}") as Record<string, Point>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function readMapp(): Record<string, boolean> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MAPP_KEY) ?? "{}") as Record<string, boolean>;
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
@@ -149,30 +162,10 @@ function runtimeMarker(id: string) {
   );
 }
 
-function runtimeLabel(id: string) {
-  return document.querySelector<HTMLElement>(
-    `[data-pf24-sweatbox-traffic='true'] [data-pf24-traffic-label='true'][data-pf24-sweatbox-id='${CSS.escape(id)}']`,
-  );
-}
-
-function clickRuntimeMenuAction(id: string, label: string) {
-  const root = runtimeLabel(id);
-  if (!root) return;
-
-  const clickAction = () => {
-    const menu = root.querySelector<HTMLElement>("[data-pf24-callsign-menu='true']");
-    const button = Array.from(menu?.querySelectorAll<HTMLButtonElement>("button") ?? [])
-      .find((candidate) => candidate.textContent?.trim().toUpperCase() === label.toUpperCase());
-    button?.click();
-  };
-
-  if (root.querySelector("[data-pf24-callsign-menu='true']")) {
-    clickAction();
-    return;
-  }
-
-  root.querySelector<HTMLButtonElement>("[data-pf24-sweatbox-callsign='true']")?.click();
-  window.setTimeout(clickAction, 0);
+function findScopeWindow(title: string) {
+  const wanted = title.trim().toUpperCase();
+  return Array.from(document.querySelectorAll<HTMLElement>("main.fixed > section > div.absolute.z-30"))
+    .find((element) => element.firstElementChild?.textContent?.trim().toUpperCase().includes(wanted)) ?? null;
 }
 
 function DragEdges({ onMouseDown }: { onMouseDown: (event: ReactMouseEvent<HTMLElement>) => void }) {
@@ -188,7 +181,9 @@ function DragEdges({ onMouseDown }: { onMouseDown: (event: ReactMouseEvent<HTMLE
 export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
   const [connected, setConnected] = useState(false);
   const [mode, setMode] = useState(() => readScopeServerMode());
+  const [position, setPosition] = useState("");
   const [host, setHost] = useState<HTMLElement | null>(null);
+  const [holdWindow, setHoldWindow] = useState<HTMLElement | null>(null);
   const [hostSize, setHostSize] = useState<Point>({ x: 1, y: 1 });
   const [viewport, setViewport] = useState<Viewport>(() => readViewport());
   const [traffic, setTraffic] = useState<SweatboxAircraft[]>([]);
@@ -196,10 +191,15 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
   const [callsignMenu, setCallsignMenu] = useState<{ id: string; expanded: boolean } | null>(null);
   const [settings, setSettings] = useState<TrafficSettings>(() => readTrafficSettings());
   const [showHeading, setShowHeading] = useState(false);
+  const [showTrail, setShowTrail] = useState(false);
+  const [trailVersion, setTrailVersion] = useState(0);
+  const [mappState, setMappState] = useState<Record<string, boolean>>(() => readMapp());
   const [labelOffsets, setLabelOffsets] = useState<Record<string, Point>>(() => readOffsets());
   const dragRef = useRef<LabelDrag | null>(null);
   const suppressClickRef = useRef<string | null>(null);
   const trafficRef = useRef<SweatboxAircraft[]>([]);
+  const trailsRef = useRef<Map<string, TrailPoint[]>>(new Map());
+  const lastTrailSampleRef = useRef<Map<string, number>>(new Map());
 
   const active = connected && mode !== "AUTOMATIC";
   const instructor = active && mode === "SWEATBOX_INSTRUCTOR" && canInstruct;
@@ -211,15 +211,23 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
   useEffect(() => {
     const locate = () => {
       const radar = document.querySelector<HTMLElement>("main.fixed > section");
-      if (!radar) return;
-      setHost(radar);
-      setHostSize({ x: Math.max(1, radar.clientWidth), y: Math.max(1, radar.clientHeight) });
+      if (radar) {
+        setHost(radar);
+        setHostSize({ x: Math.max(1, radar.clientWidth), y: Math.max(1, radar.clientHeight) });
+      }
+      setHoldWindow(findScopeWindow("HOLD LIST"));
     };
     locate();
     const radar = document.querySelector<HTMLElement>("main.fixed > section");
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(locate) : null;
     if (radar) observer?.observe(radar);
-    return () => observer?.disconnect();
+    const domObserver = new MutationObserver(() => window.requestAnimationFrame(locate));
+    const main = document.querySelector<HTMLElement>("main.fixed");
+    if (main) domObserver.observe(main, { childList: true, subtree: true });
+    return () => {
+      observer?.disconnect();
+      domObserver.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -228,10 +236,13 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
       if (!detail) return;
       setConnected(Boolean(detail.connected));
       setMode(detail.mode);
+      setPosition(detail.callsign?.trim().toUpperCase() ?? "");
       if (!detail.connected || detail.mode === "AUTOMATIC") {
         setTraffic([]);
         setSelectedId(null);
         setCallsignMenu(null);
+        trailsRef.current.clear();
+        lastTrailSampleRef.current.clear();
       }
     };
     window.addEventListener(SCOPE_SERVER_EVENT, onSession);
@@ -242,6 +253,27 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
     const onSnapshot = (event: Event) => {
       const detail = (event as CustomEvent<SweatboxSnapshot>).detail;
       if (!detail?.traffic) return;
+
+      const now = Date.now();
+      const ids = new Set(detail.traffic.map((item) => item.id));
+      let changedTrail = false;
+      for (const item of detail.traffic) {
+        const last = lastTrailSampleRef.current.get(item.id) ?? 0;
+        if (now - last < TRAIL_SAMPLE_MS) continue;
+        lastTrailSampleRef.current.set(item.id, now);
+        const history = trailsRef.current.get(item.id) ?? [];
+        const maxPoints = Math.max(12, settings.trailCount * 4);
+        trailsRef.current.set(item.id, [...history, { x: item.x, y: item.y, time: now }].slice(-maxPoints));
+        changedTrail = true;
+      }
+      for (const id of Array.from(trailsRef.current.keys())) {
+        if (ids.has(id)) continue;
+        trailsRef.current.delete(id);
+        lastTrailSampleRef.current.delete(id);
+        changedTrail = true;
+      }
+      if (changedTrail) setTrailVersion((value) => value + 1);
+
       setTraffic(detail.traffic);
       setSelectedId((current) => current && detail.traffic.some((item) => item.id === current) ? current : null);
     };
@@ -260,22 +292,28 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
       window.removeEventListener(VIEWPORT_EVENT, onViewport);
       window.removeEventListener(TRAFFIC_SETTINGS_EVENT, onSettings);
     };
-  }, []);
+  }, [settings.trailCount]);
 
   useEffect(() => {
     if (!active) return;
-    const onToolbar = (event: MouseEvent) => {
-      const button = event.target instanceof Element ? event.target.closest("button") : null;
-      if (!(button instanceof HTMLButtonElement)) return;
+    const row = document.querySelector<HTMLElement>("main.fixed header > div:first-child");
+    if (!row) return;
+
+    const sync = () => {
       const buttons = toolbarButtons();
-      const index = buttons.indexOf(button);
-      const label = button.textContent?.trim().toUpperCase() ?? "";
-      if (index === 5 || label.includes("VECTOR") || label.includes("HDG")) {
-        setShowHeading((value) => !value);
-      }
+      setShowHeading(Boolean(buttons[5]?.classList.contains("scopeToolOn")));
+      setShowTrail(Boolean(buttons[6]?.classList.contains("scopeToolOn")));
     };
-    document.addEventListener("click", onToolbar, true);
-    return () => document.removeEventListener("click", onToolbar, true);
+    const queueSync = () => window.setTimeout(sync, 0);
+
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(row, { subtree: true, attributes: true, attributeFilter: ["class"] });
+    document.addEventListener("click", queueSync, true);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("click", queueSync, true);
+    };
   }, [active]);
 
   useEffect(() => {
@@ -308,11 +346,6 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
         }, 60);
       }
       dragRef.current = null;
-      try {
-        localStorage.setItem(LABEL_OFFSETS_KEY, JSON.stringify(labelOffsets));
-      } catch {
-        // Label dragging remains available when local storage is unavailable.
-      }
     };
 
     window.addEventListener("mousemove", onMove);
@@ -321,7 +354,15 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [active, host, hostSize, viewport, labelOffsets]);
+  }, [active, host, hostSize, viewport]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LABEL_OFFSETS_KEY, JSON.stringify(labelOffsets));
+    } catch {
+      // Dragging still works when localStorage is unavailable.
+    }
+  }, [labelOffsets]);
 
   useEffect(() => {
     if (!active) return;
@@ -341,6 +382,13 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
     return () => document.removeEventListener("click", deselect, true);
   }, [active]);
 
+  useEffect(() => {
+    if (!holdWindow) return;
+    if (active) holdWindow.dataset.pf24SweatboxHoldWindow = "true";
+    else delete holdWindow.dataset.pf24SweatboxHoldWindow;
+    return () => { delete holdWindow.dataset.pf24SweatboxHoldWindow; };
+  }, [active, holdWindow]);
+
   const lineData = useMemo(() => traffic.map((item) => {
     const marker = screenPoint(hostSize, item, viewport);
     const activeItem = item.id === selectedId;
@@ -354,8 +402,9 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
     const end = connectorEnd(marker, label, width, height);
     const unit = headingUnit(item.heading);
     const vectorLength = ground ? GROUND_VECTOR_PIXELS : VECTOR_PIXELS_PER_NM * settings.vectorMiles * viewport.zoom;
-    return { item, marker, label, end, unit, vectorLength, ground, groundScale, labelScale, activeItem };
-  }), [traffic, hostSize, viewport, labelOffsets, selectedId, settings.vectorMiles]);
+    const history = (trailsRef.current.get(item.id) ?? []).slice(-settings.trailCount);
+    return { item, marker, label, end, unit, vectorLength, history, ground, groundScale, labelScale, activeItem };
+  }), [traffic, hostSize, viewport, labelOffsets, selectedId, settings.vectorMiles, settings.trailCount, trailVersion]);
 
   if (!active || !host) return null;
 
@@ -365,10 +414,42 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
     runtimeMarker(item.id)?.click();
   };
 
+  const sendCommand = (action: string, item: SweatboxAircraft) => {
+    window.dispatchEvent(new CustomEvent(SWEATBOX_COMMAND_EVENT, {
+      detail: { action, id: item.id, position },
+    }));
+    setCallsignMenu(null);
+  };
+
+  const toggleMapp = (item: SweatboxAircraft) => {
+    setMappState((current) => {
+      const next = { ...current };
+      if (next[item.id]) delete next[item.id];
+      else next[item.id] = true;
+      try { localStorage.setItem(MAPP_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+    setCallsignMenu(null);
+  };
+
   const layer = createPortal(
     <div data-pf24-sweatbox-native-traffic="true" className="pointer-events-none absolute inset-0 z-[13] overflow-hidden">
       <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${hostSize.x} ${hostSize.y}`} preserveAspectRatio="none" aria-hidden="true">
-        {lineData.map(({ item, marker, end, unit, vectorLength, ground }) => <g key={item.id}>
+        {lineData.map(({ item, marker, end, unit, vectorLength, history, ground, groundScale }) => <g key={item.id}>
+          {showTrail && history.map((trailPoint, index) => {
+            const point = screenPoint(hostSize, trailPoint, viewport);
+            const opacity = settings.trailFade
+              ? 0.38 + ((index + 1) / Math.max(1, history.length)) * 0.62
+              : 1;
+            return <circle
+              key={`${item.id}-trail-${trailPoint.time}`}
+              cx={point.x}
+              cy={point.y}
+              r={ground ? 3 * groundScale : 3}
+              fill="#00ff00"
+              opacity={opacity}
+            />;
+          })}
           {showHeading && <line
             x1={marker.x}
             y1={marker.y}
@@ -401,6 +482,8 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
         const speedText = item.targetSpeed > 0 ? String(Math.round(item.targetSpeed)).padStart(3, "0") : "ASP";
         const menuOpen = callsignMenu?.id === item.id;
         const menuExpanded = menuOpen ? callsignMenu.expanded : false;
+        const mapp = Boolean(mappState[item.id]);
+        const assumedHere = Boolean(position && item.assumedBy?.trim().toUpperCase() === position);
 
         const startLabelDrag = (event: ReactMouseEvent<HTMLElement>) => {
           if (event.button !== 0) return;
@@ -438,15 +521,15 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
 
         const menu = menuOpen ? <div
           data-pf24-sweatbox-native-menu="true"
+          data-pf24-callsign-menu="true"
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
-          onMouseLeave={() => setCallsignMenu(null)}
           className="pointer-events-auto absolute left-0 top-[10px] z-[50] w-[118px] border border-[#f2f2f2] bg-[#555c60] font-mono text-[10px] leading-[18px] text-[#ededed] shadow-[0_2px_8px_rgba(0,0,0,.45)]"
         >
           <div className="border-b border-[#f2f2f2] px-2 text-center text-[11px] leading-[20px] text-[#22e000]">{displayCallsign}</div>
-          <button type="button" onClick={(event) => event.stopPropagation()} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Callsign</button>
-          <button type="button" onClick={(event) => { event.stopPropagation(); clickRuntimeMenuAction(item.id, "Assume"); setCallsignMenu(null); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Assume</button>
-          <button type="button" onClick={(event) => { event.stopPropagation(); clickRuntimeMenuAction(item.id, "FPL"); setCallsignMenu(null); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">FPL</button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); sendCommand("callsign", item); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Callsign</button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); sendCommand("assume", item); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">{assumedHere ? "Assumed" : "Assume"}</button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); sendCommand("open-fpl", item); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">FPL</button>
           <button
             type="button"
             onClick={(event) => { event.stopPropagation(); setCallsignMenu({ id: item.id, expanded: !menuExpanded }); }}
@@ -456,8 +539,11 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
             <span>More</span>
           </button>
           {menuExpanded && <>
-            {["MAPP", "HOLD", "FREE", "Contact Me"].map((entry) => <button key={entry} type="button" onClick={(event) => event.stopPropagation()} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">{entry}</button>)}
-            {instructor && <button type="button" onClick={(event) => { event.stopPropagation(); clickRuntimeMenuAction(item.id, "Delete"); setCallsignMenu(null); }} className="block w-full px-2 text-center hover:bg-[#626a6f]">Delete</button>}
+            <button type="button" onClick={(event) => { event.stopPropagation(); toggleMapp(item); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">{mapp ? "XMAPP" : "MAPP"}</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); sendCommand("hold", item); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">{item.held ? "XHOLD" : "HOLD"}</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); sendCommand("free", item); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">FREE</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); sendCommand("contact", item); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Contact Me</button>
+            {instructor && <button type="button" onClick={(event) => { event.stopPropagation(); sendCommand("delete", item); }} className="block w-full px-2 text-center hover:bg-[#626a6f]">Delete</button>}
           </>}
         </div> : null;
 
@@ -489,7 +575,7 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
           >
             <DragEdges onMouseDown={startLabelDrag} />
             <span className="block h-[7px] text-[8px] leading-[7px]">I</span>
-            <div className="relative h-[9px] w-[62px]">
+            <div className="relative h-[9px] w-[62px] overflow-visible">
               <button
                 type="button"
                 onMouseDown={(event) => event.stopPropagation()}
@@ -497,6 +583,7 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
                 onDoubleClick={openCallsignMenu}
                 className="block h-[9px] w-[62px] overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent p-0 text-left text-[9px] leading-[9px] text-[#00e000] outline-none"
               >{displayCallsign}</button>
+              {mapp && <span className="pointer-events-none absolute left-[54px] top-0 text-[9px] leading-[9px] text-[#ff6a00]">MAPP</span>}
               {menu}
             </div>
             <span className="grid w-[58px] grid-cols-[30px_28px] text-[9px] leading-[8px]">
@@ -511,16 +598,11 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
             data-pf24-traffic-label="true"
             data-pf24-traffic-id={item.id}
             onMouseDown={startLabelDrag}
-            onMouseLeave={() => {
-              if (dragRef.current?.id === item.id) return;
-              setSelectedId((current) => current === item.id ? null : current);
-              setCallsignMenu((current) => current?.id === item.id ? null : current);
-            }}
             className="pointer-events-auto absolute z-[16] w-[108px] cursor-move select-none font-mono text-[9px] leading-[9px] text-[#00e000]"
             style={{ left: label.x, top: label.y }}
           >
             <DragEdges onMouseDown={startLabelDrag} />
-            <div className="h-[8px] text-[#ffff00] leading-[8px]">A9999</div>
+            <div className="h-[8px] overflow-visible text-[#ffff00] leading-[8px]">A9999{mapp && <span className="ml-[9px] text-[#ff6a00]">MAPP</span>}</div>
             <div className="grid w-[102px] min-w-0 grid-cols-[56px_8px_38px] gap-0 leading-[9px]">
               <div className="relative min-w-0">
                 <button
@@ -557,12 +639,35 @@ export default function ScopeSweatboxTrafficLabels({ canInstruct }: Props) {
     host,
   );
 
+  const held = traffic.filter((item) => item.held);
+  const holdLayer = holdWindow ? createPortal(
+    <div data-pf24-sweatbox-hold-list="true" className="w-full max-w-full overflow-hidden border-x-2 border-b-2 border-[#ededed] bg-[#555c61] font-mono text-[10px] leading-[15px] text-[#e8e8e8] box-border">
+      <div className="grid w-full min-w-0 grid-cols-[28px_minmax(0,1fr)_34px_34px] border-b border-[#ededed] box-border">
+        <span className="min-w-0 border-r border-[#ededed]" />
+        <span className="min-w-0 truncate text-center text-[12px]">CALLSIGN</span>
+        <span className="min-w-0 text-center text-[12px]">FL</span>
+        <span className="min-w-0 text-center text-[12px]">AFL</span>
+      </div>
+      <div className="min-h-[78px] w-full min-w-0 overflow-hidden">
+        {held.map((item) => <div key={item.id} className="grid w-full min-w-0 grid-cols-[28px_minmax(0,1fr)_34px_34px] box-border">
+          <span className="min-w-0 border-r border-[#ededed]" />
+          <span className="min-w-0 truncate px-[3px]">{item.flightPlan.callsign || item.callsign}</span>
+          <span className="min-w-0 truncate text-center">{cruiseLevel(item)}</span>
+          <span className="min-w-0 truncate text-center">{flightLevel(item.targetAltitude)}</span>
+        </div>)}
+      </div>
+    </div>,
+    holdWindow,
+  ) : null;
+
   return <>
     {layer}
+    {holdLayer}
     <style jsx global>{`
       html[data-pf24-sweatbox-active='true'] [data-pf24-sweatbox-traffic='true'] > svg{visibility:hidden!important}
       html[data-pf24-sweatbox-active='true'] [data-pf24-sweatbox-traffic='true'] [data-pf24-traffic-select='true'],
       html[data-pf24-sweatbox-active='true'] [data-pf24-sweatbox-traffic='true'] [data-pf24-traffic-label='true']{visibility:hidden!important;pointer-events:none!important}
+      html[data-pf24-sweatbox-active='true'] [data-pf24-sweatbox-hold-window='true'] > :not(:first-child):not([data-pf24-sweatbox-hold-list='true']){display:none!important}
     `}</style>
   </>;
 }
