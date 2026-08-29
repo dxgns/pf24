@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { scopeIsSweatbox } from "@/lib/scope/sweatbox";
 
 const STORAGE_KEY = "pf24_scope_atc_session_id";
 
@@ -37,9 +38,6 @@ function readSessionId() {
   const current = sessionStorage.getItem(STORAGE_KEY);
   if (current) return current;
 
-  // One-time migration from the old cross-tab localStorage key. Keeping the
-  // live session id in sessionStorage prevents one Scope tab from closing or
-  // reusing another tab's ATC session while still surviving a normal reload.
   const legacy = localStorage.getItem(STORAGE_KEY);
   if (!legacy) return null;
   sessionStorage.setItem(STORAGE_KEY, legacy);
@@ -67,8 +65,6 @@ function forceScopeDisconnect() {
   const topButton = topConnectionButton();
   if (topButton?.textContent?.trim().toUpperCase() !== "DISCONNECT") return;
 
-  // Use the Scope's own disconnect UI so every dependent component receives
-  // exactly the same state/events as a manual disconnect.
   topButton.click();
   window.setTimeout(() => {
     const dialog = document.querySelector<HTMLElement>(".connectBox");
@@ -88,11 +84,21 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
     let cancelled = false;
 
     const removeOwnedAtis = async () => {
+      // Training ATIS is carried only inside the SweatBox realtime room. Never
+      // mutate the public/live ATIS table while this browser is in training mode.
+      if (scopeIsSweatbox()) return;
       const { error } = await supabase.from("atis_messages").delete().eq("created_by", controllerName);
       if (error) console.error("PF24 Scope ATIS disconnect cleanup failed:", error);
     };
 
     const closeSession = async () => {
+      if (scopeIsSweatbox()) {
+        // SweatBox presence is handled by Realtime Presence in the room; it must
+        // never create, close or reuse a row in the live atc_sessions table.
+        clearSessionId();
+        forcedDisconnectRef.current = false;
+        return;
+      }
       const skipAtisCleanup = forcedDisconnectRef.current;
       const sessionId = readSessionId();
       if (sessionId) {
@@ -108,6 +114,7 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
     };
 
     const retireOtherSessions = async () => {
+      if (scopeIsSweatbox()) return;
       const { error } = await supabase
         .from("atc_sessions")
         .update({ is_active: false, ended_at: new Date().toISOString() })
@@ -117,7 +124,7 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
     };
 
     const openSession = async (position: string) => {
-      if (!position) return;
+      if (!position || scopeIsSweatbox()) return;
       const existingId = readSessionId();
       if (existingId) {
         const { data, error } = await supabase
@@ -128,8 +135,6 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
         if (error) console.error("PF24 Scope ATC presence lookup failed:", error);
         if (data?.is_active && data.position === position) return;
         if (data && data.position === position) {
-          // Before reopening this tab, retire any other active position owned by
-          // the same controller. The current row is inactive, so it is preserved.
           await retireOtherSessions();
           const { error: reopenError } = await supabase
             .from("atc_sessions")
@@ -140,8 +145,6 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
         await closeSession();
       }
 
-      // A controller may only own one active ATC session. Retire any session
-      // left active in another tab/device before publishing this new position.
       await removeOwnedAtis();
       await retireOtherSessions();
 
@@ -162,6 +165,14 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
       const previous = lastStateRef.current;
       if (current.connected === previous.connected && current.position === previous.position) return;
       lastStateRef.current = current;
+
+      // The native Connect/Disconnect UI remains shared by both products, but a
+      // SweatBox connection is deliberately invisible to the live ATC network.
+      if (scopeIsSweatbox()) {
+        clearSessionId();
+        return;
+      }
+
       syncingRef.current = true;
       try {
         if (current.connected && current.position) {
@@ -178,11 +189,10 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
     const onConnectionChange = () => void sync();
     window.addEventListener("pf24-scope-connection-change", onConnectionChange);
 
-    // If another tab/device for this same controller takes over, its openSession
-    // marks this row inactive. React to that DB change by disconnecting this UI.
     const sessionChannel = supabase
       .channel(`scope-single-atc-session-${controllerName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "atc_sessions" }, (payload) => {
+        if (scopeIsSweatbox()) return;
         const row = payload.new as ATCSessionRow;
         const ownSessionId = readSessionId();
         if (!ownSessionId || row.id !== ownSessionId || row.is_active !== false) return;
@@ -195,7 +205,7 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
       .subscribe();
 
     lastStateRef.current = getScopeConnection();
-    if (lastStateRef.current.connected && lastStateRef.current.position) void openSession(lastStateRef.current.position);
+    if (!scopeIsSweatbox() && lastStateRef.current.connected && lastStateRef.current.position) void openSession(lastStateRef.current.position);
 
     const navigation = (window as Window & { navigation?: NavigationLike }).navigation;
     const onNavigate = (event: Event & { navigationType?: string }) => {
@@ -204,7 +214,7 @@ export default function ScopeAtcPresence({ controllerName }: { controllerName: s
     navigation?.addEventListener("navigate", onNavigate);
 
     const handlePageHide = () => {
-      if (reloadingRef.current) return;
+      if (reloadingRef.current || scopeIsSweatbox()) return;
       const sessionId = readSessionId();
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/+$/, "");
       const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
