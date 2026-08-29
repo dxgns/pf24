@@ -7,6 +7,7 @@ import ScopeSweatboxConnect from "@/components/scope/ScopeSweatboxConnect";
 import ScopeSweatboxConsoleBridge from "@/components/scope/ScopeSweatboxConsoleBridge";
 import ScopeSweatboxInstructorUiFixes from "@/components/scope/ScopeSweatboxInstructorUiFixes";
 import ScopeSweatboxSectorIsolation from "@/components/scope/ScopeSweatboxSectorIsolation";
+import ScopeSweatboxTrafficLabels from "@/components/scope/ScopeSweatboxTrafficLabels";
 import SweatboxRealtimeRelay from "@/components/scope/SweatboxRealtimeRelay";
 import SweatboxRuntime from "@/components/scope/SweatboxRuntime";
 import { installTrafficCalibrationShim } from "@/components/scope/TrafficCalibrationShim";
@@ -95,6 +96,7 @@ export default function ProjectFlightTrafficConfigured({ initialPlans, serverId,
     <ScopeSweatboxSectorIsolation />
     <SweatboxRealtimeRelay canInstruct={canInstruct} />
     <SweatboxRuntime controllerName={controllerName} canInstruct={canInstruct} />
+    <ScopeSweatboxTrafficLabels canInstruct={canInstruct} />
     {scopeServerMode === "AUTOMATIC" && <>
       <ProjectFlightTrafficV6
         key={`${serverId}-${feedGeneration}`}
