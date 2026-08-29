@@ -96,6 +96,31 @@ function findSweatboxLabel(target: EventTarget | null) {
   return target.closest<HTMLElement>("[data-pf24-sweatbox-traffic='true'] [data-pf24-traffic-label='true'][data-pf24-sweatbox-id]");
 }
 
+function unlockInstructorFplEditor() {
+  const editor = document.querySelector<HTMLElement>("[data-pf24-atc-fpl-editor='true']");
+  if (!editor) return;
+
+  editor.dataset.pf24SweatboxInstructorEditor = "true";
+  editor.style.pointerEvents = "auto";
+  editor.style.zIndex = "3000";
+
+  editor.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input,textarea").forEach((field) => {
+    if (field.disabled) field.disabled = false;
+    if (field.readOnly) field.readOnly = false;
+    field.removeAttribute("disabled");
+    field.removeAttribute("readonly");
+    field.setAttribute("aria-disabled", "false");
+    field.tabIndex = 0;
+    field.style.pointerEvents = "auto";
+    field.style.userSelect = "text";
+    field.style.cursor = "text";
+  });
+
+  editor.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+    button.style.pointerEvents = "auto";
+  });
+}
+
 export default function ScopeSweatboxInstructorUiFixes({ canInstruct }: { canInstruct: boolean }) {
   const [connected, setConnected] = useState(false);
   const [mode, setMode] = useState(() => readScopeServerMode());
@@ -143,6 +168,33 @@ export default function ScopeSweatboxInstructorUiFixes({ canInstruct }: { canIns
     window.addEventListener(SCOPE_SERVER_EVENT, onSession);
     return () => window.removeEventListener(SCOPE_SERVER_EVENT, onSession);
   }, []);
+
+  useEffect(() => {
+    if (!active) return;
+
+    let frame = 0;
+    const queueUnlock = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        unlockInstructorFplEditor();
+      });
+    };
+
+    queueUnlock();
+    const observer = new MutationObserver(queueUnlock);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled", "readonly", "style"],
+    });
+
+    return () => {
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [active]);
 
   useEffect(() => {
     const onViewport = (event: Event) => {
@@ -290,6 +342,10 @@ export default function ScopeSweatboxInstructorUiFixes({ canInstruct }: { canIns
       [data-pf24-sweatbox-toolbar='true']>button{height:21px!important;width:26px!important;min-width:26px!important;border-right:1px solid #173d38!important;padding:0!important}
       [data-pf24-sweatbox-toolbar='true']>button svg{height:18px!important;width:21px!important}
       [data-pf24-sweatbox-toolbar='true']>div.absolute{top:21px!important}
+      [data-pf24-sweatbox-instructor-editor='true']{pointer-events:auto!important;z-index:3000!important}
+      [data-pf24-sweatbox-instructor-editor='true'] input,
+      [data-pf24-sweatbox-instructor-editor='true'] textarea{pointer-events:auto!important;user-select:text!important;cursor:text!important;opacity:1!important}
+      [data-pf24-sweatbox-instructor-editor='true'] button{pointer-events:auto!important}
     `}</style>
   </>;
 }
