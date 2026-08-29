@@ -11,6 +11,7 @@ import {
   SWEATBOX_SELECTION_EVENT,
   SWEATBOX_ATIS_EVENT,
   SWEATBOX_SECTOR_EVENT,
+  SWEATBOX_SNAPSHOT_EVENT,
   defaultSweatboxFlightPlan,
   readScopeServerMode,
   readSweatboxRoom,
@@ -36,6 +37,7 @@ const VIEWPORT_EVENT = "pf24-radar-viewport";
 const SNAPSHOT_MS = 250;
 const SIM_STEP_MS = 50;
 const GROUND_ALTITUDE_FT = 100;
+const ROOM_TRAFFIC_ACTIONS = new Set(["assume", "free", "hold", "contact"]);
 
 const AIRPORTS: Record<string, { x: number; y: number; elevation: number; runways: string[] }> = {
   MDPC: { x: 87.44, y: 102.59, elevation: 47, runways: ["08", "09", "26", "27"] },
@@ -91,9 +93,6 @@ function runwayGeometry(airportCode: string, runway: string) {
   const airport = AIRPORTS[airportCode];
   if (!airport) return null;
   const course = runwayHeading(runway);
-  // The airport reference point is used as the runway midpoint. A 1.35 NM
-  // nominal runway gives the simulator stable threshold geometry even where the
-  // decorative airport SVG is not visible at the current zoom.
   const threshold = project(airport, normalizeHeading(course + 180), 0.675);
   const rolloutEnd = project(airport, course, 0.675);
   const gate = project(threshold, normalizeHeading(course + 180), 6);
@@ -166,6 +165,9 @@ function defaultAircraft(point: Point, index: number): SweatboxAircraft {
     runway: null,
     flightPlan: defaultSweatboxFlightPlan(callsign),
     assumedBy: null,
+    held: false,
+    lastContactBy: null,
+    lastContactAt: null,
     freeText: "",
   };
 }
@@ -353,6 +355,8 @@ export default function SweatboxRuntime({ controllerName, canInstruct }: Props) 
         setSelectedId(null);
         setTool(null);
         setCreateArmed(false);
+        setFplId(null);
+        setFplDraft(null);
       }
     };
     window.addEventListener(SCOPE_SERVER_EVENT, onSession);
@@ -374,6 +378,12 @@ export default function SweatboxRuntime({ controllerName, canInstruct }: Props) 
         setTrafficBoth(snapshot.traffic);
         setAtis(snapshot.atis ?? {});
         setSector(snapshot.sector ?? {});
+      })
+      .on("broadcast", { event: "command" }, ({ payload }) => {
+        if (!instructor || !payload || typeof payload !== "object") return;
+        window.dispatchEvent(new CustomEvent(SWEATBOX_COMMAND_EVENT, {
+          detail: { ...(payload as Record<string, unknown>), __remote: true },
+        }));
       })
       .on("broadcast", { event: "atis" }, ({ payload }) => {
         const row = payload as { airport?: string; data?: unknown };
@@ -420,7 +430,7 @@ export default function SweatboxRuntime({ controllerName, canInstruct }: Props) 
         sector,
       };
       void channelRef.current?.send({ type: "broadcast", event: "snapshot", payload: snapshot });
-      window.dispatchEvent(new CustomEvent("pf24-sweatbox-snapshot", { detail: snapshot }));
+      window.dispatchEvent(new CustomEvent(SWEATBOX_SNAPSHOT_EVENT, { detail: snapshot }));
     }, SNAPSHOT_MS);
     return () => window.clearInterval(timer);
   }, [instructor, sweatbox, session.room, atis, sector]);
@@ -448,18 +458,70 @@ export default function SweatboxRuntime({ controllerName, canInstruct }: Props) 
   }, [sweatbox, instructor]);
 
   useEffect(() => {
-    if (!instructor) return;
+    if (!sweatbox) return;
+
+    const openFplFor = (id: string) => {
+      const item = trafficRef.current.find((candidate) => candidate.id === id);
+      if (!item) return;
+      setFplId(item.id);
+      setFplDraft({ ...item.flightPlan });
+      setMenuId(null);
+    };
+
     const onCommand = (event: Event) => {
       const detail = (event as CustomEvent<Record<string, unknown>>).detail ?? {};
       const action = String(detail.action ?? "");
+      const targetId = String(detail.id ?? selectedId ?? "");
+      const requester = String(detail.position ?? session.callsign ?? controllerName).trim().toUpperCase() || controllerName.toUpperCase();
+
+      if (action === "open-fpl" || action === "callsign") {
+        if (targetId) openFplFor(targetId);
+        return;
+      }
+
       if (action === "arm-create") {
+        if (!instructor) return;
         setCreateArmed(true);
         setTool(null);
         return;
       }
-      if (!selectedId) return;
+
+      if (ROOM_TRAFFIC_ACTIONS.has(action) && !instructor) {
+        void channelRef.current?.send({
+          type: "broadcast",
+          event: "command",
+          payload: { ...detail, id: targetId, position: requester },
+        });
+        return;
+      }
+
+      if (!instructor || !targetId) return;
+
+      if (action === "delete") {
+        setTrafficBoth((current) => current.filter((item) => item.id !== targetId));
+        setSelectedId((current) => current === targetId ? null : current);
+        setMenuId(null);
+        return;
+      }
+
       setTrafficBoth((current) => current.map((item) => {
-        if (item.id !== selectedId) return item;
+        if (item.id !== targetId) return item;
+
+        if (action === "assume") {
+          if (item.assumedBy && item.assumedBy !== requester) return item;
+          return { ...item, assumedBy: requester };
+        }
+        if (action === "free") {
+          if (item.assumedBy && item.assumedBy !== requester) return item;
+          return { ...item, assumedBy: null };
+        }
+        if (action === "hold") {
+          return { ...item, held: !item.held };
+        }
+        if (action === "contact") {
+          if (item.assumedBy && item.assumedBy !== requester) return item;
+          return { ...item, lastContactBy: requester, lastContactAt: Date.now() };
+        }
         if (action === "heading") {
           const value = clamp(Number(detail.value ?? item.targetHeading), 0, 359);
           return { ...item, navMode: "MANUAL", navTarget: null, targetHeading: value };
@@ -499,9 +561,10 @@ export default function SweatboxRuntime({ controllerName, canInstruct }: Props) 
         return item;
       }));
     };
+
     window.addEventListener(SWEATBOX_COMMAND_EVENT, onCommand);
     return () => window.removeEventListener(SWEATBOX_COMMAND_EVENT, onCommand);
-  }, [instructor, selectedId]);
+  }, [sweatbox, instructor, selectedId, session.callsign, controllerName]);
 
   useEffect(() => {
     if (!host || !instructor || !createArmed) return;
@@ -589,8 +652,8 @@ export default function SweatboxRuntime({ controllerName, canInstruct }: Props) 
               {menuId === item.id && <div data-pf24-callsign-menu="true" onClick={(event) => event.stopPropagation()} className="absolute left-0 top-[10px] z-[90] w-[118px] border border-[#f2f2f2] bg-[#555c60] text-[10px] leading-[18px] text-[#ededed] shadow-lg">
                 <div className="border-b border-[#f2f2f2] px-2 text-center text-[#22e000]">{item.callsign}</div>
                 <button type="button" onClick={(event) => { event.stopPropagation(); openFpl(item); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">FPL</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); if (instructor) setTrafficBoth((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, assumedBy: controllerName } : candidate)); setMenuId(null); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Assume</button>
-                {instructor && <button type="button" onClick={(event) => { event.stopPropagation(); setTrafficBoth((current) => current.filter((candidate) => candidate.id !== item.id)); setSelectedId(null); setMenuId(null); }} className="block w-full px-2 text-center hover:bg-[#626a6f]">Delete</button>}
+                <button type="button" onClick={(event) => { event.stopPropagation(); window.dispatchEvent(new CustomEvent(SWEATBOX_COMMAND_EVENT, { detail: { action: "assume", id: item.id, position: session.callsign ?? controllerName } })); setMenuId(null); }} className="block w-full border-b border-[#f2f2f2] px-2 text-center hover:bg-[#626a6f]">Assume</button>
+                {instructor && <button type="button" onClick={(event) => { event.stopPropagation(); window.dispatchEvent(new CustomEvent(SWEATBOX_COMMAND_EVENT, { detail: { action: "delete", id: item.id } })); }} className="block w-full px-2 text-center hover:bg-[#626a6f]">Delete</button>}
               </div>}
             </div>
             <div className="grid grid-cols-[32px_32px]">
@@ -619,7 +682,7 @@ export default function SweatboxRuntime({ controllerName, canInstruct }: Props) 
       setActiveTool={setTool}
       onArmCreate={() => window.dispatchEvent(new CustomEvent(SWEATBOX_COMMAND_EVENT, { detail: { action: "arm-create" } }))}
     />
-    {fplId && fplDraft && <SweatboxFplEditor draft={fplDraft} setDraft={setFplDraft} readOnly={!instructor} onSave={saveFpl} onClose={() => { setFplId(null); setFplDraft(null); }} host={host} />}
+    {fplId && fplDraft && <SweatboxFplEditor draft={fplDraft} setDraft={setFplDraft} readOnly={!instructor} onSave={saveFpl} onClose={() => { setFplId(null); setFplDraft(null); }} />}
   </>;
 }
 
@@ -701,18 +764,24 @@ function ValueCommand({ value, setValue, placeholder, button, onSend }: { value:
   return <div className="grid gap-2"><input autoFocus value={value} onChange={(event) => setValue(event.target.value.replace(/\D/g, "").slice(0, 5))} placeholder={placeholder} className="bg-[#e8e8e8] p-1 text-black"/><button onClick={onSend} className="border border-white px-2 py-1 hover:bg-[#687176]">{button}</button></div>;
 }
 
-function SweatboxFplEditor({ draft, setDraft, readOnly, onSave, onClose, host }: { draft: SweatboxFlightPlan; setDraft: (draft: SweatboxFlightPlan) => void; readOnly: boolean; onSave: () => void; onClose: () => void; host: HTMLElement }) {
+function SweatboxFplEditor({ draft, setDraft, readOnly, onSave, onClose }: { draft: SweatboxFlightPlan; setDraft: (draft: SweatboxFlightPlan) => void; readOnly: boolean; onSave: () => void; onClose: () => void }) {
   const patch = (key: keyof SweatboxFlightPlan, value: string) => setDraft({ ...draft, [key]: value });
-  const field = (label: string, key: keyof SweatboxFlightPlan, maxLength = 12) => <label className="grid grid-cols-[150px_1fr] items-center gap-2"><span className="text-right text-[13px]">{label}</span><input disabled={readOnly} value={draft[key]} maxLength={maxLength} onChange={(event) => patch(key, event.target.value)} className="h-[28px] border border-[#aaa] bg-[#ededed] px-2 text-[13px] disabled:bg-[#ddd]"/></label>;
-  return createPortal(<div data-pf24-atc-fpl-editor="true" className="absolute left-1/2 top-1/2 z-[230] w-[880px] max-w-[calc(100%-40px)] -translate-x-1/2 -translate-y-1/2 border border-[#888] bg-[#cfcfcf] p-3 font-mono text-[#101010] shadow-[0_4px_18px_rgba(0,0,0,.55)]">
+  const field = (label: string, key: keyof SweatboxFlightPlan, maxLength = 12) => <label className="grid grid-cols-[150px_1fr] items-center gap-2"><span className="text-right text-[13px]">{label}</span><input readOnly={readOnly} autoFocus={!readOnly && key === "callsign"} value={draft[key]} maxLength={maxLength} onChange={(event) => patch(key, event.target.value)} className={`h-[28px] border border-[#aaa] px-2 text-[13px] outline-none ${readOnly ? "bg-[#ddd]" : "bg-[#ededed] focus:bg-white"}`}/></label>;
+  return createPortal(<div
+    data-pf24-atc-fpl-editor="true"
+    data-pf24-sweatbox-instructor-editor={readOnly ? undefined : "true"}
+    onMouseDown={(event) => event.stopPropagation()}
+    onClick={(event) => event.stopPropagation()}
+    className="fixed left-1/2 top-1/2 z-[2147483000] w-[880px] max-w-[calc(100%-40px)] -translate-x-1/2 -translate-y-1/2 border border-[#888] bg-[#cfcfcf] p-3 font-mono text-[#101010] shadow-[0_4px_18px_rgba(0,0,0,.55)]"
+  >
     <div className="mb-2 flex justify-between text-[17px]"><span>Flight Plan</span><span className="text-[11px]">{readOnly ? "SWEATBOX VIEW" : "SWEATBOX INSTRUCTOR EDIT"}</span></div>
     <div className="grid grid-cols-2 gap-x-10 gap-y-2 border-2 border-[#ededed] p-3">
       {field("Callsign", "callsign")}{field("Flight Level", "flightLevel", 3)}{field("Departure", "departure", 4)}{field("Cruising Speed", "cruiseSpeed", 3)}{field("Arrival", "arrival", 4)}{field("Aircraft", "aircraft", 8)}{field("Alternative", "alternate", 4)}{field("Fuel Endurance", "fuelDuration", 5)}{field("Flight Rules", "flightRules", 3)}{field("Acft Registration", "registration", 10)}
-      <label className="col-span-2 grid grid-cols-[150px_1fr] gap-2"><span className="pt-1 text-right text-[13px]">Route</span><textarea disabled={readOnly} value={draft.route} onChange={(event) => patch("route", event.target.value)} className="h-[70px] border border-[#aaa] bg-[#ededed] p-2 text-[13px] disabled:bg-[#ddd]"/></label>
-      <label className="col-span-2 grid grid-cols-[150px_1fr] gap-2"><span className="pt-1 text-right text-[13px]">Remarks</span><textarea disabled={readOnly} value={draft.remarks} onChange={(event) => patch("remarks", event.target.value)} className="h-[55px] border border-[#aaa] bg-[#ededed] p-2 text-[13px] disabled:bg-[#ddd]"/></label>
+      <label className="col-span-2 grid grid-cols-[150px_1fr] gap-2"><span className="pt-1 text-right text-[13px]">Route</span><textarea readOnly={readOnly} value={draft.route} onChange={(event) => patch("route", event.target.value)} className={`h-[70px] border border-[#aaa] p-2 text-[13px] outline-none ${readOnly ? "bg-[#ddd]" : "bg-[#ededed] focus:bg-white"}`}/></label>
+      <label className="col-span-2 grid grid-cols-[150px_1fr] gap-2"><span className="pt-1 text-right text-[13px]">Remarks</span><textarea readOnly={readOnly} value={draft.remarks} onChange={(event) => patch("remarks", event.target.value)} className={`h-[55px] border border-[#aaa] p-2 text-[13px] outline-none ${readOnly ? "bg-[#ddd]" : "bg-[#ededed] focus:bg-white"}`}/></label>
     </div>
     <div className="mt-2 flex justify-end gap-2">{!readOnly && <button onClick={onSave} className="border border-[#777] bg-[#e9e9e9] px-5 py-1 text-[13px] hover:bg-white">Save</button>}<button onClick={onClose} className="border border-[#777] bg-[#e9e9e9] px-5 py-1 text-[13px] hover:bg-white">Close</button></div>
-  </div>, host);
+  </div>, document.body);
 }
 
 function Icon({ children }: { children: React.ReactNode }) { return <svg viewBox="0 0 64 52" className="h-[44px] w-[54px]" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="square" strokeLinejoin="miter">{children}</svg>; }
