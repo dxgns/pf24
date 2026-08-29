@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ProjectFlightTrafficV6 from "@/components/scope/ProjectFlightTrafficV6";
 import GroundHeadingVectorFix from "@/components/scope/GroundHeadingVectorFix";
 import ScopeSweatboxConnect from "@/components/scope/ScopeSweatboxConnect";
+import ScopeSweatboxConsoleBridge from "@/components/scope/ScopeSweatboxConsoleBridge";
 import SweatboxRuntime from "@/components/scope/SweatboxRuntime";
 import { installTrafficCalibrationShim } from "@/components/scope/TrafficCalibrationShim";
 import { installProjectFlightLiveUpdateShim } from "@/components/scope/ProjectFlightLiveUpdateShim";
@@ -26,17 +27,10 @@ type Props = {
 type FeedStatusDetail = { connected?: boolean };
 
 const PROJECT_FLIGHT_FEED_EVENT = "pf24-project-flight-feed-status";
-// Project Flight occasionally pauses its traffic stream without closing the
-// WebSocket. Two and a half seconds was too aggressive and could turn normal
-// jitter into a self-inflicted reconnect. Give the feed enough time to recover
-// naturally, then remount only the traffic source if it truly stays stale.
 const FEED_STALE_MS = 12000;
 const WATCHDOG_INTERVAL_MS = 1000;
 
 export default function ProjectFlightTrafficConfigured({ initialPlans, serverId, controllerName, roles }: Props) {
-  // Complete snapshots are calibrated first. The live-update shim then hydrates
-  // Project Flight's position-only delta packets with the identity learned from
-  // those snapshots, allowing ProjectFlightTrafficV6 to consume both formats.
   installTrafficCalibrationShim();
   installProjectFlightLiveUpdateShim();
 
@@ -93,6 +87,7 @@ export default function ProjectFlightTrafficConfigured({ initialPlans, serverId,
 
   return <>
     <ScopeSweatboxConnect controllerName={controllerName} canInstruct={canInstruct} />
+    <ScopeSweatboxConsoleBridge controllerName={controllerName} canInstruct={canInstruct} />
     <SweatboxRuntime controllerName={controllerName} canInstruct={canInstruct} />
     {scopeServerMode === "AUTOMATIC" && <>
       <ProjectFlightTrafficV6
