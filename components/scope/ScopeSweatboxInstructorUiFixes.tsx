@@ -79,10 +79,6 @@ function labelFor(id: string) {
   return document.querySelector<HTMLElement>(`[data-pf24-sweatbox-traffic='true'] [data-pf24-traffic-label='true'][data-pf24-sweatbox-id='${CSS.escape(id)}']`);
 }
 
-function markerFor(id: string) {
-  return document.querySelector<HTMLButtonElement>(`[data-pf24-sweatbox-traffic='true'] button[data-pf24-traffic-select='true'][data-pf24-sweatbox-id='${CSS.escape(id)}']`);
-}
-
 function setLabelTransform(id: string, offset: Point) {
   const label = labelFor(id);
   if (!label) return;
@@ -102,11 +98,22 @@ function unlockInstructorFplEditor() {
 
   editor.dataset.pf24SweatboxInstructorEditor = "true";
   editor.style.pointerEvents = "auto";
-  editor.style.zIndex = "3000";
+  editor.style.zIndex = "2147483000";
+  editor.style.isolation = "isolate";
+
+  if (!editor.dataset.pf24SweatboxInputIsolation) {
+    editor.dataset.pf24SweatboxInputIsolation = "true";
+    const stopMouse = (event: Event) => event.stopPropagation();
+    editor.addEventListener("pointerdown", stopMouse);
+    editor.addEventListener("mousedown", stopMouse);
+    editor.addEventListener("keydown", stopMouse);
+    editor.addEventListener("keyup", stopMouse);
+    editor.addEventListener("wheel", stopMouse);
+  }
 
   editor.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input,textarea").forEach((field) => {
-    if (field.disabled) field.disabled = false;
-    if (field.readOnly) field.readOnly = false;
+    field.disabled = false;
+    field.readOnly = false;
     field.removeAttribute("disabled");
     field.removeAttribute("readonly");
     field.setAttribute("aria-disabled", "false");
@@ -117,6 +124,7 @@ function unlockInstructorFplEditor() {
   });
 
   editor.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
+    button.disabled = false;
     button.style.pointerEvents = "auto";
   });
 }
@@ -126,13 +134,12 @@ export default function ScopeSweatboxInstructorUiFixes({ canInstruct }: { canIns
   const [mode, setMode] = useState(() => readScopeServerMode());
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [hostSize, setHostSize] = useState<Point>({ x: 1, y: 1 });
-  const [viewport, setViewport] = useState<ViewpointOrViewport>(() => readViewport());
+  const [viewport, setViewport] = useState<Viewport>(() => readViewport());
   const [traffic, setTraffic] = useState<SweatboxAircraft[]>([]);
   const [settings, setSettings] = useState<TrafficSettings>(() => readTrafficSettings());
   const [offsetVersion, setOffsetVersion] = useState(0);
   const offsetsRef = useRef<Record<string, Point>>({});
   const dragRef = useRef<DragState | null>(null);
-  const suppressClickUntilRef = useRef(0);
 
   const active = connected && mode === "SWEATBOX_INSTRUCTOR" && canInstruct;
 
@@ -147,13 +154,14 @@ export default function ScopeSweatboxInstructorUiFixes({ canInstruct }: { canIns
       if (radar) setHostSize({ x: Math.max(1, radar.clientWidth), y: Math.max(1, radar.clientHeight) });
     };
     locate();
-    const timer = window.setInterval(locate, 400);
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(locate) : null;
     const radar = document.querySelector<HTMLElement>("main.fixed > section");
     if (radar) observer?.observe(radar);
+    const domObserver = new MutationObserver(locate);
+    domObserver.observe(document.body, { childList: true, subtree: true });
     return () => {
-      window.clearInterval(timer);
       observer?.disconnect();
+      domObserver.disconnect();
     };
   }, []);
 
@@ -187,7 +195,7 @@ export default function ScopeSweatboxInstructorUiFixes({ canInstruct }: { canIns
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["disabled", "readonly", "style"],
+      attributeFilter: ["disabled", "readonly"],
     });
 
     return () => {
@@ -267,38 +275,18 @@ export default function ScopeSweatboxInstructorUiFixes({ canInstruct }: { canIns
     const onMouseUp = () => {
       const drag = dragRef.current;
       if (!drag) return;
-      if (drag.moved) suppressClickUntilRef.current = performance.now() + 150;
       localStorage.setItem(LABEL_OFFSETS_KEY, JSON.stringify(offsetsRef.current));
       dragRef.current = null;
-    };
-
-    const onClick = (event: MouseEvent) => {
-      const label = findSweatboxLabel(event.target);
-      if (!label) return;
-      if (performance.now() < suppressClickUntilRef.current) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        return;
-      }
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("button,input,select,textarea,[data-pf24-callsign-menu='true']")) return;
-      const id = label.dataset.pf24SweatboxId ?? "";
-      if (!id) return;
-      const marker = markerFor(id);
-      if (marker) window.setTimeout(() => marker.click(), 0);
     };
 
     document.addEventListener("mousedown", onMouseDown, true);
     document.addEventListener("mousemove", onMouseMove, true);
     document.addEventListener("mouseup", onMouseUp, true);
-    document.addEventListener("click", onClick, true);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("mousedown", onMouseDown, true);
       document.removeEventListener("mousemove", onMouseMove, true);
       document.removeEventListener("mouseup", onMouseUp, true);
-      document.removeEventListener("click", onClick, true);
     };
   }, [active, host]);
 
@@ -342,12 +330,10 @@ export default function ScopeSweatboxInstructorUiFixes({ canInstruct }: { canIns
       [data-pf24-sweatbox-toolbar='true']>button{height:21px!important;width:26px!important;min-width:26px!important;border-right:1px solid #173d38!important;padding:0!important}
       [data-pf24-sweatbox-toolbar='true']>button svg{height:18px!important;width:21px!important}
       [data-pf24-sweatbox-toolbar='true']>div.absolute{top:21px!important}
-      [data-pf24-sweatbox-instructor-editor='true']{pointer-events:auto!important;z-index:3000!important}
+      [data-pf24-sweatbox-instructor-editor='true']{pointer-events:auto!important;z-index:2147483000!important;isolation:isolate!important}
       [data-pf24-sweatbox-instructor-editor='true'] input,
       [data-pf24-sweatbox-instructor-editor='true'] textarea{pointer-events:auto!important;user-select:text!important;cursor:text!important;opacity:1!important}
       [data-pf24-sweatbox-instructor-editor='true'] button{pointer-events:auto!important}
     `}</style>
   </>;
 }
-
-type ViewpointOrViewport = Viewport;
