@@ -201,7 +201,10 @@ export default function ScopeSweatboxConsoleBridge({ controllerName, canInstruct
 
   useEffect(() => {
     if (!sweatbox) return;
-    const channel = supabase.channel(`pf24-sweatbox-${session.room}-console-view`, {
+    // Join the exact same topic as the simulation runtime. The console is a
+    // read-only listener here; the runtime remains the single broadcaster for
+    // traffic/ATIS snapshots and the single presence tracker for this browser.
+    const channel = supabase.channel(`pf24-sweatbox-${session.room}`, {
       config: { broadcast: { self: false } },
     });
     channel
