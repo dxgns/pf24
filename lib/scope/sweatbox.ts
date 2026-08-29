@@ -48,6 +48,9 @@ export type SweatboxAircraft = {
   runway?: string | null;
   flightPlan: SweatboxFlightPlan;
   assumedBy?: string | null;
+  held?: boolean;
+  lastContactBy?: string | null;
+  lastContactAt?: number | null;
   freeText?: string;
 };
 
