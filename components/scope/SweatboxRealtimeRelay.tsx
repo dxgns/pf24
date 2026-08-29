@@ -15,12 +15,22 @@ type Props = {
   canInstruct: boolean;
 };
 
-const PRESENCE_REFRESH_MS = 1000;
+const RECONNECT_DELAY_MS = 1500;
+const STUDENT_REQUEST_INTERVAL_MS = 2500;
+const STUDENT_STALE_MS = 3000;
+
+function scopeUiConnected() {
+  if (typeof document === "undefined") return false;
+  const row = document.querySelector<HTMLElement>("main.fixed header > div:first-child");
+  return Array.from(row?.querySelectorAll<HTMLButtonElement>(":scope > button") ?? []).some(
+    (button) => button.textContent?.trim().toUpperCase() === "DISCONNECT",
+  );
+}
 
 function initialSession(): SweatboxSessionDetail {
   const mode = readScopeServerMode();
   return {
-    connected: false,
+    connected: scopeUiConnected(),
     mode,
     room: readSweatboxRoom(),
     instructor: false,
@@ -51,27 +61,13 @@ function dispatchSnapshot(snapshot: SweatboxSnapshot) {
   window.dispatchEvent(new CustomEvent(SWEATBOX_SNAPSHOT_EVENT, { detail: snapshot }));
 }
 
-function newestPresenceSnapshot(channel: RealtimeChannel, room: string) {
-  const state = channel.presenceState() as Record<string, Array<Record<string, unknown>>>;
-  let newest: SweatboxSnapshot | null = null;
-
-  for (const rows of Object.values(state)) {
-    for (const row of rows ?? []) {
-      if (String(row.role ?? "").toUpperCase() !== "INSTRUCTOR") continue;
-      const candidate = row.snapshot;
-      if (!validSnapshot(candidate, room)) continue;
-      if (!newest || candidate.sentAt > newest.sentAt) newest = candidate;
-    }
-  }
-
-  return newest;
-}
-
 export default function SweatboxRealtimeRelay({ canInstruct }: Props) {
   const [session, setSession] = useState<SweatboxSessionDetail>(() => initialSession());
+  const [retryGeneration, setRetryGeneration] = useState(0);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const clientRef = useRef<SupabaseClient | null>(null);
   const latestSnapshotRef = useRef<SweatboxSnapshot | null>(null);
+  const lastReceivedAtRef = useRef(0);
 
   useEffect(() => {
     const onSession = (event: Event) => {
@@ -81,7 +77,10 @@ export default function SweatboxRealtimeRelay({ canInstruct }: Props) {
         ...detail,
         instructor: detail.mode === "SWEATBOX_INSTRUCTOR" && detail.instructor && canInstruct,
       });
-      if (!detail.connected || detail.mode === "AUTOMATIC") latestSnapshotRef.current = null;
+      if (!detail.connected || detail.mode === "AUTOMATIC") {
+        latestSnapshotRef.current = null;
+        lastReceivedAtRef.current = 0;
+      }
     };
 
     window.addEventListener(SCOPE_SERVER_EVENT, onSession);
@@ -106,84 +105,84 @@ export default function SweatboxRealtimeRelay({ canInstruct }: Props) {
     channelRef.current = channel;
 
     let subscribed = false;
-    let lastPresenceRefresh = 0;
+    let disposed = false;
+    let reconnectTimer: number | null = null;
 
-    const publishPresence = async (force = false) => {
-      if (!instructor || !subscribed) return;
-      const snapshot = latestSnapshotRef.current;
-      if (!snapshot) return;
-      const now = Date.now();
-      if (!force && now - lastPresenceRefresh < PRESENCE_REFRESH_MS) return;
-      lastPresenceRefresh = now;
-      await channel.track({
-        role: "INSTRUCTOR",
-        room: session.room,
-        updatedAt: now,
-        snapshot,
-      });
+    const queueReconnect = () => {
+      if (disposed || reconnectTimer !== null) return;
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        if (!disposed) setRetryGeneration((value) => value + 1);
+      }, RECONNECT_DELAY_MS);
+    };
+
+    const sendBroadcast = async (event: string, payload: unknown) => {
+      if (!subscribed || disposed) return false;
+      try {
+        const result = await channel.send({ type: "broadcast", event, payload });
+        if (result === "ok") return true;
+      } catch {
+        // Rejoin below. Realtime errors are recoverable for a training room.
+      }
+      queueReconnect();
+      return false;
     };
 
     const sendLatest = async () => {
-      if (!instructor || !subscribed) return;
+      if (!instructor) return;
       const snapshot = latestSnapshotRef.current;
       if (!snapshot) return;
-      await channel.send({ type: "broadcast", event: "snapshot", payload: snapshot });
-      await publishPresence();
+      await sendBroadcast("snapshot", snapshot);
+    };
+
+    const requestSnapshot = async () => {
+      if (instructor) return;
+      await sendBroadcast("snapshot-request", {
+        room: session.room,
+        requestedAt: Date.now(),
+      });
     };
 
     channel
       .on("broadcast", { event: "snapshot" }, ({ payload }) => {
         if (instructor || !validSnapshot(payload, session.room)) return;
         latestSnapshotRef.current = payload;
+        lastReceivedAtRef.current = Date.now();
         dispatchSnapshot(payload);
       })
-      .on("broadcast", { event: "snapshot-request" }, () => {
+      .on("broadcast", { event: "snapshot-request" }, ({ payload }) => {
         if (!instructor) return;
+        if (payload && typeof payload === "object") {
+          const requestedRoom = String((payload as Record<string, unknown>).room ?? "");
+          if (requestedRoom && requestedRoom !== session.room) return;
+        }
         void sendLatest();
       })
-      .on("presence", { event: "sync" }, () => {
-        if (instructor) return;
-        const snapshot = newestPresenceSnapshot(channel, session.room);
-        if (!snapshot) return;
-        const current = latestSnapshotRef.current;
-        if (current && current.sentAt >= snapshot.sentAt) return;
-        latestSnapshotRef.current = snapshot;
-        dispatchSnapshot(snapshot);
-      })
       .subscribe(async (status) => {
+        if (disposed) return;
         if (status !== "SUBSCRIBED") {
           subscribed = false;
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") queueReconnect();
           return;
         }
 
         subscribed = true;
-        if (instructor) {
+        try {
+          // Presence is deliberately static. Supabase Presence is for low-frequency
+          // membership state, not aircraft positions. Updating it with snapshots
+          // can trigger the client presence rate limit and close the whole channel.
           await channel.track({
-            role: "INSTRUCTOR",
+            role: instructor ? "INSTRUCTOR" : "STUDENT",
             room: session.room,
             updatedAt: Date.now(),
-            snapshot: latestSnapshotRef.current,
           });
-          await sendLatest();
+        } catch {
+          queueReconnect();
           return;
         }
 
-        await channel.track({
-          role: "STUDENT",
-          room: session.room,
-          updatedAt: Date.now(),
-        });
-        await channel.send({
-          type: "broadcast",
-          event: "snapshot-request",
-          payload: { room: session.room, requestedAt: Date.now() },
-        });
-
-        const snapshot = newestPresenceSnapshot(channel, session.room);
-        if (snapshot) {
-          latestSnapshotRef.current = snapshot;
-          dispatchSnapshot(snapshot);
-        }
+        if (instructor) await sendLatest();
+        else await requestSnapshot();
       });
 
     const onLocalSnapshot = (event: Event) => {
@@ -196,19 +195,26 @@ export default function SweatboxRealtimeRelay({ canInstruct }: Props) {
 
     if (instructor) window.addEventListener(SWEATBOX_SNAPSHOT_EVENT, onLocalSnapshot);
 
-    const presenceTimer = instructor
-      ? window.setInterval(() => void publishPresence(true), PRESENCE_REFRESH_MS)
+    const requestTimer = !instructor
+      ? window.setInterval(() => {
+          if (!subscribed) return;
+          const last = lastReceivedAtRef.current;
+          if (last && Date.now() - last < STUDENT_STALE_MS) return;
+          void requestSnapshot();
+        }, STUDENT_REQUEST_INTERVAL_MS)
       : null;
 
     return () => {
+      disposed = true;
       if (instructor) window.removeEventListener(SWEATBOX_SNAPSHOT_EVENT, onLocalSnapshot);
-      if (presenceTimer !== null) window.clearInterval(presenceTimer);
+      if (requestTimer !== null) window.clearInterval(requestTimer);
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       subscribed = false;
       channelRef.current = null;
       clientRef.current = null;
       void client.removeChannel(channel);
     };
-  }, [session.connected, session.mode, session.room, session.instructor, canInstruct]);
+  }, [session.connected, session.mode, session.room, session.instructor, canInstruct, retryGeneration]);
 
   return null;
 }
