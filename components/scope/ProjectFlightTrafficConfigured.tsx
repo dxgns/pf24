@@ -5,6 +5,7 @@ import ProjectFlightTrafficV6 from "@/components/scope/ProjectFlightTrafficV6";
 import GroundHeadingVectorFix from "@/components/scope/GroundHeadingVectorFix";
 import ScopeSweatboxConnect from "@/components/scope/ScopeSweatboxConnect";
 import ScopeSweatboxConsoleBridge from "@/components/scope/ScopeSweatboxConsoleBridge";
+import ScopeSweatboxInstructorUiFixes from "@/components/scope/ScopeSweatboxInstructorUiFixes";
 import SweatboxRuntime from "@/components/scope/SweatboxRuntime";
 import { installTrafficCalibrationShim } from "@/components/scope/TrafficCalibrationShim";
 import { installProjectFlightLiveUpdateShim } from "@/components/scope/ProjectFlightLiveUpdateShim";
@@ -88,6 +89,7 @@ export default function ProjectFlightTrafficConfigured({ initialPlans, serverId,
   return <>
     <ScopeSweatboxConnect controllerName={controllerName} canInstruct={canInstruct} />
     <ScopeSweatboxConsoleBridge controllerName={controllerName} canInstruct={canInstruct} />
+    <ScopeSweatboxInstructorUiFixes canInstruct={canInstruct} />
     <SweatboxRuntime controllerName={controllerName} canInstruct={canInstruct} />
     {scopeServerMode === "AUTOMATIC" && <>
       <ProjectFlightTrafficV6
@@ -97,6 +99,5 @@ export default function ProjectFlightTrafficConfigured({ initialPlans, serverId,
       />
       <GroundHeadingVectorFix />
     </>}
-    <style jsx global>{`html[data-pf24-sweatbox-active='true'] [data-pf24-sweatbox-toolbar='true']{top:0!important;right:0!important}`}</style>
   </>;
 }
