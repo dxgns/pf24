@@ -8,6 +8,10 @@ export const metadata: Metadata = {
   title: "Contenido ATC | PF24 Academia",
 };
 
+const ATC_MODULES = Array.from({ length: 10 }, (_, index) => ({
+  number: index + 1,
+}));
+
 export default async function AtcAcademyContentPage() {
   const session = await auth();
   if (!session) redirect("/login");
@@ -34,12 +38,13 @@ export default async function AtcAcademyContentPage() {
 
           <p className="mono mt-10 text-xs uppercase tracking-[0.28em] text-sky-300/70">ATC</p>
           <h1 className="mt-3 text-4xl font-extrabold">Contenido {nextRank}</h1>
+          <p className="mt-3 text-sm text-slate-400">Programa organizado en 10 módulos.</p>
         </div>
 
         <div className="mt-6 grid gap-5 md:grid-cols-2">
-          {Array.from({ length: 5 }, (_, index) => (
-            <section key={index} className="panel rounded-3xl p-6">
-              <p className="mono text-xs uppercase tracking-[0.2em] text-sky-300/70">Módulo {index + 1}</p>
+          {ATC_MODULES.map((module) => (
+            <section key={module.number} className="panel rounded-3xl p-6">
+              <p className="mono text-xs uppercase tracking-[0.2em] text-sky-300/70">Módulo {module.number}</p>
               <div className="mt-5 min-h-[150px] rounded-2xl border border-white/5 bg-slate-950/30" />
             </section>
           ))}
