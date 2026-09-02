@@ -7,9 +7,14 @@ export const metadata: Metadata = {
   title: "PFRadar | PF24",
 };
 
+const PFRADAR_ACADEMIA_ROLE_ID = "1435807208830140416";
+
 export default async function PFRadarPage() {
   const session = await auth();
   if (!session) redirect("/login");
+
+  const canAccess = session.user?.permissions?.roles?.includes(PFRADAR_ACADEMIA_ROLE_ID) ?? false;
+  if (!canAccess) redirect("/access-denied");
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
