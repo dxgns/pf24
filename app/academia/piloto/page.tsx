@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getPilotRankFromRoles, nextPilotRank } from "@/lib/academyRanks";
+import { getPilotRankFromRoles } from "@/lib/academyRanks";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -14,8 +14,6 @@ export default async function PilotAcademyPage() {
 
   const rank = getPilotRankFromRoles(session.user?.permissions?.roles);
   if (rank === "NONE") redirect("/access-denied");
-
-  const nextRank = nextPilotRank(rank);
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
@@ -36,22 +34,19 @@ export default async function PilotAcademyPage() {
         </div>
 
         <div className="mt-6">
-          {nextRank ? (
-            <Link
-              href="/academia/piloto/contenido"
-              className="panel group block rounded-3xl p-8 transition hover:-translate-y-1 hover:border-sky-400/60"
-            >
-              <p className="mono text-xs uppercase tracking-[0.25em] text-sky-300/70">Formación</p>
-              <h2 className="mt-4 text-2xl font-extrabold text-white group-hover:text-sky-300">
-                Contenido {nextRank}
-              </h2>
-              <p className="mono mt-8 text-sm text-sky-300">Abrir contenido →</p>
-            </Link>
-          ) : (
-            <div className="panel rounded-3xl p-8 opacity-55">
-              <h2 className="text-2xl font-extrabold text-slate-300">Sin contenido de rango superior</h2>
-            </div>
-          )}
+          <Link
+            href="/academia/piloto/contenido"
+            className="panel group block rounded-3xl p-8 transition hover:-translate-y-1 hover:border-sky-400/60"
+          >
+            <p className="mono text-xs uppercase tracking-[0.25em] text-sky-300/70">Formación</p>
+            <h2 className="mt-4 text-2xl font-extrabold text-white group-hover:text-sky-300">
+              Licencia PE
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Programa de Piloto Estudiante · 10 módulos.
+            </p>
+            <p className="mono mt-8 text-sm text-sky-300">Abrir módulos →</p>
+          </Link>
         </div>
       </section>
     </main>
