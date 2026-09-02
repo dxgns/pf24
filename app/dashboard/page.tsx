@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   title: "Dashboard | PF24",
 };
 
+const PFRADAR_ACADEMIA_ROLE_ID = "1435807208830140416";
+
 export default async function DashboardPage() {
   let session;
 
@@ -27,6 +29,7 @@ export default async function DashboardPage() {
   const canAccessPilot = session.user?.permissions?.canAccessPilot;
   const canAccessATC = session.user?.permissions?.canAccessATC;
   const canAccessAdmin = session.user?.permissions?.canAccessAdmin;
+  const canAccessPFRadarAcademia = session.user?.permissions?.roles?.includes(PFRADAR_ACADEMIA_ROLE_ID) ?? false;
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
@@ -82,19 +85,23 @@ export default async function DashboardPage() {
             />
           )}
 
-          <PortalCard
-            href="/pfradar"
-            eyebrow="PF24 Radar"
-            title="PFRadar"
-            text="Portal dedicado a PFRadar dentro de la plataforma PF24."
-          />
+          {canAccessPFRadarAcademia && (
+            <>
+              <PortalCard
+                href="/pfradar"
+                eyebrow="PF24 Radar"
+                title="PFRadar"
+                text="Portal dedicado a PFRadar dentro de la plataforma PF24."
+              />
 
-          <PortalCard
-            href="/academia"
-            eyebrow="Training"
-            title="Academia"
-            text="Formación de piloto y ATC organizada según el rango actual del usuario."
-          />
+              <PortalCard
+                href="/academia"
+                eyebrow="Training"
+                title="Academia"
+                text="Formación de piloto y ATC organizada según el rango actual del usuario."
+              />
+            </>
+          )}
 
           {canAccessAdmin && (
             <PortalCard
