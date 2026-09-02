@@ -1,25 +1,20 @@
 import { auth } from "@/auth";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPilotRankFromRoles } from "@/lib/academyRanks";
+import {
+  PE_MODULES,
+  PILOT_EVALUATION_MODULE,
+  PILOT_PROGRESS_COOKIE,
+  isPilotEvaluationUnlocked,
+  parseSeenPilotModules,
+} from "@/lib/academy/pilotModules";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Licencia PE | PF24 Academia",
 };
-
-const PE_MODULES = [
-  "INFORMACIÓN METEOROLÓGICA Y Q-CODES",
-  "ALTIMETRÍA BÁSICA",
-  "CARTAS DE RODAJE Y OPERACIONES EN SUPERFICIE",
-  "DIFERENCIAS ENTRE VFR E IFR",
-  "CIRCUITO DE TRÁNSITO AERONÁUTICO",
-  "PLAN DE VUELO VFR LOCAL",
-  "LUCES DE AERONAVE",
-  "MANEJO DE ESCENARIOS IMPREVISTOS",
-  "FRASEOLOGÍA Y COMUNICACIONES",
-  "EVALUACIÓN Y HABILITACIÓN",
-] as const;
 
 export default async function PilotAcademyContentPage() {
   const session = await auth();
@@ -27,6 +22,10 @@ export default async function PilotAcademyContentPage() {
 
   const rank = getPilotRankFromRoles(session.user?.permissions?.roles);
   if (rank === "NONE") redirect("/access-denied");
+
+  const cookieStore = await cookies();
+  const seenModules = parseSeenPilotModules(cookieStore.get(PILOT_PROGRESS_COOKIE)?.value);
+  const evaluationUnlocked = isPilotEvaluationUnlocked(seenModules);
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
@@ -68,20 +67,52 @@ export default async function PilotAcademyContentPage() {
         </section>
 
         <div className="mt-6 grid gap-5 md:grid-cols-2">
-          {PE_MODULES.map((title, index) => (
-            <Link
-              key={title}
-              href={`/academia/piloto/contenido/${index + 1}`}
-              className="panel group rounded-3xl p-6 transition hover:-translate-y-0.5 hover:border-sky-400/40 hover:bg-slate-900/80"
-            >
-              <p className="mono text-xs uppercase tracking-[0.2em] text-sky-300/70">Módulo {index + 1}</p>
-              <h2 className="mt-4 text-lg font-extrabold leading-snug text-white">{title}</h2>
-              <div className="mt-6 flex items-center justify-between border-t border-white/10 pt-4">
-                <span className="text-xs text-slate-500">Ver contenido individual</span>
-                <span className="mono text-sm text-sky-300 transition group-hover:translate-x-1">Abrir módulo →</span>
-              </div>
-            </Link>
-          ))}
+          {PE_MODULES.map((title, index) => {
+            const moduleNumber = index + 1;
+            const evaluation = moduleNumber === PILOT_EVALUATION_MODULE;
+            const locked = evaluation && !evaluationUnlocked;
+            const seen = seenModules.has(moduleNumber);
+
+            if (locked) {
+              return (
+                <div
+                  key={title}
+                  aria-disabled="true"
+                  className="panel cursor-not-allowed rounded-3xl border-white/5 p-6 opacity-55"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="mono text-xs uppercase tracking-[0.2em] text-slate-500">Módulo {moduleNumber} · Evaluación</p>
+                    <span className="text-lg text-slate-500" aria-hidden="true">🔒</span>
+                  </div>
+                  <h2 className="mt-4 text-lg font-extrabold leading-snug text-slate-300">{title}</h2>
+                  <div className="mt-6 flex items-center justify-between border-t border-white/10 pt-4">
+                    <span className="text-xs text-slate-500">Debes ver los módulos 1–{PILOT_EVALUATION_MODULE - 1}</span>
+                    <span className="mono text-sm text-slate-500">Bloqueado</span>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <Link
+                key={title}
+                href={`/academia/piloto/contenido/${moduleNumber}`}
+                className="panel group rounded-3xl p-6 transition hover:-translate-y-0.5 hover:border-sky-400/40 hover:bg-slate-900/80"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <p className="mono text-xs uppercase tracking-[0.2em] text-sky-300/70">
+                    Módulo {moduleNumber}{evaluation ? " · Evaluación" : ""}
+                  </p>
+                  {seen && !evaluation && <span className="mono text-[10px] uppercase tracking-[0.14em] text-emerald-300">Visto</span>}
+                </div>
+                <h2 className="mt-4 text-lg font-extrabold leading-snug text-white">{title}</h2>
+                <div className="mt-6 flex items-center justify-between border-t border-white/10 pt-4">
+                  <span className="text-xs text-slate-500">{evaluation ? "Iniciar evaluación" : "Ver contenido individual"}</span>
+                  <span className="mono text-sm text-sky-300 transition group-hover:translate-x-1">Abrir módulo →</span>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </section>
     </main>
