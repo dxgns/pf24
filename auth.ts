@@ -22,6 +22,36 @@ function missingIdentityTable(error: { code?: string } | null) {
   return error?.code === "42P01" || error?.code === "PGRST205";
 }
 
+async function fetchDiscordRoles(accessToken: unknown): Promise<string[] | null> {
+  const token = typeof accessToken === "string" ? accessToken.trim() : "";
+  if (!token) return null;
+
+  try {
+    const response = await fetch(
+      `https://discord.com/api/users/@me/guilds/${DISCORD_GUILD_ID}/member`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) {
+      console.error("No se pudieron obtener roles Discord:", response.status);
+      return null;
+    }
+
+    const member = await response.json() as { roles?: unknown };
+    return Array.isArray(member.roles)
+      ? member.roles.filter((role): role is string => typeof role === "string")
+      : [];
+  } catch (error) {
+    console.error("Discord role fetch error:", error);
+    return null;
+  }
+}
+
 async function readLinkedRobloxCookie() {
   try {
     const cookieStore = await cookies();
@@ -138,44 +168,31 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.robloxDisplayName = robloxIdentity.displayName;
       }
 
-      if (token.discordAccessToken) {
-        try {
-          const response = await fetch(
-            `https://discord.com/api/users/@me/guilds/${DISCORD_GUILD_ID}/member`,
-            {
-              headers: {
-                Authorization: `Bearer ${token.discordAccessToken}`,
-              },
-            }
-          );
+      // Keep a role snapshot in the JWT for fallback, but do not rely on it as
+      // the authoritative value after login. The session callback below performs
+      // a no-cache Discord lookup every time a page resolves the session, so a
+      // browser refresh immediately reflects roles added or removed in Discord.
+      if (account?.access_token || !Array.isArray(token.discordRoles)) {
+        const roles = await fetchDiscordRoles(token.discordAccessToken);
+        if (roles) {
+          token.discordRoles = roles;
+          token.permissions = getPermissionsFromRoles(roles);
 
-          if (response.ok) {
-            const member = await response.json();
-            const roles = member.roles ?? [];
-
-            token.discordRoles = roles;
-            token.permissions = getPermissionsFromRoles(roles);
-
-            if (account?.access_token) {
-              await getSupabaseAdmin().from("login_logs").insert({
-                discord_id: discordProfile?.id ?? token.discordId ?? token.sub ?? "unknown",
-                username:
-                  discordProfile?.username ??
-                  token.name ??
-                  "Usuario desconocido",
-                display_name:
-                  discordProfile?.global_name ??
-                  token.name ??
-                  discordProfile?.username ??
-                  "Usuario desconocido",
-                roles,
-              });
-            }
-          } else {
-            console.error("No se pudieron obtener roles Discord:", response.status);
+          if (account?.access_token) {
+            await getSupabaseAdmin().from("login_logs").insert({
+              discord_id: discordProfile?.id ?? token.discordId ?? token.sub ?? "unknown",
+              username:
+                discordProfile?.username ??
+                token.name ??
+                "Usuario desconocido",
+              display_name:
+                discordProfile?.global_name ??
+                token.name ??
+                discordProfile?.username ??
+                "Usuario desconocido",
+              roles,
+            });
           }
-        } catch (error) {
-          console.error("Discord role fetch/login log error:", error);
         }
       }
 
@@ -183,10 +200,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
 
     async session({ session, token }) {
-      session.user.discordRoles = token.discordRoles as string[];
-      session.user.permissions = token.permissions as ReturnType<
-        typeof getPermissionsFromRoles
-      >;
+      const cachedRoles = Array.isArray(token.discordRoles)
+        ? token.discordRoles.filter((role): role is string => typeof role === "string")
+        : [];
+      const freshRoles = await fetchDiscordRoles(token.discordAccessToken);
+      const roles = freshRoles ?? cachedRoles;
+
+      session.user.discordRoles = roles;
+      session.user.permissions = getPermissionsFromRoles(roles);
       session.user.robloxUserId = token.robloxUserId as string | undefined;
       session.user.robloxUsername = token.robloxUsername as string | undefined;
       session.user.robloxDisplayName = token.robloxDisplayName as string | undefined;
