@@ -82,6 +82,20 @@ export default async function DashboardPage() {
             />
           )}
 
+          <PortalCard
+            href="/pfradar"
+            eyebrow="PF24 Radar"
+            title="PFRadar"
+            text="Portal dedicado a PFRadar dentro de la plataforma PF24."
+          />
+
+          <PortalCard
+            href="/academia"
+            eyebrow="Training"
+            title="Academia"
+            text="Formación de piloto y ATC organizada según el rango actual del usuario."
+          />
+
           {canAccessAdmin && (
             <PortalCard
               href="/admin"
