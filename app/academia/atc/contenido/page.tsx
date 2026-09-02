@@ -43,10 +43,17 @@ export default async function AtcAcademyContentPage() {
 
         <div className="mt-6 grid gap-5 md:grid-cols-2">
           {ATC_MODULES.map((module) => (
-            <section key={module.number} className="panel rounded-3xl p-6">
+            <Link
+              key={module.number}
+              href={`/academia/atc/contenido/${module.number}`}
+              className="panel group rounded-3xl p-6 transition hover:-translate-y-0.5 hover:border-sky-400/40 hover:bg-slate-900/80"
+            >
               <p className="mono text-xs uppercase tracking-[0.2em] text-sky-300/70">Módulo {module.number}</p>
-              <div className="mt-5 min-h-[150px] rounded-2xl border border-white/5 bg-slate-950/30" />
-            </section>
+              <div className="mt-10 flex items-center justify-between border-t border-white/10 pt-4">
+                <span className="text-xs text-slate-500">Ver contenido individual</span>
+                <span className="mono text-sm text-sky-300 transition group-hover:translate-x-1">Abrir módulo →</span>
+              </div>
+            </Link>
           ))}
         </div>
       </section>
