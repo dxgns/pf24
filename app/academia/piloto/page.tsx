@@ -33,7 +33,7 @@ export default async function PilotAcademyPage() {
           <h1 className="mt-3 text-4xl font-extrabold">Piloto {rank}</h1>
         </div>
 
-        <div className="mt-6">
+        <div className="mt-6 grid gap-5 md:grid-cols-2">
           <Link
             href="/academia/piloto/contenido"
             className="panel group block rounded-3xl p-8 transition hover:-translate-y-1 hover:border-sky-400/60"
@@ -44,6 +44,20 @@ export default async function PilotAcademyPage() {
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
               Programa de Piloto Estudiante · 10 módulos.
+            </p>
+            <p className="mono mt-8 text-sm text-sky-300">Abrir módulos →</p>
+          </Link>
+
+          <Link
+            href="/academia/piloto/ppl/contenido"
+            className="panel group block rounded-3xl p-8 transition hover:-translate-y-1 hover:border-sky-400/60"
+          >
+            <p className="mono text-xs uppercase tracking-[0.25em] text-sky-300/70">Formación</p>
+            <h2 className="mt-4 text-2xl font-extrabold text-white group-hover:text-sky-300">
+              Licencia PPL
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Programa de Piloto Privado · 8 módulos.
             </p>
             <p className="mono mt-8 text-sm text-sky-300">Abrir módulos →</p>
           </Link>
