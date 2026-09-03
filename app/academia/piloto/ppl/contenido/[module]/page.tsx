@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import PplModuleContentPdf from "@/components/academy/PplModuleContentPdf";
+import PplModuleContentWithIntro from "@/components/academy/PplModuleContentWithIntro";
 import PplModuleProgress from "@/components/academy/PplModuleProgress";
 import { getPilotRankFromRoles } from "@/lib/academyRanks";
 import {
@@ -14,13 +14,9 @@ import {
 } from "@/lib/academy/pplModules";
 import type { Metadata } from "next";
 
-export const metadata: Metadata = {
-  title: "Módulo PPL | PF24 Academia",
-};
+export const metadata: Metadata = { title: "Módulo PPL | PF24 Academia" };
 
-type Props = {
-  params: Promise<{ module: string }>;
-};
+type Props = { params: Promise<{ module: string }> };
 
 export default async function PplAcademyModulePage({ params }: Props) {
   const session = await auth();
@@ -52,19 +48,28 @@ export default async function PplAcademyModulePage({ params }: Props) {
             <Link href="/academia/piloto/ppl/contenido" className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300">← Todos los módulos</Link>
             <div className="mono text-sm tracking-[0.25em] text-slate-400">PF24 ACADEMIA</div>
           </div>
-
           <p className="mono mt-10 text-xs uppercase tracking-[0.28em] text-sky-300/70">Piloto Privado · Licencia PPL</p>
           <p className="mono mt-5 text-sm uppercase tracking-[0.22em] text-sky-300">Módulo {moduleNumber} de {PPL_MODULES.length}</p>
           <h1 className="mt-3 max-w-4xl text-4xl font-extrabold leading-tight">{title}</h1>
         </div>
 
         <article className="panel mt-6 rounded-3xl p-8 md:p-10">
-          <PplModuleContentPdf moduleNumber={moduleNumber} />
+          <PplModuleContentWithIntro moduleNumber={moduleNumber} />
         </article>
 
         <nav className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="Navegación entre módulos">
-          {previous ? <Link href={`/academia/piloto/ppl/contenido/${previous}`} className="panel rounded-2xl p-5 transition hover:border-sky-400/40 hover:bg-slate-900/80"><span className="mono text-xs uppercase tracking-[0.18em] text-sky-300/70">← Módulo {previous}</span><span className="mt-2 block text-sm font-semibold text-slate-200">{PPL_MODULES[previous - 1]}</span></Link> : <div />}
-          {next && <Link href={`/academia/piloto/ppl/contenido/${next}`} className="panel rounded-2xl p-5 text-right transition hover:border-sky-400/40 hover:bg-slate-900/80"><span className="mono text-xs uppercase tracking-[0.18em] text-sky-300/70">{next === PPL_EVALUATION_MODULE ? "Evaluación" : `Módulo ${next}`} →</span><span className="mt-2 block text-sm font-semibold text-slate-200">{PPL_MODULES[next - 1]}</span></Link>}
+          {previous ? (
+            <Link href={`/academia/piloto/ppl/contenido/${previous}`} className="panel rounded-2xl p-5 transition hover:border-sky-400/40 hover:bg-slate-900/80">
+              <span className="mono text-xs uppercase tracking-[0.18em] text-sky-300/70">← Módulo {previous}</span>
+              <span className="mt-2 block text-sm font-semibold text-slate-200">{PPL_MODULES[previous - 1]}</span>
+            </Link>
+          ) : <div />}
+          {next && (
+            <Link href={`/academia/piloto/ppl/contenido/${next}`} className="panel rounded-2xl p-5 text-right transition hover:border-sky-400/40 hover:bg-slate-900/80">
+              <span className="mono text-xs uppercase tracking-[0.18em] text-sky-300/70">{next === PPL_EVALUATION_MODULE ? "Evaluación" : `Módulo ${next}`} →</span>
+              <span className="mt-2 block text-sm font-semibold text-slate-200">{PPL_MODULES[next - 1]}</span>
+            </Link>
+          )}
         </nav>
       </section>
     </main>

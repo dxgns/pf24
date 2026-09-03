@@ -1,4 +1,5 @@
 export const PPL_MODULES = [
+  "INTRODUCCIÓN A LA LICENCIA PPL",
   "NAVEGACIÓN VFR DE TRAVESÍA",
   "PLANIFICACIÓN Y GESTIÓN DEL VUELO",
   "METEOROLOGÍA APLICADA A LA DECISIÓN",
@@ -13,7 +14,7 @@ export const PPL_MODULES = [
 ] as const;
 
 export const PPL_EVALUATION_MODULE = PPL_MODULES.length;
-export const PPL_PROGRESS_COOKIE = "pf24_pilot_academy_seen_PPL";
+export const PPL_PROGRESS_COOKIE = "pf24_pilot_academy_seen_PPL_v2";
 
 export function parseSeenPplModules(value?: string) {
   return new Set(

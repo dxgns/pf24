@@ -1,4 +1,5 @@
 export const PE_MODULES = [
+  "INTRODUCCIÓN A LA LICENCIA PE",
   "INFORMACIÓN METEOROLÓGICA Y Q-CODES",
   "ALTIMETRÍA BÁSICA",
   "CARTAS DE RODAJE Y OPERACIONES EN SUPERFICIE",
@@ -12,7 +13,7 @@ export const PE_MODULES = [
 ] as const;
 
 export const PILOT_EVALUATION_MODULE = PE_MODULES.length;
-export const PILOT_PROGRESS_COOKIE = "pf24_pilot_academy_seen_PE";
+export const PILOT_PROGRESS_COOKIE = "pf24_pilot_academy_seen_PE_v2";
 
 export function parseSeenPilotModules(value?: string) {
   return new Set(
