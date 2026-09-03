@@ -3,10 +3,10 @@ import PplModuleContentPdf from "@/components/academy/PplModuleContentPdf";
 function IntroTable() {
   const rows = [
     ["Operación", "Circuito VFR local", "Travesías y secuencias completas entre aeródromos"],
-    ["Navegación", "Referencia visual básica", "Ruta, puntos, tiempos, viento, radioayudas y RNAV"],
-    ["Meteorología", "METAR y QNH", "METAR, TAF, evolución del tiempo y decisiones operativas"],
+    ["Navegación", "Referencia visual básica", "Ruta, puntos, rumbo, viento, VOR/DME y RNAV"],
+    ["Meteorología", "ATIS y condiciones del aeródromo", "Evolución de las condiciones y decisiones operativas"],
     ["ATC", "Rodaje, despegue y circuito", "Autorizaciones, transferencias, vectores, salidas y llegadas"],
-    ["Instrumentos", "Altimetría básica", "Vuelo IFR, procedimientos y aproximaciones instrumentales"],
+    ["Datos de vuelo", "Altitud, velocidad y rumbo", "Vuelo IFR y procedimientos adaptados a los valores disponibles"],
   ];
 
   return (
@@ -31,23 +31,6 @@ function IntroTable() {
   );
 }
 
-function PhaseFlow() {
-  const phases = ["Preparar", "Salir", "Navegar", "Llegar", "Revisar"];
-  return (
-    <figure className="rounded-2xl border border-white/10 bg-slate-950/35 p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        {phases.map((phase, index) => (
-          <div key={phase} className="flex flex-1 items-center gap-3">
-            <div className="flex-1 rounded-xl border border-sky-400/25 bg-sky-400/10 px-4 py-3 text-center text-sm font-bold text-sky-100">{phase}</div>
-            {index < phases.length - 1 && <span className="hidden text-slate-500 sm:block">→</span>}
-          </div>
-        ))}
-      </div>
-      <figcaption className="mt-4 text-center text-xs text-slate-500">Cada fase requiere anticipación, comprobación y comunicación.</figcaption>
-    </figure>
-  );
-}
-
 export default function PplModuleContentWithIntro({ moduleNumber }: { moduleNumber: number }) {
   if (moduleNumber === 1) {
     return (
@@ -60,12 +43,18 @@ export default function PplModuleContentWithIntro({ moduleNumber }: { moduleNumb
         </p>
 
         <IntroTable />
-        <PhaseFlow />
+
+        <div className="rounded-2xl border border-sky-400/20 bg-sky-400/5 p-5">
+          <h2 className="mono text-xs font-bold uppercase tracking-[0.16em] text-sky-300">Secuencia operativa</h2>
+          <p className="mt-3 text-sm leading-7 text-slate-300">
+            Todo vuelo se organiza en cinco ideas: preparar la operación, realizar la salida, mantener la navegación, anticipar la llegada y revisar lo ocurrido. El piloto debe saber explicar qué hará en cada fase con las herramientas que Project Flight realmente ofrece.
+          </p>
+        </div>
 
         <section>
           <h2 className="text-xl font-extrabold text-white">Método de trabajo esperado</h2>
           <ul className="mt-4 space-y-3 text-sm leading-7 text-slate-300">
-            <li><strong className="text-white">Preparar:</strong> reunir cartas, meteorología, NOTAM, combustible, alterno y plan de vuelo.</li>
+            <li><strong className="text-white">Preparar:</strong> reunir cartas, información meteorológica disponible, NOTAM, combustible, alterno y plan de vuelo.</li>
             <li><strong className="text-white">Ejecutar:</strong> volar la aeronave con precisión, usar listas y cumplir autorizaciones y restricciones.</li>
             <li><strong className="text-white">Anticipar:</strong> revisar con tiempo la salida, el siguiente punto, la llegada y una posible alternativa.</li>
             <li><strong className="text-white">Comunicar:</strong> escuchar antes de transmitir, usar fraseología clara y colacionar los datos críticos.</li>
