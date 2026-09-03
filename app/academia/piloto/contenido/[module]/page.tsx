@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import PilotModuleContent from "@/components/academy/PilotModuleContent";
+import PilotModuleContentSynced from "@/components/academy/PilotModuleContentSynced";
 import PilotModuleProgress from "@/components/academy/PilotModuleProgress";
 import { getPilotRankFromRoles } from "@/lib/academyRanks";
 import {
@@ -64,7 +64,7 @@ export default async function PilotAcademyModulePage({ params }: Props) {
         </div>
 
         <article className="panel mt-6 rounded-3xl p-8 md:p-10">
-          <PilotModuleContent moduleNumber={moduleNumber} />
+          <PilotModuleContentSynced moduleNumber={moduleNumber} />
         </article>
 
         <nav className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="Navegación entre módulos">
