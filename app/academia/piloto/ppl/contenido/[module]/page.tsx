@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import PplModuleContent from "@/components/academy/PplModuleContent";
+import PplModuleContentPdf from "@/components/academy/PplModuleContentPdf";
 import PplModuleProgress from "@/components/academy/PplModuleProgress";
 import { getPilotRankFromRoles } from "@/lib/academyRanks";
 import {
@@ -49,12 +49,7 @@ export default async function PplAcademyModulePage({ params }: Props) {
       <section className="section-container max-w-5xl">
         <div className="panel rounded-3xl p-8">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <Link
-              href="/academia/piloto/ppl/contenido"
-              className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300"
-            >
-              ← Todos los módulos
-            </Link>
+            <Link href="/academia/piloto/ppl/contenido" className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300">← Todos los módulos</Link>
             <div className="mono text-sm tracking-[0.25em] text-slate-400">PF24 ACADEMIA</div>
           </div>
 
@@ -64,30 +59,12 @@ export default async function PplAcademyModulePage({ params }: Props) {
         </div>
 
         <article className="panel mt-6 rounded-3xl p-8 md:p-10">
-          <PplModuleContent moduleNumber={moduleNumber} />
+          <PplModuleContentPdf moduleNumber={moduleNumber} />
         </article>
 
         <nav className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="Navegación entre módulos">
-          {previous ? (
-            <Link
-              href={`/academia/piloto/ppl/contenido/${previous}`}
-              className="panel rounded-2xl p-5 transition hover:border-sky-400/40 hover:bg-slate-900/80"
-            >
-              <span className="mono text-xs uppercase tracking-[0.18em] text-sky-300/70">← Módulo {previous}</span>
-              <span className="mt-2 block text-sm font-semibold text-slate-200">{PPL_MODULES[previous - 1]}</span>
-            </Link>
-          ) : <div />}
-          {next && (
-            <Link
-              href={`/academia/piloto/ppl/contenido/${next}`}
-              className="panel rounded-2xl p-5 text-right transition hover:border-sky-400/40 hover:bg-slate-900/80"
-            >
-              <span className="mono text-xs uppercase tracking-[0.18em] text-sky-300/70">
-                {next === PPL_EVALUATION_MODULE ? "Evaluación" : `Módulo ${next}`} →
-              </span>
-              <span className="mt-2 block text-sm font-semibold text-slate-200">{PPL_MODULES[next - 1]}</span>
-            </Link>
-          )}
+          {previous ? <Link href={`/academia/piloto/ppl/contenido/${previous}`} className="panel rounded-2xl p-5 transition hover:border-sky-400/40 hover:bg-slate-900/80"><span className="mono text-xs uppercase tracking-[0.18em] text-sky-300/70">← Módulo {previous}</span><span className="mt-2 block text-sm font-semibold text-slate-200">{PPL_MODULES[previous - 1]}</span></Link> : <div />}
+          {next && <Link href={`/academia/piloto/ppl/contenido/${next}`} className="panel rounded-2xl p-5 text-right transition hover:border-sky-400/40 hover:bg-slate-900/80"><span className="mono text-xs uppercase tracking-[0.18em] text-sky-300/70">{next === PPL_EVALUATION_MODULE ? "Evaluación" : `Módulo ${next}`} →</span><span className="mt-2 block text-sm font-semibold text-slate-200">{PPL_MODULES[next - 1]}</span></Link>}
         </nav>
       </section>
     </main>
