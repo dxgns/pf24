@@ -5,11 +5,11 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 
 const PHOTO_STRIPS = [
-  "/images/community/strip-1.jpg",
-  "/images/community/strip-2.jpg",
-  "/images/community/strip-3.jpg",
-  "/images/community/strip-4.jpg",
-  "/images/community/strip-5.jpg",
+  "/images/community/strip-1.jpg?v=20260908c",
+  "/images/community/strip-2.jpg?v=20260908c",
+  "/images/community/strip-3.jpg?v=20260908c",
+  "/images/community/strip-4.jpg?v=20260908c",
+  "/images/community/strip-5.jpg?v=20260908c",
 ] as const;
 
 const PHOTOS_PER_STRIP = 4;
@@ -41,7 +41,10 @@ function choosePhotoIndex() {
 
 function useRandomPhotoIndex() {
   const pathname = usePathname();
-  const [photoIndex, setPhotoIndex] = useState<number | null>(null);
+
+  // Siempre renderizamos una foto desde el HTML inicial. La rotación aleatoria
+  // reemplaza este fallback después de hidratar, pero la página nunca queda vacía.
+  const [photoIndex, setPhotoIndex] = useState(0);
 
   useEffect(() => {
     setPhotoIndex(choosePhotoIndex());
@@ -50,20 +53,11 @@ function useRandomPhotoIndex() {
   return photoIndex;
 }
 
-function CommunityPhoto({
-  photoIndex,
-  className,
-  overscan = 1,
-}: {
-  photoIndex: number;
-  className?: string;
-  overscan?: number;
-}) {
+function CommunityPhoto({ photoIndex, className }: { photoIndex: number; className?: string }) {
   const stripIndex = Math.floor(photoIndex / PHOTOS_PER_STRIP);
   const slotIndex = photoIndex % PHOTOS_PER_STRIP;
-  const totalWidth = PHOTOS_PER_STRIP * overscan;
-  const centeredOffset = slotIndex * overscan + (overscan - 1) / 2;
-  const position = totalWidth > 1 ? (centeredOffset / (totalWidth - 1)) * 100 : 50;
+  const position =
+    PHOTOS_PER_STRIP <= 1 ? 50 : (slotIndex / (PHOTOS_PER_STRIP - 1)) * 100;
 
   return (
     <div
@@ -72,39 +66,29 @@ function CommunityPhoto({
         backgroundImage: `url("${PHOTO_STRIPS[stripIndex]}")`,
         backgroundRepeat: "no-repeat",
         backgroundPosition: `${position}% center`,
-        backgroundSize: `${totalWidth * 100}% auto`,
+        // Cada tira contiene cuatro capturas iguales en tamaño. Se estira la
+        // tira completa a 400% para que cada cuarto llene exactamente el marco.
+        backgroundSize: `${PHOTOS_PER_STRIP * 100}% 100%`,
       }}
       aria-hidden="true"
     />
   );
 }
 
-function HeroPhoto({ photoIndex }: { photoIndex: number | null }) {
+function HeroPhoto({ photoIndex }: { photoIndex: number }) {
   return (
     <div className="absolute inset-0 overflow-hidden bg-[#050612]" aria-hidden="true">
-      {photoIndex !== null && (
-        <CommunityPhoto
-          photoIndex={photoIndex}
-          overscan={1.1}
-          className="absolute inset-0 bg-[#050612]"
-        />
-      )}
+      <CommunityPhoto photoIndex={photoIndex} className="absolute inset-0 bg-[#050612]" />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#020617]/92 via-[#020617]/58 to-[#020617]/8" />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#050612]/45 via-transparent to-black/15" />
     </div>
   );
 }
 
-function BannerPhoto({ photoIndex }: { photoIndex: number | null }) {
+function BannerPhoto({ photoIndex }: { photoIndex: number }) {
   return (
     <div className="relative h-40 overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-xl shadow-black/25 sm:h-52 lg:h-60">
-      {photoIndex !== null && (
-        <CommunityPhoto
-          photoIndex={photoIndex}
-          overscan={1.04}
-          className="absolute inset-0 bg-slate-950"
-        />
-      )}
+      <CommunityPhoto photoIndex={photoIndex} className="absolute inset-0 bg-slate-950" />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/45 via-transparent to-black/10" />
       <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
     </div>
@@ -113,7 +97,11 @@ function BannerPhoto({ photoIndex }: { photoIndex: number | null }) {
 
 export function RandomSitePhoto({ variant = "banner" }: { variant?: "banner" | "hero" }) {
   const photoIndex = useRandomPhotoIndex();
-  return variant === "hero" ? <HeroPhoto photoIndex={photoIndex} /> : <BannerPhoto photoIndex={photoIndex} />;
+  return variant === "hero" ? (
+    <HeroPhoto photoIndex={photoIndex} />
+  ) : (
+    <BannerPhoto photoIndex={photoIndex} />
+  );
 }
 
 export default function SitePhotoController() {
