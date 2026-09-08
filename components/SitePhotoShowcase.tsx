@@ -5,11 +5,11 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 
 const PHOTO_STRIPS = [
-  "/images/community/strip-1.webp",
-  "/images/community/strip-2.webp",
-  "/images/community/strip-3.webp",
-  "/images/community/strip-4.webp",
-  "/images/community/strip-5.webp",
+  "/images/community/strip-1.jpg",
+  "/images/community/strip-2.jpg",
+  "/images/community/strip-3.jpg",
+  "/images/community/strip-4.jpg",
+  "/images/community/strip-5.jpg",
 ] as const;
 
 const PHOTOS_PER_STRIP = 4;
@@ -69,7 +69,7 @@ function CommunityPhoto({
     <div
       className={className}
       style={{
-        backgroundImage: `url(${PHOTO_STRIPS[stripIndex]})`,
+        backgroundImage: `url("${PHOTO_STRIPS[stripIndex]}")`,
         backgroundRepeat: "no-repeat",
         backgroundPosition: `${position}% center`,
         backgroundSize: `${totalWidth * 100}% auto`,
@@ -85,7 +85,7 @@ function HeroPhoto({ photoIndex }: { photoIndex: number | null }) {
       {photoIndex !== null && (
         <CommunityPhoto
           photoIndex={photoIndex}
-          overscan={1.08}
+          overscan={1.1}
           className="absolute inset-0 bg-[#050612]"
         />
       )}
@@ -99,7 +99,11 @@ function BannerPhoto({ photoIndex }: { photoIndex: number | null }) {
   return (
     <div className="relative h-40 overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-xl shadow-black/25 sm:h-52 lg:h-60">
       {photoIndex !== null && (
-        <CommunityPhoto photoIndex={photoIndex} className="absolute inset-0 bg-slate-950" />
+        <CommunityPhoto
+          photoIndex={photoIndex}
+          overscan={1.04}
+          className="absolute inset-0 bg-slate-950"
+        />
       )}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/45 via-transparent to-black/10" />
       <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
