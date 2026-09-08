@@ -4,13 +4,11 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 
-// Cada captura es un archivo independiente. Para ampliar el pool solo hay que
-// agregar otro archivo a /public/images/community y su ruta a esta lista.
+// Fotografías en alta resolución derivadas directamente de las capturas
+// originales de la comunidad. Para ampliar el pool, añadir un archivo aquí.
 const PHOTOS = [
-  "/images/community/photo-01.jpg?v=20260908e",
-  "/images/community/photo-02.jpg?v=20260908e",
-  "/images/community/photo-03.jpg?v=20260908e",
-  "/images/community/photo-04.jpg?v=20260908e",
+  "/images/community/photo-hq-01.webp?v=20260908hq1",
+  "/images/community/photo-hq-02.webp?v=20260908hq1",
 ] as const;
 
 const PHOTO_COUNT = PHOTOS.length;
@@ -62,6 +60,7 @@ function CommunityPhoto({
       src={PHOTOS[photoIndex]}
       alt=""
       draggable={false}
+      decoding="async"
       className={`absolute inset-0 h-full w-full select-none object-cover object-center ${className}`}
       aria-hidden="true"
     />
@@ -82,7 +81,7 @@ function BannerPhoto({ photoIndex }: { photoIndex: number }) {
   return (
     <div className="relative h-40 overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-xl shadow-black/25 sm:h-52 lg:h-60">
       <CommunityPhoto photoIndex={photoIndex} />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/30 via-transparent to-black/5" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/20 via-transparent to-black/5" />
       <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
     </div>
   );
