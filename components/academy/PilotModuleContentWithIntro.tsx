@@ -48,5 +48,25 @@ export default function PilotModuleContentWithIntro({ moduleNumber }: { moduleNu
     );
   }
 
+  if (moduleNumber === 8) {
+    return (
+      <div className="space-y-6">
+        <p className="text-sm leading-7 text-slate-300">El uso correcto de las luces es fundamental para la seguridad en tierra y en vuelo, especialmente durante operaciones nocturnas o de baja visibilidad.</p>
+
+        <h2 className="pt-2 text-xl font-extrabold text-white">Tipos de luces</h2>
+        <DataTable headers={["Luz", "Función y momento de uso"]} rows={[
+          ["NAV (Navigation)", "Indican la posición de la aeronave: rojo en el ala izquierda, verde en el ala derecha y blanco en la cola. Deben permanecer encendidas durante el vuelo."],
+          ["LOGO", "Iluminan el logo de la cola. Se utilizan normalmente de noche, tanto en tierra como durante vuelo bajo."],
+          ["BEACON", "Luz roja intermitente que indica que la aeronave está activa. Se enciende antes de arrancar los motores y se apaga al apagarlos."],
+          ["TAXI", "Se utilizan durante el rodaje en tierra para iluminar el camino."],
+          ["STROBE", "Luces blancas intermitentes en las puntas de las alas. Se encienden al ingresar a pista y se apagan al salir."],
+          ["LANDING", "Luces potentes utilizadas para el despegue, ascenso inicial y aterrizaje."],
+        ]} />
+
+        <p className="text-sm leading-7 text-slate-300">Un correcto uso de las luces mejora la visibilidad y evita riesgos de colisión con otras aeronaves o vehículos en plataforma.</p>
+      </div>
+    );
+  }
+
   return <PilotModuleContentSynced moduleNumber={moduleNumber - 1} />;
 }
