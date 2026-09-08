@@ -12,8 +12,11 @@ const PHOTO_STRIPS = [
   "/images/community/strip-5.webp",
 ] as const;
 
-const PHOTOS_PER_STRIP = 5;
+const PHOTOS_PER_STRIP = 4;
 const PHOTO_COUNT = PHOTO_STRIPS.length * PHOTOS_PER_STRIP;
+const PHOTO_WIDTH = 1100;
+const PHOTO_HEIGHT = 619;
+const STRIP_WIDTH = PHOTO_WIDTH * PHOTOS_PER_STRIP;
 const LAST_PHOTO_KEY = "pf24-community-photo-last";
 
 function choosePhotoIndex() {
@@ -50,42 +53,49 @@ function useRandomPhotoIndex() {
   return photoIndex;
 }
 
-function PhotoFrame({
-  photoIndex,
-  variant,
-}: {
-  photoIndex: number | null;
-  variant: "banner" | "hero";
-}) {
-  const shellClass =
-    variant === "hero"
-      ? "aspect-video rounded-[2rem] shadow-2xl shadow-black/40"
-      : "h-40 rounded-3xl shadow-xl shadow-black/25 sm:h-52 lg:h-60";
-
-  if (photoIndex === null) {
-    return (
-      <div
-        className={`relative overflow-hidden border border-white/10 bg-slate-900/80 ${shellClass}`}
-        aria-hidden="true"
-      />
-    );
-  }
-
+function CommunityPhoto({ photoIndex, className }: { photoIndex: number; className?: string }) {
   const stripIndex = Math.floor(photoIndex / PHOTOS_PER_STRIP);
   const slotIndex = photoIndex % PHOTOS_PER_STRIP;
 
   return (
-    <div className={`relative isolate overflow-hidden border border-white/10 bg-slate-950 ${shellClass}`}>
-      <img
-        src={PHOTO_STRIPS[stripIndex]}
-        alt="Captura de vuelo de la comunidad PF24"
-        loading={variant === "hero" ? "eager" : "lazy"}
-        decoding="async"
-        draggable={false}
-        className="absolute top-1/2 h-auto w-[500%] max-w-none -translate-y-1/2 select-none"
-        style={{ left: `-${slotIndex * 100}%` }}
+    <svg
+      className={className}
+      viewBox={`${slotIndex * PHOTO_WIDTH} 0 ${PHOTO_WIDTH} ${PHOTO_HEIGHT}`}
+      preserveAspectRatio="xMidYMid slice"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <image
+        href={PHOTO_STRIPS[stripIndex]}
+        x="0"
+        y="0"
+        width={STRIP_WIDTH}
+        height={PHOTO_HEIGHT}
+        preserveAspectRatio="none"
       />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/65 via-transparent to-black/10" />
+    </svg>
+  );
+}
+
+function HeroPhoto({ photoIndex }: { photoIndex: number | null }) {
+  return (
+    <div className="absolute inset-0 overflow-hidden bg-[#050612]" aria-hidden="true">
+      {photoIndex !== null && (
+        <CommunityPhoto photoIndex={photoIndex} className="absolute inset-0 h-full w-full" />
+      )}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#020617]/95 via-[#020617]/64 to-[#020617]/12" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#050612]/50 via-transparent to-black/15" />
+    </div>
+  );
+}
+
+function BannerPhoto({ photoIndex }: { photoIndex: number | null }) {
+  return (
+    <div className="relative h-40 overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-xl shadow-black/25 sm:h-52 lg:h-60">
+      {photoIndex !== null && (
+        <CommunityPhoto photoIndex={photoIndex} className="absolute inset-0 h-full w-full" />
+      )}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/45 via-transparent to-black/10" />
       <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
     </div>
   );
@@ -93,7 +103,7 @@ function PhotoFrame({
 
 export function RandomSitePhoto({ variant = "banner" }: { variant?: "banner" | "hero" }) {
   const photoIndex = useRandomPhotoIndex();
-  return <PhotoFrame photoIndex={photoIndex} variant={variant} />;
+  return variant === "hero" ? <HeroPhoto photoIndex={photoIndex} /> : <BannerPhoto photoIndex={photoIndex} />;
 }
 
 export default function SitePhotoController() {

@@ -17,8 +17,7 @@ const structuredData = {
       "@id": "https://pf24.lat/#website",
       url: "https://pf24.lat/",
       name: "PF24",
-      description:
-        "Comunidad hispana de simulación aérea en Project Flight.",
+      description: "Comunidad hispana de simulación aérea en Project Flight.",
       inLanguage: "es-CL",
     },
     {
@@ -34,6 +33,7 @@ const structuredData = {
 
 export default async function HomePage() {
   const session = await auth();
+
   return (
     <main className="min-h-screen bg-[#050612] text-white">
       <script
@@ -43,22 +43,20 @@ export default async function HomePage() {
       <Navbar />
 
       {/* HERO */}
-      <section className="relative flex min-h-screen items-center overflow-hidden px-6 pb-16 pt-28">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0b1630] via-[#050612] to-[#050612]" />
-        <div className="absolute -left-24 top-20 h-72 w-72 rounded-full bg-sky-500/10 blur-3xl" />
-        <div className="absolute -right-24 bottom-12 h-96 w-96 rounded-full bg-indigo-500/10 blur-3xl" />
+      <section className="relative flex min-h-screen items-center overflow-hidden px-6 py-24">
+        <RandomSitePhoto variant="hero" />
 
-        <div className="section-container relative z-10 grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="section-container relative z-10">
           <div className="max-w-3xl">
-            <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#8095ff]">
+            <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#8fa1ff] drop-shadow-lg">
               Project Flight Spanish Community
             </p>
 
-            <h1 className="text-6xl font-extrabold leading-[0.95] tracking-tight text-white md:text-8xl">
+            <h1 className="text-6xl font-extrabold leading-[0.95] tracking-tight text-white drop-shadow-2xl md:text-8xl">
               PF<span className="text-sky-400">24</span>
             </h1>
 
-            <p className="mt-8 max-w-2xl text-lg leading-8 text-white/85">
+            <p className="mt-8 max-w-2xl text-lg leading-8 text-white/90 drop-shadow-lg">
               PF24 es una comunidad hispana de simulación aérea en Project
               Flight, donde pilotos y controladores recrean operaciones aéreas
               realistas y vuelos multijugador con herramientas propias de ATC,
@@ -70,25 +68,18 @@ export default async function HomePage() {
                 href="https://discord.gg/DD7yeDDyPY"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-2xl bg-[#8095ff] px-10 py-4 text-xl font-semibold text-white transition hover:bg-[#6f84ff]"
+                className="rounded-2xl bg-[#8095ff] px-10 py-4 text-xl font-semibold text-white shadow-xl shadow-black/20 transition hover:bg-[#6f84ff]"
               >
                 Unirse al Discord
               </a>
 
               <a
                 href={session ? "/dashboard" : "/login"}
-                className="rounded-2xl border border-white/20 px-10 py-4 text-xl font-semibold text-white transition hover:bg-white/10"
+                className="rounded-2xl border border-white/30 bg-black/20 px-10 py-4 text-xl font-semibold text-white backdrop-blur-sm transition hover:bg-white/10"
               >
                 {session ? "Ir al Dashboard" : "Iniciar sesión"}
               </a>
             </div>
-          </div>
-
-          <div className="w-full lg:pl-4">
-            <RandomSitePhoto variant="hero" />
-            <p className="mono mt-3 text-right text-[10px] uppercase tracking-[0.2em] text-slate-500">
-              Capturas de la comunidad · imagen variable
-            </p>
           </div>
         </div>
       </section>
@@ -165,21 +156,15 @@ export default async function HomePage() {
             <a href="/legal/terms" className="transition hover:text-sky-300">
               Términos y Condiciones
             </a>
-
             <span className="text-slate-600">•</span>
-
             <a href="/legal/privacy" className="transition hover:text-sky-300">
               Política de Privacidad
             </a>
-
             <span className="text-slate-600">•</span>
-
             <a href="/legal/cookies" className="transition hover:text-sky-300">
               Política de Cookies
             </a>
-
             <span className="text-slate-600">•</span>
-
             <a href="/about" className="transition hover:text-sky-300">
               Créditos
             </a>
@@ -203,7 +188,6 @@ function Card({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-8 transition hover:border-[#8095ff]/50">
       <h3 className="text-xl font-bold text-[#8095ff]">{title}</h3>
-
       <p className="mt-4 leading-7 text-slate-300">{text}</p>
     </div>
   );
