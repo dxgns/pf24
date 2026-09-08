@@ -4,16 +4,16 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 
-const PHOTO_STRIPS = [
-  "/images/community/strip-1.jpg?v=20260908c",
-  "/images/community/strip-2.jpg?v=20260908c",
-  "/images/community/strip-3.jpg?v=20260908c",
-  "/images/community/strip-4.jpg?v=20260908c",
-  "/images/community/strip-5.jpg?v=20260908c",
+// Cada captura es un archivo independiente. Para ampliar el pool solo hay que
+// agregar otro archivo a /public/images/community y su ruta a esta lista.
+const PHOTOS = [
+  "/images/community/photo-01.jpg?v=20260908e",
+  "/images/community/photo-02.jpg?v=20260908e",
+  "/images/community/photo-03.jpg?v=20260908e",
+  "/images/community/photo-04.jpg?v=20260908e",
 ] as const;
 
-const PHOTOS_PER_STRIP = 4;
-const PHOTO_COUNT = PHOTO_STRIPS.length * PHOTOS_PER_STRIP;
+const PHOTO_COUNT = PHOTOS.length;
 const LAST_PHOTO_KEY = "pf24-community-photo-last";
 
 function choosePhotoIndex() {
@@ -41,9 +41,6 @@ function choosePhotoIndex() {
 
 function useRandomPhotoIndex() {
   const pathname = usePathname();
-
-  // Siempre renderizamos una foto desde el HTML inicial. La rotación aleatoria
-  // reemplaza este fallback después de hidratar, pero la página nunca queda vacía.
   const [photoIndex, setPhotoIndex] = useState(0);
 
   useEffect(() => {
@@ -53,23 +50,19 @@ function useRandomPhotoIndex() {
   return photoIndex;
 }
 
-function CommunityPhoto({ photoIndex, className }: { photoIndex: number; className?: string }) {
-  const stripIndex = Math.floor(photoIndex / PHOTOS_PER_STRIP);
-  const slotIndex = photoIndex % PHOTOS_PER_STRIP;
-  const position =
-    PHOTOS_PER_STRIP <= 1 ? 50 : (slotIndex / (PHOTOS_PER_STRIP - 1)) * 100;
-
+function CommunityPhoto({
+  photoIndex,
+  className = "",
+}: {
+  photoIndex: number;
+  className?: string;
+}) {
   return (
-    <div
-      className={className}
-      style={{
-        backgroundImage: `url("${PHOTO_STRIPS[stripIndex]}")`,
-        backgroundRepeat: "no-repeat",
-        backgroundPosition: `${position}% center`,
-        // Cada tira contiene cuatro capturas iguales en tamaño. Se estira la
-        // tira completa a 400% para que cada cuarto llene exactamente el marco.
-        backgroundSize: `${PHOTOS_PER_STRIP * 100}% 100%`,
-      }}
+    <img
+      src={PHOTOS[photoIndex]}
+      alt=""
+      draggable={false}
+      className={`absolute inset-0 h-full w-full select-none object-cover object-center ${className}`}
       aria-hidden="true"
     />
   );
@@ -78,7 +71,7 @@ function CommunityPhoto({ photoIndex, className }: { photoIndex: number; classNa
 function HeroPhoto({ photoIndex }: { photoIndex: number }) {
   return (
     <div className="absolute inset-0 overflow-hidden bg-[#050612]" aria-hidden="true">
-      <CommunityPhoto photoIndex={photoIndex} className="absolute inset-0 bg-[#050612]" />
+      <CommunityPhoto photoIndex={photoIndex} />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#020617]/92 via-[#020617]/58 to-[#020617]/8" />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#050612]/45 via-transparent to-black/15" />
     </div>
@@ -88,8 +81,8 @@ function HeroPhoto({ photoIndex }: { photoIndex: number }) {
 function BannerPhoto({ photoIndex }: { photoIndex: number }) {
   return (
     <div className="relative h-40 overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-xl shadow-black/25 sm:h-52 lg:h-60">
-      <CommunityPhoto photoIndex={photoIndex} className="absolute inset-0 bg-slate-950" />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/45 via-transparent to-black/10" />
+      <CommunityPhoto photoIndex={photoIndex} />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/30 via-transparent to-black/5" />
       <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
     </div>
   );
