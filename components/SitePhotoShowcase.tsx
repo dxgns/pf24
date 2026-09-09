@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 
+// Solo assets que hoy sabemos que cargan correctamente en producción.
+// Las fotos JPG se mantienen como fallback visual hasta reemplazarlas por HQ válidas.
 const PHOTOS = [
-  "/images/community/photo-hq-01.webp?v=20260909q4",
-  "/images/community/hq/photo-01.webp?v=20260909q4",
-  "/images/community/hq/photo-02.webp?v=20260909q4",
-  "/images/community/hq/photo-03.webp?v=20260909q4",
+  "/images/community/photo-hq-01.webp?v=20260909q5",
+  "/images/community/photo-01.jpg?v=20260909q5",
+  "/images/community/photo-02.jpg?v=20260909q5",
+  "/images/community/photo-03.jpg?v=20260909q5",
+  "/images/community/photo-04.jpg?v=20260909q5",
 ] as const;
 
-const LAST_PHOTO_KEY = "pf24-community-photo-last-src";
+const LAST_PHOTO_KEY = "pf24-community-photo-last-src-v2";
 
 function randomIndex(max: number) {
   if (max <= 1) return 0;
@@ -35,7 +38,7 @@ function choosePhoto(previousSrc: string | null, blocked: Set<string> = new Set(
 
 function useRandomPhoto() {
   const pathname = usePathname();
-  const [photoSrc, setPhotoSrc] = useState<string | null>(null);
+  const [photoSrc, setPhotoSrc] = useState<string>(PHOTOS[0]);
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
@@ -59,8 +62,6 @@ function useRandomPhoto() {
   }, [pathname]);
 
   function handleError() {
-    if (!photoSrc) return;
-
     setFailed((current) => {
       const nextFailed = new Set(current);
       nextFailed.add(photoSrc);
@@ -80,46 +81,35 @@ function useRandomPhoto() {
   return { photoSrc, handleError };
 }
 
-function CommunityPhoto({
-  src,
-  onError,
-}: {
-  src: string;
-  onError: () => void;
-}) {
+function CommunityPhoto({ src, onError }: { src: string; onError: () => void }) {
   return (
     <img
       src={src}
-      alt="Captura de vuelo de la comunidad PF24"
+      alt=""
       draggable={false}
       decoding="async"
       onError={onError}
       className="absolute inset-0 h-full w-full select-none object-cover object-center"
+      aria-hidden="true"
     />
   );
 }
 
-function PhotoFrame({
-  src,
-  onError,
-  variant,
-}: {
-  src: string | null;
-  onError: () => void;
-  variant: "banner" | "hero";
-}) {
-  const shellClass =
-    variant === "hero"
-      ? "aspect-video rounded-[2rem] shadow-2xl shadow-black/40"
-      : "h-40 rounded-3xl shadow-xl shadow-black/25 sm:h-52 lg:h-60";
-
+function HeroPhoto({ src, onError }: { src: string; onError: () => void }) {
   return (
-    <div
-      className={`relative isolate overflow-hidden border border-white/10 bg-slate-950 ${shellClass}`}
-      aria-hidden={src ? undefined : true}
-    >
-      {src ? <CommunityPhoto src={src} onError={onError} /> : null}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/35 via-transparent to-black/5" />
+    <div className="absolute inset-0 overflow-hidden bg-[#050612]" aria-hidden="true">
+      <CommunityPhoto src={src} onError={onError} />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#020617]/94 via-[#020617]/64 to-[#020617]/18" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#050612]/48 via-transparent to-black/20" />
+    </div>
+  );
+}
+
+function BannerPhoto({ src, onError }: { src: string; onError: () => void }) {
+  return (
+    <div className="relative h-40 overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-xl shadow-black/25 sm:h-52 lg:h-60">
+      <CommunityPhoto src={src} onError={onError} />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/20 via-transparent to-black/5" />
       <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
     </div>
   );
@@ -127,7 +117,12 @@ function PhotoFrame({
 
 export function RandomSitePhoto({ variant = "banner" }: { variant?: "banner" | "hero" }) {
   const { photoSrc, handleError } = useRandomPhoto();
-  return <PhotoFrame src={photoSrc} onError={handleError} variant={variant} />;
+
+  return variant === "hero" ? (
+    <HeroPhoto src={photoSrc} onError={handleError} />
+  ) : (
+    <BannerPhoto src={photoSrc} onError={handleError} />
+  );
 }
 
 export default function SitePhotoController() {
