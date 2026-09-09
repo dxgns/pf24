@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import EvaluationSubmissionCard from "@/components/academy/EvaluationSubmissionCard";
 import PilotModuleContentWithIntro from "@/components/academy/PilotModuleContentWithIntro";
 import PilotModuleProgress from "@/components/academy/PilotModuleProgress";
 import { getPilotRankFromRoles } from "@/lib/academyRanks";
@@ -38,6 +39,7 @@ export default async function PilotAcademyModulePage({ params }: Props) {
   const title = PE_MODULES[moduleNumber - 1];
   const previous = moduleNumber > 1 ? moduleNumber - 1 : null;
   const next = moduleNumber < PE_MODULES.length ? moduleNumber + 1 : null;
+  const applicantDiscordId = session.user?.discordId ?? session.user?.email ?? session.user?.name ?? "unknown";
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
@@ -56,6 +58,10 @@ export default async function PilotAcademyModulePage({ params }: Props) {
         <article className="panel mt-6 rounded-3xl p-8 md:p-10">
           <PilotModuleContentWithIntro moduleNumber={moduleNumber} />
         </article>
+
+        {moduleNumber === PILOT_EVALUATION_MODULE ? (
+          <EvaluationSubmissionCard track="pilot" targetRole="PE" applicantDiscordId={applicantDiscordId} />
+        ) : null}
 
         <nav className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="Navegación entre módulos">
           {previous ? (
