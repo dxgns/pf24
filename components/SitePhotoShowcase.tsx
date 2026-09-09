@@ -7,8 +7,7 @@ import { usePathname } from "next/navigation";
 // Fotografías en alta resolución derivadas directamente de las capturas
 // originales de la comunidad. Para ampliar el pool, añadir un archivo aquí.
 const PHOTOS = [
-  "/images/community/photo-hq-01.webp?v=20260908hq1",
-  "/images/community/photo-hq-02.webp?v=20260908hq1",
+  "/images/community/photo-hq-01.webp?v=20260908hq2",
 ] as const;
 
 const PHOTO_COUNT = PHOTOS.length;
