@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 
-// Fotografías en alta resolución derivadas directamente de las capturas
-// originales de la comunidad. Para ampliar el pool, añadir un archivo aquí.
+// Capturas de la comunidad procesadas desde los originales a 16:9.
+// Se mantienen como archivos individuales para no perder calidad al recortar sprites.
 const PHOTOS = [
-  "/images/community/photo-hq-01.webp?v=20260908hq2",
+  "/images/community/hq/photo-01.webp?v=20260909hq3",
+  "/images/community/hq/photo-02.webp?v=20260909hq3",
+  "/images/community/hq/photo-03.webp?v=20260909hq3",
 ] as const;
 
 const PHOTO_COUNT = PHOTOS.length;
@@ -38,7 +40,7 @@ function choosePhotoIndex() {
 
 function useRandomPhotoIndex() {
   const pathname = usePathname();
-  const [photoIndex, setPhotoIndex] = useState(0);
+  const [photoIndex, setPhotoIndex] = useState<number | null>(null);
 
   useEffect(() => {
     setPhotoIndex(choosePhotoIndex());
@@ -88,6 +90,15 @@ function BannerPhoto({ photoIndex }: { photoIndex: number }) {
 
 export function RandomSitePhoto({ variant = "banner" }: { variant?: "banner" | "hero" }) {
   const photoIndex = useRandomPhotoIndex();
+
+  if (photoIndex === null) {
+    return variant === "hero" ? (
+      <div className="absolute inset-0 bg-[#050612]" aria-hidden="true" />
+    ) : (
+      <div className="h-40 rounded-3xl border border-white/10 bg-slate-950 sm:h-52 lg:h-60" aria-hidden="true" />
+    );
+  }
+
   return variant === "hero" ? (
     <HeroPhoto photoIndex={photoIndex} />
   ) : (
