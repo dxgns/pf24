@@ -1,5 +1,4 @@
 import Navbar from "@/components/Navbar";
-import { RandomSitePhoto } from "@/components/SitePhotoShowcase";
 import { auth } from "@/auth";
 import type { Metadata } from "next";
 
@@ -43,20 +42,28 @@ export default async function HomePage() {
       <Navbar />
 
       {/* HERO */}
-      <section className="relative flex min-h-screen items-center overflow-hidden px-6 pb-16 pt-28">
-        <RandomSitePhoto variant="hero" />
+      <section className="relative flex min-h-screen items-center overflow-hidden px-6 pt-24">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage:
+              "url('https://framerusercontent.com/images/lKs77AFnsbHG3ATgS3hBMy8iCOw.png')",
+          }}
+        />
+
+        <div className="absolute inset-0 bg-black/10" />
 
         <div className="section-container relative z-10">
           <div className="max-w-3xl">
-            <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#8fa1ff] drop-shadow-lg">
+            <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#8095ff]">
               Project Flight Spanish Community
             </p>
 
-            <h1 className="text-6xl font-extrabold leading-[0.95] tracking-tight text-white drop-shadow-2xl md:text-8xl">
+            <h1 className="text-6xl font-extrabold leading-[0.95] tracking-tight md:text-8xl">
               PF<span className="text-sky-400">24</span>
             </h1>
 
-            <p className="mt-8 max-w-2xl text-lg leading-8 text-white/90 drop-shadow-lg">
+            <p className="mt-8 max-w-2xl text-lg leading-8 text-slate-300">
               PF24 es una comunidad hispana de simulación aérea en Project
               Flight, donde pilotos y controladores recrean operaciones aéreas
               realistas y vuelos multijugador con herramientas propias de ATC,
@@ -75,7 +82,7 @@ export default async function HomePage() {
 
               <a
                 href={session ? "/dashboard" : "/login"}
-                className="rounded-2xl border border-white/30 bg-black/20 px-10 py-4 text-xl font-semibold text-white backdrop-blur-sm transition hover:bg-white/10"
+                className="rounded-2xl border border-white/20 bg-white/5 px-10 py-4 text-xl font-semibold text-white transition hover:bg-white/10"
               >
                 {session ? "Ir al Dashboard" : "Iniciar sesión"}
               </a>
