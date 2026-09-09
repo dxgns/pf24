@@ -43,20 +43,22 @@ export default async function HomePage() {
       <Navbar />
 
       {/* HERO */}
-      <section className="relative flex min-h-screen items-center overflow-hidden px-6 py-24">
-        <RandomSitePhoto variant="hero" />
+      <section className="relative flex min-h-screen items-center overflow-hidden px-6 pb-16 pt-28">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0b1630] via-[#050612] to-[#050612]" />
+        <div className="absolute -left-24 top-20 h-72 w-72 rounded-full bg-sky-500/10 blur-3xl" />
+        <div className="absolute -right-24 bottom-12 h-96 w-96 rounded-full bg-indigo-500/10 blur-3xl" />
 
-        <div className="section-container relative z-10">
+        <div className="section-container relative z-10 grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="max-w-3xl">
-            <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#8fa1ff] drop-shadow-lg">
+            <p className="mb-5 text-sm font-semibold uppercase tracking-[0.35em] text-[#8095ff]">
               Project Flight Spanish Community
             </p>
 
-            <h1 className="text-6xl font-extrabold leading-[0.95] tracking-tight text-white drop-shadow-2xl md:text-8xl">
+            <h1 className="text-6xl font-extrabold leading-[0.95] tracking-tight md:text-8xl">
               PF<span className="text-sky-400">24</span>
             </h1>
 
-            <p className="mt-8 max-w-2xl text-lg leading-8 text-white/90 drop-shadow-lg">
+            <p className="mt-8 max-w-2xl text-lg leading-8 text-slate-300">
               PF24 es una comunidad hispana de simulación aérea en Project
               Flight, donde pilotos y controladores recrean operaciones aéreas
               realistas y vuelos multijugador con herramientas propias de ATC,
@@ -75,11 +77,18 @@ export default async function HomePage() {
 
               <a
                 href={session ? "/dashboard" : "/login"}
-                className="rounded-2xl border border-white/30 bg-black/20 px-10 py-4 text-xl font-semibold text-white backdrop-blur-sm transition hover:bg-white/10"
+                className="rounded-2xl border border-white/20 bg-white/5 px-10 py-4 text-xl font-semibold text-white transition hover:bg-white/10"
               >
                 {session ? "Ir al Dashboard" : "Iniciar sesión"}
               </a>
             </div>
+          </div>
+
+          <div className="w-full lg:pl-4">
+            <RandomSitePhoto variant="hero" />
+            <p className="mono mt-3 text-right text-[10px] uppercase tracking-[0.2em] text-slate-500">
+              Capturas de la comunidad · imagen variable
+            </p>
           </div>
         </div>
       </section>
