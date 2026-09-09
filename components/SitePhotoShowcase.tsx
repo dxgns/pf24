@@ -4,106 +4,130 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 
-// Capturas de la comunidad procesadas desde los originales a 16:9.
-// Se mantienen como archivos individuales para no perder calidad al recortar sprites.
 const PHOTOS = [
-  "/images/community/hq/photo-01.webp?v=20260909hq3",
-  "/images/community/hq/photo-02.webp?v=20260909hq3",
-  "/images/community/hq/photo-03.webp?v=20260909hq3",
+  "/images/community/photo-hq-01.webp?v=20260909q4",
+  "/images/community/hq/photo-01.webp?v=20260909q4",
+  "/images/community/hq/photo-02.webp?v=20260909q4",
+  "/images/community/hq/photo-03.webp?v=20260909q4",
 ] as const;
 
-const PHOTO_COUNT = PHOTOS.length;
-const LAST_PHOTO_KEY = "pf24-community-photo-last";
+const LAST_PHOTO_KEY = "pf24-community-photo-last-src";
 
-function choosePhotoIndex() {
-  let previous = -1;
-
-  try {
-    previous = Number(window.sessionStorage.getItem(LAST_PHOTO_KEY) ?? "-1");
-  } catch {
-    previous = -1;
-  }
-
-  let next = Math.floor(Math.random() * PHOTO_COUNT);
-  if (PHOTO_COUNT > 1 && next === previous) {
-    next = (next + 1 + Math.floor(Math.random() * (PHOTO_COUNT - 1))) % PHOTO_COUNT;
-  }
+function randomIndex(max: number) {
+  if (max <= 1) return 0;
 
   try {
-    window.sessionStorage.setItem(LAST_PHOTO_KEY, String(next));
+    const value = new Uint32Array(1);
+    window.crypto.getRandomValues(value);
+    return value[0] % max;
   } catch {
-    // La rotación sigue funcionando aunque sessionStorage no esté disponible.
+    return Math.floor(Math.random() * max);
   }
-
-  return next;
 }
 
-function useRandomPhotoIndex() {
+function choosePhoto(previousSrc: string | null, blocked: Set<string> = new Set()) {
+  const available = PHOTOS.filter((src) => src !== previousSrc && !blocked.has(src));
+  const pool = available.length > 0 ? available : PHOTOS.filter((src) => !blocked.has(src));
+
+  if (pool.length === 0) return PHOTOS[0];
+  return pool[randomIndex(pool.length)];
+}
+
+function useRandomPhoto() {
   const pathname = usePathname();
-  const [photoIndex, setPhotoIndex] = useState<number | null>(null);
+  const [photoSrc, setPhotoSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
-    setPhotoIndex(choosePhotoIndex());
+    let previous: string | null = null;
+
+    try {
+      previous = window.sessionStorage.getItem(LAST_PHOTO_KEY);
+    } catch {
+      previous = null;
+    }
+
+    const next = choosePhoto(previous);
+    setFailed(new Set());
+    setPhotoSrc(next);
+
+    try {
+      window.sessionStorage.setItem(LAST_PHOTO_KEY, next);
+    } catch {
+      // La selección sigue funcionando aunque sessionStorage no esté disponible.
+    }
   }, [pathname]);
 
-  return photoIndex;
+  function handleError() {
+    if (!photoSrc) return;
+
+    setFailed((current) => {
+      const nextFailed = new Set(current);
+      nextFailed.add(photoSrc);
+      const replacement = choosePhoto(photoSrc, nextFailed);
+      setPhotoSrc(replacement);
+
+      try {
+        window.sessionStorage.setItem(LAST_PHOTO_KEY, replacement);
+      } catch {
+        // Sin sessionStorage simplemente se usa el reemplazo en memoria.
+      }
+
+      return nextFailed;
+    });
+  }
+
+  return { photoSrc, handleError };
 }
 
 function CommunityPhoto({
-  photoIndex,
-  className = "",
+  src,
+  onError,
 }: {
-  photoIndex: number;
-  className?: string;
+  src: string;
+  onError: () => void;
 }) {
   return (
     <img
-      src={PHOTOS[photoIndex]}
-      alt=""
+      src={src}
+      alt="Captura de vuelo de la comunidad PF24"
       draggable={false}
       decoding="async"
-      className={`absolute inset-0 h-full w-full select-none object-cover object-center ${className}`}
-      aria-hidden="true"
+      onError={onError}
+      className="absolute inset-0 h-full w-full select-none object-cover object-center"
     />
   );
 }
 
-function HeroPhoto({ photoIndex }: { photoIndex: number }) {
-  return (
-    <div className="absolute inset-0 overflow-hidden bg-[#050612]" aria-hidden="true">
-      <CommunityPhoto photoIndex={photoIndex} />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#020617]/92 via-[#020617]/58 to-[#020617]/8" />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#050612]/45 via-transparent to-black/15" />
-    </div>
-  );
-}
+function PhotoFrame({
+  src,
+  onError,
+  variant,
+}: {
+  src: string | null;
+  onError: () => void;
+  variant: "banner" | "hero";
+}) {
+  const shellClass =
+    variant === "hero"
+      ? "aspect-video rounded-[2rem] shadow-2xl shadow-black/40"
+      : "h-40 rounded-3xl shadow-xl shadow-black/25 sm:h-52 lg:h-60";
 
-function BannerPhoto({ photoIndex }: { photoIndex: number }) {
   return (
-    <div className="relative h-40 overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-xl shadow-black/25 sm:h-52 lg:h-60">
-      <CommunityPhoto photoIndex={photoIndex} />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/20 via-transparent to-black/5" />
+    <div
+      className={`relative isolate overflow-hidden border border-white/10 bg-slate-950 ${shellClass}`}
+      aria-hidden={src ? undefined : true}
+    >
+      {src ? <CommunityPhoto src={src} onError={onError} /> : null}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#020617]/35 via-transparent to-black/5" />
       <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
     </div>
   );
 }
 
 export function RandomSitePhoto({ variant = "banner" }: { variant?: "banner" | "hero" }) {
-  const photoIndex = useRandomPhotoIndex();
-
-  if (photoIndex === null) {
-    return variant === "hero" ? (
-      <div className="absolute inset-0 bg-[#050612]" aria-hidden="true" />
-    ) : (
-      <div className="h-40 rounded-3xl border border-white/10 bg-slate-950 sm:h-52 lg:h-60" aria-hidden="true" />
-    );
-  }
-
-  return variant === "hero" ? (
-    <HeroPhoto photoIndex={photoIndex} />
-  ) : (
-    <BannerPhoto photoIndex={photoIndex} />
-  );
+  const { photoSrc, handleError } = useRandomPhoto();
+  return <PhotoFrame src={photoSrc} onError={handleError} variant={variant} />;
 }
 
 export default function SitePhotoController() {
