@@ -31,6 +31,10 @@ export default async function Navbar() {
               Discord
             </a>
 
+            <a href="/academia" className="text-white/80 transition hover:text-white">
+              Academia
+            </a>
+
             <a href="https://drive.google.com/drive/folders/1WfNHMsjxodzZ2uNCT0-QZHOJV_eBWmxl" className="text-white/80 transition hover:text-white">
               Charts
             </a>
