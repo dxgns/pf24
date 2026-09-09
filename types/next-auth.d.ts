@@ -4,6 +4,7 @@ import { WebPermissions } from "@/lib/permissions";
 declare module "next-auth" {
   interface Session {
     user: {
+      discordId?: string;
       discordRoles: string[];
       permissions: WebPermissions;
       robloxUserId?: string;
