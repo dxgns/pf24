@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import EvaluationSubmissionCard from "@/components/academy/EvaluationSubmissionCard";
 import PplModuleContentWithIntro from "@/components/academy/PplModuleContentWithIntro";
 import PplModuleProgress from "@/components/academy/PplModuleProgress";
 import { getPilotRankFromRoles } from "@/lib/academyRanks";
@@ -38,6 +39,7 @@ export default async function PplAcademyModulePage({ params }: Props) {
   const title = PPL_MODULES[moduleNumber - 1];
   const previous = moduleNumber > 1 ? moduleNumber - 1 : null;
   const next = moduleNumber < PPL_MODULES.length ? moduleNumber + 1 : null;
+  const applicantDiscordId = session.user?.discordId ?? session.user?.email ?? session.user?.name ?? "unknown";
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
@@ -56,6 +58,10 @@ export default async function PplAcademyModulePage({ params }: Props) {
         <article className="panel mt-6 rounded-3xl p-8 md:p-10">
           <PplModuleContentWithIntro moduleNumber={moduleNumber} />
         </article>
+
+        {moduleNumber === PPL_EVALUATION_MODULE ? (
+          <EvaluationSubmissionCard track="pilot" targetRole="PPL" applicantDiscordId={applicantDiscordId} />
+        ) : null}
 
         <nav className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="Navegación entre módulos">
           {previous ? (
