@@ -206,6 +206,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       const freshRoles = await fetchDiscordRoles(token.discordAccessToken);
       const roles = freshRoles ?? cachedRoles;
 
+      session.user.discordId = String(token.discordId ?? token.sub ?? "").trim() || undefined;
       session.user.discordRoles = roles;
       session.user.permissions = getPermissionsFromRoles(roles);
       session.user.robloxUserId = token.robloxUserId as string | undefined;
