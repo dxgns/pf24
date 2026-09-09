@@ -16,9 +16,18 @@ export const PPL_MODULES = [
 export const PPL_EVALUATION_MODULE = PPL_MODULES.length;
 export const PPL_PROGRESS_COOKIE = "pf24_pilot_academy_seen_PPL_v2";
 
+function decodeProgressCookie(value?: string) {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function parseSeenPplModules(value?: string) {
   return new Set(
-    (value ?? "")
+    decodeProgressCookie(value)
       .split(",")
       .map((item) => Number(item))
       .filter((item) => Number.isInteger(item) && item > 0 && item <= PPL_MODULES.length),
