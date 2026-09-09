@@ -4,14 +4,19 @@ import { redirect } from "next/navigation";
 import { getPilotRankFromRoles } from "@/lib/academyRanks";
 import type { Metadata } from "next";
 
+const PILOT_INSTRUCTIONS_ROLE_ID = "1427450639507656846";
+
 export const metadata: Metadata = { title: "Academia Piloto | PF24" };
 
 export default async function PilotAcademyPage() {
   const session = await auth();
   if (!session) redirect("/login");
 
-  const rank = getPilotRankFromRoles(session.user?.permissions?.roles);
+  const roles = session.user?.permissions?.roles;
+  const rank = getPilotRankFromRoles(roles);
   if (rank === "NONE") redirect("/access-denied");
+
+  const canAccessInstructions = roles?.includes(PILOT_INSTRUCTIONS_ROLE_ID) ?? false;
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
@@ -39,6 +44,15 @@ export default async function PilotAcademyPage() {
             <p className="mt-3 text-sm leading-6 text-slate-400">Programa de Piloto Privado · 12 módulos.</p>
             <p className="mono mt-8 text-sm text-sky-300">Abrir módulos →</p>
           </Link>
+
+          {canAccessInstructions && (
+            <Link href="/academia/piloto/instrucciones" className="panel group block rounded-3xl p-8 transition hover:-translate-y-1 hover:border-sky-400/60">
+              <p className="mono text-xs uppercase tracking-[0.25em] text-sky-300/70">Acceso restringido</p>
+              <h2 className="mt-4 text-2xl font-extrabold text-white group-hover:text-sky-300">Instrucciones</h2>
+              <p className="mt-3 text-sm leading-6 text-slate-400">Instrucciones internas de la Academia de Piloto.</p>
+              <p className="mono mt-8 text-sm text-sky-300">Abrir instrucciones →</p>
+            </Link>
+          )}
         </div>
       </section>
     </main>
