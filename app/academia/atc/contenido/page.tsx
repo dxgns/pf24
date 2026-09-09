@@ -18,9 +18,18 @@ function progressCookieName(rank: AtcRank) {
   return `pf24_atc_academy_seen_${rank}`;
 }
 
+function decodeProgressCookie(value?: string) {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function parseSeenModules(value?: string) {
   return new Set(
-    (value ?? "")
+    decodeProgressCookie(value)
       .split(",")
       .map((item) => Number(item))
       .filter((item) => Number.isInteger(item) && item > 0),
