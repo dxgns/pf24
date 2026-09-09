@@ -3,6 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import AtcModuleProgress from "@/components/academy/AtcModuleProgress";
+import EvaluationSubmissionCard from "@/components/academy/EvaluationSubmissionCard";
 import { nextAtcRank, type AtcRank } from "@/lib/academyRanks";
 import type { Metadata } from "next";
 
@@ -57,6 +58,7 @@ export default async function AtcAcademyModulePage({ params }: Props) {
   const previous = moduleNumber > 1 ? moduleNumber - 1 : null;
   const next = moduleNumber < MODULE_COUNT ? moduleNumber + 1 : null;
   const evaluation = moduleNumber === EVALUATION_MODULE;
+  const applicantDiscordId = session.user?.discordId ?? session.user?.email ?? session.user?.name ?? "unknown";
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
@@ -81,6 +83,10 @@ export default async function AtcAcademyModulePage({ params }: Props) {
         <section className="panel mt-6 min-h-[420px] rounded-3xl p-8">
           <div className="min-h-[340px] rounded-2xl border border-white/5 bg-slate-950/30" />
         </section>
+
+        {evaluation ? (
+          <EvaluationSubmissionCard track="atc" targetRole={nextRank} applicantDiscordId={applicantDiscordId} />
+        ) : null}
 
         <nav className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="Navegación entre módulos">
           {previous ? (
