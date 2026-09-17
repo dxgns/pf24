@@ -105,28 +105,33 @@ export default async function HomePage() {
       <section id="features" className="px-6 py-28">
         <div className="section-container">
           <h2 className="text-center text-4xl font-extrabold">
-            Plataforma de simulación aérea PF24
+            Plataforma PF24
           </h2>
 
-          <p className="mx-auto mt-4 max-w-2xl text-center text-slate-400">
-            Herramientas desarrolladas para pilotos y controladores de la
-            comunidad de Project Flight.
+          <p className="mx-auto mt-4 max-w-3xl text-center text-slate-400">
+            Un ecosistema propio para pilotos, controladores e instructores de Project Flight,
+            con herramientas operativas, radar y formación integradas.
           </p>
 
-          <div className="mt-12 grid gap-6 md:grid-cols-3">
+          <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
             <Card
-              title="Planes de Vuelo"
-              text="Creación y gestión de planes IFR, VFR, YFR y ZFR para operaciones de vuelo organizadas."
+              title="PFPilot"
+              text="Cabina operativa para pilotos con plan de vuelo, ATIS, frecuencias, chat y herramientas de asistencia durante la operación."
             />
 
             <Card
-              title="Sector List"
-              text="Herramienta operativa para controladores ATC con estados, tráfico y asignación de vuelos."
+              title="PFScope"
+              text="Entorno radar para controladores ATC con tráfico, flight data, coordinación, ventanas operacionales y modo de simulación."
             />
 
             <Card
-              title="ATIS"
-              text="Información meteorológica y operacional para aeropuertos activos dentro de la red PF24."
+              title="PFRadar"
+              text="Portal de radar dedicado a la visualización y seguimiento de la actividad aérea dentro de la plataforma PF24."
+            />
+
+            <Card
+              title="Academia"
+              text="Sistema de formación para pilotos y controladores ATC con módulos, evaluaciones, progresión por rango e instrucción supervisada."
             />
           </div>
         </div>
