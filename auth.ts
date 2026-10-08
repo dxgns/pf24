@@ -112,10 +112,11 @@ async function saveStoredRobloxIdentity(discordId: string, identity: RobloxIdent
 export const { handlers, signIn, signOut, auth } = NextAuth({
   secret: AUTH_SECRET,
   trustHost: true,
-  providers: [
+  providers: [ 
     Discord({
       clientId: process.env.AUTH_DISCORD_ID!,
       clientSecret: process.env.AUTH_DISCORD_SECRET!,
+      issuer: "https://discord.com",
       authorization: {
         params: {
           scope: "identify email guilds.members.read",
