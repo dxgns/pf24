@@ -17,10 +17,15 @@ export default async function AtcInstructionsPage() {
   const canAccess = session.user?.permissions?.roles?.includes(ATC_INSTRUCTIONS_ROLE_ID) ?? false;
   if (!canAccess) redirect("/access-denied");
 
-  let pending = [];
-  let instruction = [];
+  
+  type InstructionQueue = Awaited<
+    ReturnType<typeof listAcademyInstructionRequests>
+  >;
+  
+  let pending: InstructionQueue["pending"] = [];
+  let instruction: InstructionQueue["instruction"] = [];
   let loadError = false;
-
+  
   try {
     const queue = await listAcademyInstructionRequests("atc");
     pending = queue.pending;
