@@ -10,7 +10,37 @@ import {
   type RobloxIdentity,
 } from "@/lib/robloxIdentity";
 
-const AUTH_SECRET = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+function firstEnv(...names: string[]) {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+const AUTH_SECRET = firstEnv("AUTH_SECRET", "NEXTAUTH_SECRET");
+const DISCORD_CLIENT_ID = firstEnv(
+  "AUTH_DISCORD_ID",
+  "AUTH_DISCORD_CLIENT_ID",
+  "DISCORD_CLIENT_ID",
+  "DISCORD_ID",
+);
+const DISCORD_CLIENT_SECRET = firstEnv(
+  "AUTH_DISCORD_SECRET",
+  "AUTH_DISCORD_CLIENT_SECRET",
+  "DISCORD_CLIENT_SECRET",
+  "DISCORD_SECRET",
+);
+
+if (!AUTH_SECRET) {
+  console.error("PF24 Auth configuration error: missing AUTH_SECRET/NEXTAUTH_SECRET.");
+}
+if (!DISCORD_CLIENT_ID) {
+  console.error("PF24 Auth configuration error: missing Discord client ID.");
+}
+if (!DISCORD_CLIENT_SECRET) {
+  console.error("PF24 Auth configuration error: missing Discord client secret.");
+}
 
 type DiscordProfile = {
   id?: string;
@@ -114,8 +144,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
   providers: [
     Discord({
-      clientId: process.env.AUTH_DISCORD_ID!,
-      clientSecret: process.env.AUTH_DISCORD_SECRET!,
+      clientId: DISCORD_CLIENT_ID ?? "",
+      clientSecret: DISCORD_CLIENT_SECRET ?? "",
       authorization: {
         params: {
           scope: "identify email guilds.members.read",
@@ -136,10 +166,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       const discordId = String(token.discordId ?? discordProfile?.id ?? token.sub ?? "").trim();
       let robloxIdentity = await readLinkedRobloxCookie();
 
-      // Roblox is the persistent identity used by PFPilot to find the pilot's
-      // aircraft in Project Flight. Do not depend on a new Discord login to make
-      // that identity available: recover it from the JWT or the identity table on
-      // every session refresh when the cookie is not present.
       if (!robloxIdentity && token.robloxUserId && token.robloxUsername) {
         robloxIdentity = {
           userId: String(token.robloxUserId),
@@ -168,10 +194,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.robloxDisplayName = robloxIdentity.displayName;
       }
 
-      // Keep a role snapshot in the JWT for fallback, but do not rely on it as
-      // the authoritative value after login. The session callback below performs
-      // a no-cache Discord lookup every time a page resolves the session, so a
-      // browser refresh immediately reflects roles added or removed in Discord.
       if (account?.access_token || !Array.isArray(token.discordRoles)) {
         const roles = await fetchDiscordRoles(token.discordAccessToken);
         if (roles) {
@@ -179,19 +201,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           token.permissions = getPermissionsFromRoles(roles);
 
           if (account?.access_token) {
-            await getSupabaseAdmin().from("login_logs").insert({
-              discord_id: discordProfile?.id ?? token.discordId ?? token.sub ?? "unknown",
-              username:
-                discordProfile?.username ??
-                token.name ??
-                "Usuario desconocido",
-              display_name:
-                discordProfile?.global_name ??
-                token.name ??
-                discordProfile?.username ??
-                "Usuario desconocido",
-              roles,
-            });
+            try {
+              await getSupabaseAdmin().from("login_logs").insert({
+                discord_id: discordProfile?.id ?? token.discordId ?? token.sub ?? "unknown",
+                username:
+                  discordProfile?.username ??
+                  token.name ??
+                  "Usuario desconocido",
+                display_name:
+                  discordProfile?.global_name ??
+                  token.name ??
+                  discordProfile?.username ??
+                  "Usuario desconocido",
+                roles,
+              });
+            } catch (error) {
+              console.error("PF24 login audit error:", error);
+            }
           }
         }
       }
