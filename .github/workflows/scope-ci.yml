@@ -22,9 +22,8 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit --no-fund
-
+      # npm run build installs the exact OpenNext/Cloudflare-compatible runtime
+      # once through cloudflare:deps. Avoid a full npm ci immediately beforehand.
       - name: Build
         run: npm run build
         env:

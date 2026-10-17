@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 
 const ATIS_AIRPORTS = new Set([
@@ -61,7 +61,7 @@ async function loadPublished() {
 
   if (error) {
     console.error("PF24 ATIS publication state lookup failed:", error);
-    return new Map<string, PublishedAtis>();
+    return null;
   }
 
   return latestPublishedByAirport((data ?? []) as PublishedAtis[]);
@@ -88,7 +88,9 @@ function setSendVisibility(dialog: HTMLElement, visible: boolean) {
 }
 
 export default function ScopeAtisJurisdictionGuard({ controllerName }: { controllerName: string }) {
-  const enforce = useCallback(async () => {
+  const publishedRef = useRef<Map<string, PublishedAtis>>(new Map());
+
+  const enforce = useCallback(() => {
     const connected = scopeConnected();
     const dialog = findAtisDialog();
     if (!dialog) return;
@@ -105,8 +107,7 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
     }
 
     const selected = select?.value?.trim().toUpperCase() ?? "";
-    const published = await loadPublished();
-    const owner = selected ? published.get(selected)?.created_by?.trim() ?? "" : "";
+    const owner = selected ? publishedRef.current.get(selected)?.created_by?.trim() ?? "" : "";
     const lockedByOther = Boolean(selected && owner && owner !== controllerName);
     const unavailable = !connected || !selected || !ATIS_AIRPORTS.has(selected);
 
@@ -115,12 +116,23 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
   }, [controllerName]);
 
   useEffect(() => {
-    void enforce();
+    let disposed = false;
+    const scopeRoot = document.querySelector<HTMLElement>("main.fixed") ?? document.body;
+
+    const refreshPublished = async () => {
+      const next = await loadPublished();
+      if (disposed || !next) return;
+      publishedRef.current = next;
+      enforce();
+    };
+
+    void refreshPublished();
+    enforce();
 
     const schedule = () => {
-      window.setTimeout(() => void enforce(), 0);
-      window.setTimeout(() => void enforce(), 100);
-      window.setTimeout(() => void enforce(), 350);
+      window.setTimeout(enforce, 0);
+      window.setTimeout(enforce, 100);
+      window.setTimeout(enforce, 350);
     };
 
     const onConnection = () => schedule();
@@ -133,9 +145,13 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
       const button = target?.closest<HTMLButtonElement>("button");
       if (button?.textContent?.trim().toUpperCase() !== "SEND") return;
 
+      // Revalidate from the database only for the actual SEND action. Normal DOM
+      // synchronization uses the realtime-backed cache and performs no queries.
+      const freshPublished = await loadPublished();
+      if (freshPublished) publishedRef.current = freshPublished;
+
       const selected = airportSelect(dialog)?.value?.trim().toUpperCase() ?? "";
-      const published = await loadPublished();
-      const owner = selected ? published.get(selected)?.created_by?.trim() ?? "" : "";
+      const owner = selected ? publishedRef.current.get(selected)?.created_by?.trim() ?? "" : "";
       const allowed = scopeConnected()
         && Boolean(selected)
         && ATIS_AIRPORTS.has(selected)
@@ -151,20 +167,25 @@ export default function ScopeAtisJurisdictionGuard({ controllerName }: { control
     };
 
     const observer = new MutationObserver(schedule);
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(scopeRoot, { childList: true, subtree: true });
 
     const channel = supabase
-      .channel("scope-atis-connection-guard-v5")
-      .on("postgres_changes", { event: "*", schema: "public", table: "atis_messages" }, schedule)
+      .channel("scope-atis-connection-guard-v6")
+      .on("postgres_changes", { event: "*", schema: "public", table: "atis_messages" }, () => {
+        void refreshPublished();
+      })
       .subscribe();
 
-    const refreshTimer = window.setInterval(schedule, 1200);
+    // Observer, connection events and realtime are the primary paths. This is a
+    // low-frequency safety pass for legacy DOM changes that bypass those signals.
+    const refreshTimer = window.setInterval(enforce, 5000);
 
     window.addEventListener("pf24-scope-connection-change", onConnection);
     document.addEventListener("click", schedule, true);
     document.addEventListener("click", blockUnauthorizedSend, true);
 
     return () => {
+      disposed = true;
       observer.disconnect();
       window.clearInterval(refreshTimer);
       void supabase.removeChannel(channel);
