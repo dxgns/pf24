@@ -106,7 +106,9 @@ export default function ScopeUnplannedHold({ initialPlans }: Props) {
     };
 
     sync();
-    const timer = window.setInterval(sync, 250);
+    // Events handle direct hold changes immediately; this slower pass only keeps
+    // late-created menus/list rows synchronized with the shared state.
+    const timer = window.setInterval(sync, 500);
     window.addEventListener(HOLD_SYNC_EVENT, sync);
     document.addEventListener("click", onClick, true);
     return () => {

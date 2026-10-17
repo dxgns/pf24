@@ -36,41 +36,53 @@ export default async function PFPilotPage() {
   let atcSessions: any[] = [];
   let atisMessages: any[] = [];
 
-  try {
-    const result = await supabase
+  const [flightPlansResult, atcSessionsResult, atisMessagesResult] = await Promise.allSettled([
+    supabase
       .from("flight_plans")
       .select("*")
       .eq("created_by", pilotId)
       .neq("status", "FINISHED")
-      .order("created_at", { ascending: false });
-    if (result.error) console.error("PFPilot flight plan load error:", result.error);
-    else flightPlans = result.data ?? [];
-  } catch (error) {
-    console.error("PFPilot flight plan query exception:", error);
-  }
-
-  try {
-    const result = await supabase
+      .order("created_at", { ascending: false }),
+    supabase
       .from("atc_sessions")
       .select("*")
       .eq("is_active", true)
-      .order("started_at", { ascending: false });
-    if (result.error) console.error("PFPilot ATC session load error:", result.error);
-    else atcSessions = result.data ?? [];
-  } catch (error) {
-    console.error("PFPilot ATC session query exception:", error);
-  }
-
-  try {
-    const result = await supabase
+      .order("started_at", { ascending: false }),
+    supabase
       .from("atis_messages")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(40);
-    if (result.error) console.error("PFPilot ATIS load error:", result.error);
-    else atisMessages = result.data ?? [];
-  } catch (error) {
-    console.error("PFPilot ATIS query exception:", error);
+      .limit(40),
+  ]);
+
+  if (flightPlansResult.status === "fulfilled") {
+    if (flightPlansResult.value.error) {
+      console.error("PFPilot flight plan load error:", flightPlansResult.value.error);
+    } else {
+      flightPlans = flightPlansResult.value.data ?? [];
+    }
+  } else {
+    console.error("PFPilot flight plan query exception:", flightPlansResult.reason);
+  }
+
+  if (atcSessionsResult.status === "fulfilled") {
+    if (atcSessionsResult.value.error) {
+      console.error("PFPilot ATC session load error:", atcSessionsResult.value.error);
+    } else {
+      atcSessions = atcSessionsResult.value.data ?? [];
+    }
+  } else {
+    console.error("PFPilot ATC session query exception:", atcSessionsResult.reason);
+  }
+
+  if (atisMessagesResult.status === "fulfilled") {
+    if (atisMessagesResult.value.error) {
+      console.error("PFPilot ATIS load error:", atisMessagesResult.value.error);
+    } else {
+      atisMessages = atisMessagesResult.value.data ?? [];
+    }
+  } else {
+    console.error("PFPilot ATIS query exception:", atisMessagesResult.reason);
   }
 
   return (

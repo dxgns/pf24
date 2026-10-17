@@ -1,9 +1,10 @@
 import Image from "next/image";
-import { auth } from "@/auth";
 
-export default async function Navbar() {
-  const session = await auth();
+type NavbarProps = {
+  isAuthenticated?: boolean;
+};
 
+export default function Navbar({ isAuthenticated = false }: NavbarProps) {
   return (
     <header className="fixed left-0 top-0 z-50 w-full border-b border-white/10 bg-[#050816]/80 backdrop-blur">
       <div className="section-container flex h-[75px] items-center justify-between">
@@ -42,14 +43,9 @@ export default async function Navbar() {
             <a href="https://trello.com/b/CXt0oq24/pf24-espanol-actualizaciones" className="text-white/80 transition hover:text-white">
               Trello
             </a>
-
-            {session && (
-              <>
-              </>
-            )}
           </nav>
 
-          {session ? (
+          {isAuthenticated ? (
             <a
               href="/dashboard"
               className="rounded-xl border border-sky-400 px-4 py-2 font-medium text-sky-400 transition hover:bg-sky-400 hover:text-white"

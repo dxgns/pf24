@@ -36,9 +36,11 @@ export default function ScopeConflictColorGuard() {
     const painted = new Set<HTMLElement>();
     let queued = false;
 
+    const scopeRoot = document.querySelector<HTMLElement>("main.fixed") ?? document.body;
+
     const sync = () => {
       queued = false;
-      const current = new Set(Array.from(document.querySelectorAll<HTMLElement>(SELECTOR)));
+      const current = new Set(Array.from(scopeRoot.querySelectorAll<HTMLElement>(SELECTOR)));
       let restored = false;
 
       for (const element of painted) {
@@ -65,13 +67,16 @@ export default function ScopeConflictColorGuard() {
     };
 
     const observer = new MutationObserver(queue);
-    observer.observe(document.documentElement, {
+    observer.observe(scopeRoot, {
       childList: true,
       subtree: true,
       attributes: true,
       attributeFilter: ["style", "data-pf24-conflict-callsign"],
     });
-    const timer = window.setInterval(sync, 120);
+
+    // The observer handles normal updates immediately. This slower timer is only
+    // a safety net for legacy DOM mutations that do not trigger the expected path.
+    const timer = window.setInterval(sync, 1000);
     sync();
 
     return () => {

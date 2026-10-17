@@ -32,14 +32,22 @@ const structuredData = {
 };
 
 export default async function HomePage() {
-  const session = await auth();
+  let session = null;
+  try {
+    session = await auth();
+  } catch (error) {
+    console.error("PF24 home auth error:", error);
+  }
+
+  const isAuthenticated = Boolean(session);
+
   return (
     <main className="min-h-screen bg-[#050612] text-white">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <Navbar />
+      <Navbar isAuthenticated={isAuthenticated} />
 
       {/* HERO */}
       <section className="relative flex min-h-screen items-center overflow-hidden px-6 pt-24">
@@ -81,10 +89,10 @@ export default async function HomePage() {
               </a>
 
               <a
-                href={session ? "/dashboard" : "/login"}
+                href={isAuthenticated ? "/dashboard" : "/login"}
                 className="rounded-2xl border border-white/20 px-10 py-4 text-xl font-semibold text-white transition hover:bg-white/10"
               >
-                {session ? "Ir al Dashboard" : "Iniciar sesión"}
+                {isAuthenticated ? "Ir al Dashboard" : "Iniciar sesión"}
               </a>
             </div>
           </div>

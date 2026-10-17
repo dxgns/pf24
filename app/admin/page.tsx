@@ -35,83 +35,82 @@ export default async function AdminPage() {
   let activeFlights: any[] = [];
   let activeAtis: any[] = [];
 
-  try {
-    const result = await supabase
-      .from("admin_logs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(30);
+  const [adminLogsResult, loginLogsResult, atcSessionsResult, activeFlightsResult, activeAtisResult] =
+    await Promise.allSettled([
+      supabase
+        .from("admin_logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(30),
+      supabase
+        .from("login_logs")
+        .select("*")
+        .order("login_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("atc_sessions")
+        .select("*")
+        .eq("is_active", true)
+        .order("started_at", { ascending: false }),
+      supabase
+        .from("flight_plans")
+        .select("*")
+        .neq("status", "FINISHED")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("atis_messages")
+        .select("*")
+        .order("created_at", { ascending: false }),
+    ]);
 
-    if (result.error) {
-      console.error("PF24 Admin log load error:", result.error);
+  if (adminLogsResult.status === "fulfilled") {
+    if (adminLogsResult.value.error) {
+      console.error("PF24 Admin log load error:", adminLogsResult.value.error);
     } else {
-      adminLogs = result.data ?? [];
+      adminLogs = adminLogsResult.value.data ?? [];
     }
-  } catch (error) {
-    console.error("PF24 Admin log query exception:", error);
+  } else {
+    console.error("PF24 Admin log query exception:", adminLogsResult.reason);
   }
 
-  try {
-    const result = await supabase
-      .from("login_logs")
-      .select("*")
-      .order("login_at", { ascending: false })
-      .limit(50);
-
-    if (result.error) {
-      console.error("PF24 Admin login log load error:", result.error);
+  if (loginLogsResult.status === "fulfilled") {
+    if (loginLogsResult.value.error) {
+      console.error("PF24 Admin login log load error:", loginLogsResult.value.error);
     } else {
-      loginLogs = result.data ?? [];
+      loginLogs = loginLogsResult.value.data ?? [];
     }
-  } catch (error) {
-    console.error("PF24 Admin login log query exception:", error);
+  } else {
+    console.error("PF24 Admin login log query exception:", loginLogsResult.reason);
   }
 
-  try {
-    const result = await supabase
-      .from("atc_sessions")
-      .select("*")
-      .eq("is_active", true)
-      .order("started_at", { ascending: false });
-
-    if (result.error) {
-      console.error("PF24 Admin ATC session load error:", result.error);
+  if (atcSessionsResult.status === "fulfilled") {
+    if (atcSessionsResult.value.error) {
+      console.error("PF24 Admin ATC session load error:", atcSessionsResult.value.error);
     } else {
-      atcSessions = result.data ?? [];
+      atcSessions = atcSessionsResult.value.data ?? [];
     }
-  } catch (error) {
-    console.error("PF24 Admin ATC session query exception:", error);
+  } else {
+    console.error("PF24 Admin ATC session query exception:", atcSessionsResult.reason);
   }
 
-  try {
-    const result = await supabase
-      .from("flight_plans")
-      .select("*")
-      .neq("status", "FINISHED")
-      .order("created_at", { ascending: false });
-
-    if (result.error) {
-      console.error("PF24 Admin flight load error:", result.error);
+  if (activeFlightsResult.status === "fulfilled") {
+    if (activeFlightsResult.value.error) {
+      console.error("PF24 Admin flight load error:", activeFlightsResult.value.error);
     } else {
-      activeFlights = result.data ?? [];
+      activeFlights = activeFlightsResult.value.data ?? [];
     }
-  } catch (error) {
-    console.error("PF24 Admin flight query exception:", error);
+  } else {
+    console.error("PF24 Admin flight query exception:", activeFlightsResult.reason);
   }
 
-  try {
-    const result = await supabase
-      .from("atis_messages")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (result.error) {
-      console.error("PF24 Admin ATIS load error:", result.error);
+  if (activeAtisResult.status === "fulfilled") {
+    if (activeAtisResult.value.error) {
+      console.error("PF24 Admin ATIS load error:", activeAtisResult.value.error);
     } else {
-      activeAtis = result.data ?? [];
+      activeAtis = activeAtisResult.value.data ?? [];
     }
-  } catch (error) {
-    console.error("PF24 Admin ATIS query exception:", error);
+  } else {
+    console.error("PF24 Admin ATIS query exception:", activeAtisResult.reason);
   }
 
   return (

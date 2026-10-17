@@ -8,10 +8,11 @@ const SHIFT_PX = -4;
 export default function ScopeTrafficLabelSeparatorSpacing() {
   useEffect(() => {
     let queued = false;
+    const root = document.querySelector<HTMLElement>("main.fixed") ?? document.body;
 
     const sync = () => {
       queued = false;
-      for (const label of Array.from(document.querySelectorAll<HTMLElement>(LABEL_SELECTOR))) {
+      for (const label of Array.from(root.querySelectorAll<HTMLElement>(LABEL_SELECTOR))) {
         for (const span of Array.from(label.querySelectorAll<HTMLSpanElement>("span"))) {
           if (span.textContent?.trim() !== "--") continue;
           span.dataset.pf24TrafficLabelSeparator = "true";
@@ -27,12 +28,12 @@ export default function ScopeTrafficLabelSeparatorSpacing() {
     };
 
     const observer = new MutationObserver(queue);
-    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    observer.observe(root, { childList: true, subtree: true, characterData: true });
     sync();
 
     return () => {
       observer.disconnect();
-      for (const span of Array.from(document.querySelectorAll<HTMLElement>("[data-pf24-traffic-label-separator='true']"))) {
+      for (const span of Array.from(root.querySelectorAll<HTMLElement>("[data-pf24-traffic-label-separator='true']"))) {
         span.style.removeProperty("transform");
         span.removeAttribute("data-pf24-traffic-label-separator");
       }

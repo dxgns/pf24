@@ -70,8 +70,6 @@ export default function PFPilotStateShell({
             setActivePlan(next.status === "FINISHED" ? null : next);
           }
 
-          // Re-read after every relevant mutation so inserts, deletes and partial
-          // realtime payloads converge on the database truth immediately.
           if (belongsToPilot || payload.eventType === "DELETE") void refreshActivePlan();
         },
       )
@@ -79,9 +77,9 @@ export default function PFPilotStateShell({
         if (status === "SUBSCRIBED") void refreshActivePlan();
       });
 
-    // Realtime is the fast path. A short fallback poll prevents a dropped
-    // websocket event from leaving PFPilot frozen on an old flight state.
-    const fallback = window.setInterval(() => void refreshActivePlan(), 1500);
+    // Realtime remains the primary update path. Keep a much slower fallback
+    // poll only as protection against a silently dropped websocket event.
+    const fallback = window.setInterval(() => void refreshActivePlan(), 15_000);
     const refreshWhenVisible = () => {
       if (!document.hidden) void refreshActivePlan();
     };
