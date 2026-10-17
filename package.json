@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "cloudflare:deps": "npm install --no-save --package-lock=false --legacy-peer-deps --prefer-offline --no-audit --no-fund next@15.5.21 eslint-config-next@15.5.21 @opennextjs/cloudflare@1.20.2 wrangler@4",
+    "cloudflare:deps": "npm install --no-save --package-lock=false --legacy-peer-deps --prefer-offline --no-audit --no-fund next@15.5.21 eslint-config-next@15.5.21 next-auth@5.0.0-beta.32 @auth/core@0.41.3 @opennextjs/cloudflare@1.20.2 wrangler@4",
     "build": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild",
     "preview": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && ./node_modules/.bin/opennextjs-cloudflare preview",
     "deploy": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && npx wrangler deploy --keep-vars",
@@ -14,10 +14,10 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@auth/core": "^0.34.3",
+    "@auth/core": "0.41.3",
     "@supabase/supabase-js": "^2.108.2",
     "next": "16.2.9",
-    "next-auth": "^5.0.0-beta.31",
+    "next-auth": "5.0.0-beta.32",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
