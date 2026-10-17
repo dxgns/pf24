@@ -60,15 +60,16 @@ function mutationTouchesHoldTelemetry(mutations: MutationRecord[]) {
 export default function ScopeHoldTelemetry() {
   useEffect(() => {
     let frame = 0;
+    const root = document.querySelector<HTMLElement>("main.fixed") ?? document.body;
 
     const sync = () => {
       frame = 0;
-      const hold = document.querySelector<HTMLElement>(HOLD_SELECTOR);
+      const hold = root.querySelector<HTMLElement>(HOLD_SELECTOR);
       if (!hold) return;
 
       const controls = readControls();
       const telemetry = new Map<string, { fl: string; afl: string }>();
-      document.querySelectorAll<HTMLElement>(TRAFFIC_SELECTOR).forEach((label) => {
+      root.querySelectorAll<HTMLElement>(TRAFFIC_SELECTOR).forEach((label) => {
         const callsign = labelCallsign(label);
         const id = label.dataset.pf24TrafficId ?? "";
         if (!callsign || !id) return;
@@ -101,7 +102,7 @@ export default function ScopeHoldTelemetry() {
     const observer = new MutationObserver((mutations) => {
       if (mutationTouchesHoldTelemetry(mutations)) queueSync();
     });
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    observer.observe(root, { childList: true, subtree: true, characterData: true });
 
     const onHoldSync = () => queueSync();
     const onStorage = (event: StorageEvent) => {

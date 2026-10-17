@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 
-function activePlanCards() {
-  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
+function activePlanCards(root: ParentNode) {
+  const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>("button"));
   const cards = new Set<HTMLElement>();
 
   for (const button of buttons) {
@@ -26,8 +26,10 @@ function belongsToLockedPlan(element: Element | null) {
 
 export default function PilotFlightPlanReadOnlyGuard() {
   useEffect(() => {
+    const root = document.querySelector<HTMLElement>("main.radar-grid") ?? document.body;
+
     const lock = () => {
-      for (const card of activePlanCards()) {
+      for (const card of activePlanCards(root)) {
         card.dataset.pf24PilotFplReadonly = "true";
         card.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input,select,textarea")
           .forEach((control) => {
@@ -49,7 +51,7 @@ export default function PilotFlightPlanReadOnlyGuard() {
 
     lock();
     const observer = new MutationObserver(lock);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
+    observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
 
     document.addEventListener("beforeinput", blockEdit, true);
     document.addEventListener("input", blockEdit, true);

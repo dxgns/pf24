@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@/auth";
+import type { Session } from "next-auth";
 import { getPilotRankFromRoles, nextAtcRank, type AtcRank } from "@/lib/academyRanks";
 import {
   assumeAcademyInstructionRequest,
@@ -23,16 +24,16 @@ function readRequired(value: FormDataEntryValue | null, label: string) {
   return text;
 }
 
-function sessionDiscordId(session: Awaited<ReturnType<typeof auth>>) {
-  const id = session?.user?.discordId?.trim();
+function sessionDiscordId(session: Session) {
+  const id = session.user?.discordId?.trim();
   if (id) return id;
-  return session?.user?.email?.trim() || session?.user?.name?.trim() || "unknown";
+  return session.user?.email?.trim() || session.user?.name?.trim() || "unknown";
 }
 
 function validateApplicantTarget(
   track: AcademyTrack,
   targetRole: string,
-  session: NonNullable<Awaited<ReturnType<typeof auth>>>,
+  session: Session,
 ) {
   if (track === "pilot") {
     if (getPilotRankFromRoles(session.user?.permissions?.roles) === "NONE") {
