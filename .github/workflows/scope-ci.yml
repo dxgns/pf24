@@ -22,6 +22,28 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Verify package manifest and lockfile
+        run: |
+          node <<'NODE'
+          const pkg = require('./package.json');
+          const lock = require('./package-lock.json');
+          const lockedRoot = lock.packages?.[''] ?? {};
+
+          for (const section of ['dependencies', 'devDependencies']) {
+            const declared = pkg[section] ?? {};
+            const locked = lockedRoot[section] ?? {};
+            const names = new Set([...Object.keys(declared), ...Object.keys(locked)]);
+            const mismatches = [...names].filter((name) => declared[name] !== locked[name]);
+            if (mismatches.length) {
+              console.error(`${section} differs from package-lock.json:`);
+              for (const name of mismatches) {
+                console.error(`- ${name}: package.json=${declared[name] ?? '<missing>'}, lock=${locked[name] ?? '<missing>'}`);
+              }
+              process.exitCode = 1;
+            }
+          }
+          NODE
+
       # npm run build installs the exact OpenNext/Cloudflare-compatible runtime
       # once through cloudflare:deps. Avoid a full npm ci immediately beforehand.
       - name: Build
@@ -34,3 +56,38 @@ jobs:
           AUTH_SECRET: ${{ secrets.AUTH_SECRET || 'ci-only-auth-secret-please-ignore' }}
           AUTH_DISCORD_ID: ${{ secrets.AUTH_DISCORD_ID || '000000000000000000' }}
           AUTH_DISCORD_SECRET: ${{ secrets.AUTH_DISCORD_SECRET || 'ci-discord-secret' }}
+
+      - name: Deploy main to Cloudflare
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROD_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          PROD_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          PROD_SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PROD_AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          PROD_DISCORD_ID: ${{ secrets.AUTH_DISCORD_ID }}
+          PROD_DISCORD_SECRET: ${{ secrets.AUTH_DISCORD_SECRET }}
+        run: |
+          missing=0
+          for name in \
+            CLOUDFLARE_API_TOKEN \
+            CLOUDFLARE_ACCOUNT_ID \
+            PROD_SUPABASE_URL \
+            PROD_SUPABASE_ANON_KEY \
+            PROD_SUPABASE_SERVICE_ROLE \
+            PROD_AUTH_SECRET \
+            PROD_DISCORD_ID \
+            PROD_DISCORD_SECRET
+          do
+            if [ -z "${!name}" ]; then
+              echo "::notice::$name is not configured; Cloudflare deploy skipped."
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            exit 0
+          fi
+
+          npx wrangler deploy --keep-vars
