@@ -5,11 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "cloudflare:deps": "npm install --no-save --package-lock=false --legacy-peer-deps --prefer-offline --no-audit --no-fund next@15.5.21 eslint-config-next@15.5.21 next-auth@5.0.0-beta.32 @auth/core@0.41.3 @opennextjs/cloudflare@1.20.2 wrangler@4",
-    "build": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild",
-    "preview": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && ./node_modules/.bin/opennextjs-cloudflare preview",
-    "deploy": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && npx wrangler deploy --keep-vars",
-    "upload": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild && npx wrangler versions upload --keep-vars",
-    "build:cloudflare": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild",
+    "build": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild --dangerouslyUseUnsupportedNextVersion",
+    "preview": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild --dangerouslyUseUnsupportedNextVersion && ./node_modules/.bin/opennextjs-cloudflare preview",
+    "deploy": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild --dangerouslyUseUnsupportedNextVersion && npx wrangler deploy --keep-vars",
+    "upload": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild --dangerouslyUseUnsupportedNextVersion && npx wrangler versions upload --keep-vars",
+    "build:cloudflare": "npm run cloudflare:deps && next build && node scripts/ensure-opennext-manifest.mjs && ./node_modules/.bin/opennextjs-cloudflare build --skipNextBuild --dangerouslyUseUnsupportedNextVersion",
     "start": "next start",
     "lint": "eslint"
   },
