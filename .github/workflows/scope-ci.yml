@@ -44,6 +44,17 @@ jobs:
           }
           NODE
 
+      - name: Verify production public configuration
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          PROD_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          PROD_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$PROD_SUPABASE_URL" ] || [ -z "$PROD_SUPABASE_ANON_KEY" ]; then
+            echo "::error::NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be configured in GitHub Actions before a production build."
+            exit 1
+          fi
+
       # npm run build installs the exact OpenNext/Cloudflare-compatible runtime
       # once through cloudflare:deps. Avoid a full npm ci immediately beforehand.
       - name: Build
@@ -64,8 +75,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::notice::Cloudflare credentials are not configured; deploy skipped."
-            exit 0
+            echo "::error::Cloudflare credentials are not configured."
+            exit 1
           fi
 
           npx wrangler deploy --keep-vars
