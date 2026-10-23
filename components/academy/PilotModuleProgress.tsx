@@ -17,7 +17,7 @@ export default function PilotModuleProgress({ moduleNumber }: { moduleNumber: nu
 
     let active = true;
 
-    void fetch("/api/pf24/academy/pilot/progress", {
+    void fetch("/academia/piloto/api/progress", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ moduleNumber }),
