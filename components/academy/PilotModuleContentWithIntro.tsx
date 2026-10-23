@@ -66,7 +66,7 @@ export default function PilotModuleContentWithIntro({ moduleNumber }: { moduleNu
         <section className="space-y-3">
           <h2 className="pt-2 text-xl font-extrabold text-white">Ejemplo de carta de rodaje</h2>
           <ExampleFigure
-            src="https://drive.google.com/uc?export=view&id=137WPr9FjPcAO9zxmeziBL3YLxEvwtozP"
+            src="/academia/pe/mdpc-taxi.png"
             alt="Carta de rodaje MDPC/PUJ de Punta Cana"
             caption="Carta de rodaje MDPC/PUJ de Punta Cana proporcionada para el temario PE."
             maxWidth={920}
