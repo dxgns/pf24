@@ -1,4 +1,5 @@
 import PilotModuleContentSynced from "@/components/academy/PilotModuleContentSynced";
+import Image from "next/image";
 import type { ReactNode } from "react";
 
 function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
@@ -17,6 +18,28 @@ function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }
         </tbody>
       </table>
     </div>
+  );
+}
+
+function DirectExampleImage({ src, alt, width, height, caption }: {
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+  caption: string;
+}) {
+  return (
+    <figure className="mx-auto overflow-hidden rounded-2xl border border-white/10 bg-white p-3" style={{ maxWidth: width + 24 }}>
+      <Image
+        src={src}
+        alt={alt}
+        width={width}
+        height={height}
+        unoptimized
+        className="mx-auto h-auto max-w-full object-contain"
+      />
+      <figcaption className="mt-3 px-1 text-center text-xs text-slate-500">{caption}</figcaption>
+    </figure>
   );
 }
 
@@ -48,6 +71,50 @@ export default function PilotModuleContentWithIntro({ moduleNumber }: { moduleNu
     );
   }
 
+  if (moduleNumber === 4) {
+    return (
+      <div className="space-y-6 [&_figure:nth-of-type(2)]:hidden">
+        <PilotModuleContentSynced moduleNumber={3} />
+        <section className="space-y-3">
+          <h2 className="pt-2 text-xl font-extrabold text-white">Ejemplo de carta de rodaje</h2>
+          <DirectExampleImage
+            src="/academy/piloto/pe/carta-rodaje-mdst.webp"
+            alt="Carta de rodaje de MDST Santiago con pista 11/29 y calles Alfa y Bravo"
+            width={700}
+            height={394}
+            caption="Carta de rodaje de MDST."
+          />
+        </section>
+      </div>
+    );
+  }
+
+  if (moduleNumber === 6) {
+    return (
+      <div className="space-y-6 [&_figure]:hidden">
+        <PilotModuleContentSynced moduleNumber={5} />
+        <section className="space-y-3">
+          <h2 className="pt-2 text-xl font-extrabold text-white">Ejemplo de circuito de tránsito</h2>
+          <DirectExampleImage
+            src="/academy/piloto/pe/circuito-transito.webp"
+            alt="Diagrama de circuito de tránsito con viento en cara, viento cruzado, viento en cola, base y final"
+            width={593}
+            height={351}
+            caption="Diagrama de circuito de tránsito mostrado a su resolución nativa."
+          />
+        </section>
+      </div>
+    );
+  }
+
+  if (moduleNumber === 7) {
+    return (
+      <div className="[&_figure]:hidden">
+        <PilotModuleContentSynced moduleNumber={6} />
+      </div>
+    );
+  }
+
   if (moduleNumber === 8) {
     return (
       <div className="space-y-6">
@@ -59,8 +126,8 @@ export default function PilotModuleContentWithIntro({ moduleNumber }: { moduleNu
           ["LOGO", "Iluminan el logo de la cola. Se utilizan normalmente de noche, tanto en tierra como durante vuelo bajo."],
           ["BEACON", "Luz roja intermitente que indica que la aeronave está activa. Se enciende antes de arrancar los motores y se apaga al apagarlos."],
           ["TAXI", "Se utilizan durante el rodaje en tierra para iluminar el camino."],
-          ["STROBE", "Luces blancas intermitentes en las puntas de las alas. Se encienden al ingresar a pista y se apagan al salir."],
-          ["LANDING", "Luces potentes utilizadas para el despegue, ascenso inicial y aterrizaje."],
+          ["STROBE", "Luces blancas intermitentes en las puntas de las alas. Se encienden al ingresar a pista, permanecen encendidas en vuelo y se apagan al salir de la pista."],
+          ["LANDING", "Luces potentes utilizadas para el despegue, ascenso inicial y aterrizaje. Se deben dejar encendidas por debajo de los 3000 ft."],
         ]} />
 
         <p className="text-sm leading-7 text-slate-300">Un correcto uso de las luces mejora la visibilidad y evita riesgos de colisión con otras aeronaves o vehículos en plataforma.</p>
