@@ -20,6 +20,15 @@ function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }
   );
 }
 
+function ExampleFigure({ src, alt, caption, maxWidth }: { src: string; alt: string; caption: string; maxWidth: number }) {
+  return (
+    <figure className="mx-auto overflow-hidden rounded-2xl border border-white/10 bg-white p-3" style={{ maxWidth }}>
+      <img src={src} alt={alt} className="mx-auto block h-auto w-full object-contain" />
+      <figcaption className="mt-3 px-1 text-center text-xs text-slate-500">{caption}</figcaption>
+    </figure>
+  );
+}
+
 export default function PilotModuleContentWithIntro({ moduleNumber }: { moduleNumber: number }) {
   if (moduleNumber === 1) {
     return (
@@ -50,16 +59,38 @@ export default function PilotModuleContentWithIntro({ moduleNumber }: { moduleNu
 
   if (moduleNumber === 4) {
     return (
-      <div className="[&_figure]:bg-slate-950 [&_figure]:border-white/20 [&_figure_figcaption]:text-slate-300 [&_figure_img]:mx-auto [&_figure_img]:h-auto [&_figure_img]:w-auto [&_figure_img]:max-w-full">
-        <PilotModuleContentSynced moduleNumber={3} />
+      <div className="space-y-6">
+        <div className="[&_figure]:hidden">
+          <PilotModuleContentSynced moduleNumber={3} />
+        </div>
+        <section className="space-y-3">
+          <h2 className="pt-2 text-xl font-extrabold text-white">Ejemplo de carta de rodaje</h2>
+          <ExampleFigure
+            src="/academy/piloto/pe/carta-rodaje-mdst.svg"
+            alt="Esquema didáctico de carta de rodaje de MDST con pista 11/29, calles Alfa y Bravo y plataformas"
+            caption="Esquema didáctico de rodaje de MDST."
+            maxWidth={920}
+          />
+        </section>
       </div>
     );
   }
 
   if (moduleNumber === 6) {
     return (
-      <div className="[&_figure]:mx-auto [&_figure]:max-w-[617px] [&_figure_img]:mx-auto [&_figure_img]:h-auto [&_figure_img]:w-auto [&_figure_img]:max-w-full">
-        <PilotModuleContentSynced moduleNumber={5} />
+      <div className="space-y-6">
+        <div className="[&_figure]:hidden">
+          <PilotModuleContentSynced moduleNumber={5} />
+        </div>
+        <section className="space-y-3">
+          <h2 className="pt-2 text-xl font-extrabold text-white">Ejemplo de circuito de tránsito</h2>
+          <ExampleFigure
+            src="/academy/piloto/pe/circuito-transito.webp"
+            alt="Diagrama de circuito de tránsito con viento en cara, viento cruzado, viento en cola, base y final"
+            caption="Diagrama de circuito de tránsito mostrado a su resolución nativa."
+            maxWidth={617}
+          />
+        </section>
       </div>
     );
   }
