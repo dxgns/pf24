@@ -55,11 +55,13 @@ export default async function PilotAcademyModulePage({ params }: Props) {
           <h1 className="mt-3 max-w-4xl text-4xl font-extrabold leading-tight">{title}</h1>
         </div>
 
-        <article className="panel mt-6 rounded-3xl p-8 md:p-10">
-          <PilotModuleContentWithIntro moduleNumber={moduleNumber} />
-        </article>
-
-        {moduleNumber === PILOT_EVALUATION_MODULE ? <PeExamForm /> : null}
+        {moduleNumber === PILOT_EVALUATION_MODULE ? (
+          <PeExamForm />
+        ) : (
+          <article className="panel mt-6 rounded-3xl p-8 md:p-10">
+            <PilotModuleContentWithIntro moduleNumber={moduleNumber} />
+          </article>
+        )}
 
         <nav className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="Navegación entre módulos">
           {previous ? (
