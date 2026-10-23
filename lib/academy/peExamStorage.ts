@@ -1,10 +1,13 @@
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
+export type PeExamStoredAnswers = Record<string, string | string[]>;
+
 export type PeExamAttemptRecord = {
   attempt: number;
   score: number;
   submittedAt: string;
   passed: boolean;
+  timedOut?: boolean;
 };
 
 export type PeExamState = {
@@ -14,6 +17,8 @@ export type PeExamState = {
   lockedUntil: string | null;
   passedAt: string | null;
   cancelledAt: string | null;
+  activeStartedAt: string | null;
+  passedAnswers: PeExamStoredAnswers | null;
   updatedAt: string;
   history: PeExamAttemptRecord[];
 };
@@ -57,6 +62,8 @@ export function emptyPeExamState(applicantDiscordId: string): PeExamState {
     lockedUntil: null,
     passedAt: null,
     cancelledAt: null,
+    activeStartedAt: null,
+    passedAnswers: null,
     updatedAt: new Date(0).toISOString(),
     history: [],
   };
@@ -76,6 +83,10 @@ export async function getPeExamState(applicantDiscordId: string): Promise<PeExam
       lockedUntil: typeof parsed.lockedUntil === "string" ? parsed.lockedUntil : null,
       passedAt: typeof parsed.passedAt === "string" ? parsed.passedAt : null,
       cancelledAt: typeof parsed.cancelledAt === "string" ? parsed.cancelledAt : null,
+      activeStartedAt: typeof parsed.activeStartedAt === "string" ? parsed.activeStartedAt : null,
+      passedAnswers: parsed.passedAnswers && typeof parsed.passedAnswers === "object"
+        ? parsed.passedAnswers as PeExamStoredAnswers
+        : null,
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date(0).toISOString(),
       history: Array.isArray(parsed.history) ? parsed.history.filter(Boolean) as PeExamAttemptRecord[] : [],
     };
