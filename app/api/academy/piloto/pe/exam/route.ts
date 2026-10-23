@@ -14,25 +14,26 @@ import {
   isPeExamLocked,
   savePeExamState,
 } from "@/lib/academy/peExamStorage";
+import type { Session } from "next-auth";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-function sessionDiscordId(session: Awaited<ReturnType<typeof auth>>) {
-  const id = session?.user?.discordId?.trim();
+function sessionDiscordId(session: Session) {
+  const id = session.user?.discordId?.trim();
   if (id) return id;
-  return session?.user?.email?.trim() || session?.user?.name?.trim() || "unknown";
+  return session.user?.email?.trim() || session.user?.name?.trim() || "unknown";
 }
 
-function applicantName(session: Awaited<ReturnType<typeof auth>>) {
-  return session?.user?.name?.trim() || session?.user?.robloxUsername?.trim() || "Usuario PF24";
+function applicantName(session: Session) {
+  return session.user?.name?.trim() || session.user?.robloxUsername?.trim() || "Usuario PF24";
 }
 
-function hasPilotAccess(session: Awaited<ReturnType<typeof auth>>) {
-  return Boolean(session && getPilotRankFromRoles(session.user?.permissions?.roles) !== "NONE");
+function hasPilotAccess(session: Session) {
+  return getPilotRankFromRoles(session.user?.permissions?.roles) !== "NONE";
 }
 
-async function ensurePassedApplicantIsQueued(session: NonNullable<Awaited<ReturnType<typeof auth>>>, discordId: string) {
+async function ensurePassedApplicantIsQueued(session: Session, discordId: string) {
   try {
     return await submitAcademyInstructionRequest({
       track: "pilot",
