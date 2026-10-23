@@ -60,6 +60,10 @@ export async function submitAcademyEvaluation(formData: FormData) {
   const targetRole = readRequired(formData.get("targetRole"), "Rol");
   validateApplicantTarget(track, targetRole, session);
 
+  if (track === "pilot" && targetRole === "PE") {
+    throw new Error("La postulación PE se agrega automáticamente al aprobar el examen.");
+  }
+
   await submitAcademyInstructionRequest({
     track,
     targetRole,
