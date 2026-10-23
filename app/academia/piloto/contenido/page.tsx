@@ -13,6 +13,7 @@ import {
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Licencia PE | PF24 Academia" };
+export const dynamic = "force-dynamic";
 
 export default async function PilotAcademyContentPage() {
   const session = await auth();
@@ -30,7 +31,7 @@ export default async function PilotAcademyContentPage() {
       <section className="section-container max-w-6xl">
         <div className="panel rounded-3xl p-8">
           <div className="flex items-center justify-between gap-4">
-            <Link href="/academia/piloto" className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300">← Piloto {rank}</Link>
+            <Link prefetch={false} href="/academia/piloto" className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:border-sky-400 hover:text-sky-300">← Piloto {rank}</Link>
             <div className="mono text-sm tracking-[0.25em] text-slate-400">PF24 ACADEMIA</div>
           </div>
           <p className="mono mt-10 text-xs uppercase tracking-[0.28em] text-sky-300/70">Piloto Estudiante · Formación inicial</p>
@@ -73,7 +74,7 @@ export default async function PilotAcademyContentPage() {
             );
 
             return (
-              <Link key={title} href={`/academia/piloto/contenido/${moduleNumber}`} className="panel group rounded-3xl p-6 transition hover:-translate-y-0.5 hover:border-sky-400/40 hover:bg-slate-900/80">
+              <Link prefetch={false} key={title} href={`/academia/piloto/contenido/${moduleNumber}`} className="panel group rounded-3xl p-6 transition hover:-translate-y-0.5 hover:border-sky-400/40 hover:bg-slate-900/80">
                 <div className="flex items-center justify-between gap-4">
                   <p className="mono text-xs uppercase tracking-[0.2em] text-sky-300/70">Módulo {moduleNumber}{evaluation ? " · Evaluación" : ""}</p>
                   {seen && !evaluation && <span className="mono text-[10px] uppercase tracking-[0.14em] text-emerald-300">Visto</span>}
