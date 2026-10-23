@@ -1,36 +1,45 @@
 "use client";
 
 import { useEffect } from "react";
-import { PE_MODULES, PILOT_PROGRESS_COOKIE } from "@/lib/academy/pilotModules";
+import { useRouter } from "next/navigation";
+import { PILOT_EVALUATION_MODULE } from "@/lib/academy/pilotModules";
 
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
-
-function readSeenModules() {
-  const prefix = `${encodeURIComponent(PILOT_PROGRESS_COOKIE)}=`;
-  const raw = document.cookie
-    .split("; ")
-    .find((entry) => entry.startsWith(prefix))
-    ?.slice(prefix.length);
-
-  if (!raw) return new Set<number>();
-
-  return new Set(
-    decodeURIComponent(raw)
-      .split(",")
-      .map((value) => Number(value))
-      .filter((value) => Number.isInteger(value) && value > 0 && value <= PE_MODULES.length),
-  );
-}
+type ProgressResponse = {
+  ok: boolean;
+  changed?: boolean;
+};
 
 export default function PilotModuleProgress({ moduleNumber }: { moduleNumber: number }) {
-  useEffect(() => {
-    const seen = readSeenModules();
-    if (seen.has(moduleNumber)) return;
+  const router = useRouter();
 
-    seen.add(moduleNumber);
-    const value = Array.from(seen).sort((a, b) => a - b).join(",");
-    document.cookie = `${encodeURIComponent(PILOT_PROGRESS_COOKIE)}=${encodeURIComponent(value)}; Path=/academia/piloto; Max-Age=${COOKIE_MAX_AGE}; SameSite=Lax`;
-  }, [moduleNumber]);
+  useEffect(() => {
+    if (moduleNumber < 1 || moduleNumber >= PILOT_EVALUATION_MODULE) return;
+
+    let active = true;
+
+    void fetch("/api/pf24/academy/pilot/progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ moduleNumber }),
+      cache: "no-store",
+      credentials: "same-origin",
+      keepalive: true,
+    })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<ProgressResponse>;
+      })
+      .then((result) => {
+        if (active && result?.ok && result.changed) router.refresh();
+      })
+      .catch(() => {
+        // Progress is non-critical UI state; keep the module usable if saving fails.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [moduleNumber, router]);
 
   return null;
 }
