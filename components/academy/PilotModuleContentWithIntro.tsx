@@ -60,17 +60,18 @@ export default function PilotModuleContentWithIntro({ moduleNumber }: { moduleNu
   if (moduleNumber === 4) {
     return (
       <div className="space-y-6">
-        <div className="[&_figure]:hidden">
+        <div className="[&_figure]:hidden [&_figure+p]:hidden">
           <PilotModuleContentSynced moduleNumber={3} />
         </div>
         <section className="space-y-3">
           <h2 className="pt-2 text-xl font-extrabold text-white">Ejemplo de carta de rodaje</h2>
           <ExampleFigure
-            src="/academy/piloto/pe/carta-rodaje-mdst.svg"
-            alt="Esquema didáctico de carta de rodaje de MDST con pista 11/29, calles Alfa y Bravo y plataformas"
-            caption="Esquema didáctico de rodaje de MDST."
+            src="https://drive.google.com/uc?export=view&id=137WPr9FjPcAO9zxmeziBL3YLxEvwtozP"
+            alt="Carta de rodaje MDPC/PUJ de Punta Cana"
+            caption="Carta de rodaje MDPC/PUJ de Punta Cana proporcionada para el temario PE."
             maxWidth={920}
           />
+          <p className="text-sm leading-7 text-slate-300">En la carta de MDPC/PUJ se identifican las pistas, calles de rodaje, terminales, áreas de plataforma y puntos de espera utilizados para planificar el desplazamiento en superficie.</p>
         </section>
       </div>
     );
