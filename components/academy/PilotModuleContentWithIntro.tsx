@@ -88,6 +88,7 @@ export default function PilotModuleContentWithIntro({ moduleNumber }: { moduleNu
           <ExampleFigure
             src="/academy/piloto/pe/circuito-transito.webp"
             alt="Diagrama de circuito de tránsito con viento en cara, viento cruzado, viento en cola, base y final"
+            caption="Diagrama de circuito de tránsito mostrado a su resolución nativa."
             maxWidth={617}
           />
         </section>
