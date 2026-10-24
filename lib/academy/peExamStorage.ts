@@ -76,20 +76,17 @@ export async function getPeExamState(applicantDiscordId: string): Promise<PeExam
 
   try {
     const parsed = JSON.parse(await data.text()) as Partial<PeExamState>;
-    const passedAt = typeof parsed.passedAt === "string" ? parsed.passedAt : null;
     return {
       applicantDiscordId,
       attempts: Number.isInteger(parsed.attempts) && (parsed.attempts ?? 0) >= 0 ? parsed.attempts! : 0,
       lastScore: typeof parsed.lastScore === "number" ? parsed.lastScore : null,
       lockedUntil: typeof parsed.lockedUntil === "string" ? parsed.lockedUntil : null,
-      passedAt,
+      passedAt: typeof parsed.passedAt === "string" ? parsed.passedAt : null,
       cancelledAt: typeof parsed.cancelledAt === "string" ? parsed.cancelledAt : null,
       activeStartedAt: typeof parsed.activeStartedAt === "string" ? parsed.activeStartedAt : null,
       passedAnswers: parsed.passedAnswers && typeof parsed.passedAnswers === "object"
         ? parsed.passedAnswers as PeExamStoredAnswers
-        : passedAt
-          ? {}
-          : null,
+        : null,
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date(0).toISOString(),
       history: Array.isArray(parsed.history) ? parsed.history.filter(Boolean) as PeExamAttemptRecord[] : [],
     };
