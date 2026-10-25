@@ -278,7 +278,7 @@ export const PE_EXAM_QUESTIONS: PeExamQuestion[] = [
       { value: "c", label: "En IFR no se necesita plan de vuelo; en VFR siempre se requiere" },
       { value: "d", label: "Ambos tipos de vuelo utilizan exclusivamente navegación por GPS" },
     ],
-    correctAnswers: ["c"],
+    correctAnswers: ["b"],
   },
 ];
 
