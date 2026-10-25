@@ -1,8 +1,9 @@
 import { auth } from "@/auth";
-import { nextAtcRank, type AtcRank } from "@/lib/academyRanks";
+import { type AtcRank } from "@/lib/academyRanks";
 import {
   atcProgressCookieName,
   getAtcEvaluationModule,
+  resolveAtcTrainingRank,
 } from "@/lib/academy/atcS1Modules";
 import {
   ACADEMY_PROGRESS_COOKIE_MAX_AGE,
@@ -12,6 +13,8 @@ import {
 } from "@/lib/academy/moduleProgress";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+
+const ATC_INSTRUCTIONS_ROLE_ID = "1427450636508725449";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +29,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
-  const targetRank = nextAtcRank(currentRank);
+  const canReviewS1 = session.user?.permissions?.roles?.includes(ATC_INSTRUCTIONS_ROLE_ID) ?? false;
+  const targetRank = resolveAtcTrainingRank(currentRank, canReviewS1);
   if (!targetRank) {
-    return NextResponse.json({ ok: false, error: "no_next_rank" }, { status: 409 });
+    return NextResponse.json({ ok: false, error: "no_training_rank" }, { status: 409 });
   }
 
   let body: { moduleNumber?: unknown };
