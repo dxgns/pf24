@@ -64,6 +64,10 @@ export async function submitAcademyEvaluation(formData: FormData) {
     throw new Error("La postulación PE se agrega automáticamente al aprobar el examen.");
   }
 
+  if (track === "atc" && targetRole === "S1") {
+    throw new Error("La postulación S1 se agrega automáticamente al aprobar el examen.");
+  }
+
   await submitAcademyInstructionRequest({
     track,
     targetRole,
