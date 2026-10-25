@@ -1,4 +1,4 @@
-import type { AtcRank } from "@/lib/academyRanks";
+import { nextAtcRank, type AtcRank } from "@/lib/academyRanks";
 import {
   isAcademyEvaluationUnlocked,
   parseSeenAcademyModules,
@@ -19,6 +19,13 @@ export const ATC_S1_MODULES = [
 
 export const ATC_S1_EVALUATION_MODULE = ATC_S1_MODULES.length;
 export const ATC_DEFAULT_MODULE_COUNT = 10;
+
+export function resolveAtcTrainingRank(rank: AtcRank, canReviewS1 = false): Exclude<AtcRank, "NONE"> | null {
+  if (rank === "NONE") return null;
+  const nextRank = nextAtcRank(rank);
+  if (nextRank) return nextRank;
+  return canReviewS1 ? "S1" : null;
+}
 
 export function atcProgressCookieName(rank: Exclude<AtcRank, "NONE">) {
   return `pf24_atc_academy_seen_${rank}`;
