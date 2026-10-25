@@ -2,15 +2,18 @@ import { auth } from "@/auth";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { nextAtcRank, type AtcRank } from "@/lib/academyRanks";
+import { type AtcRank } from "@/lib/academyRanks";
 import {
   atcProgressCookieName,
   getAtcEvaluationModule,
   getAtcModuleTitles,
   isAtcEvaluationUnlocked,
   parseSeenAtcModules,
+  resolveAtcTrainingRank,
 } from "@/lib/academy/atcS1Modules";
 import type { Metadata } from "next";
+
+const ATC_INSTRUCTIONS_ROLE_ID = "1427450636508725449";
 
 export const metadata: Metadata = {
   title: "Contenido ATC | PF24 Academia",
@@ -24,18 +27,19 @@ export default async function AtcAcademyContentPage() {
   const rank = (session.user?.permissions?.atcRank ?? "NONE") as AtcRank;
   if (rank === "NONE") redirect("/access-denied");
 
-  const nextRank = nextAtcRank(rank);
-  if (!nextRank) redirect("/academia/atc");
+  const canReviewS1 = session.user?.permissions?.roles?.includes(ATC_INSTRUCTIONS_ROLE_ID) ?? false;
+  const trainingRank = resolveAtcTrainingRank(rank, canReviewS1);
+  if (!trainingRank) redirect("/academia/atc");
 
-  const moduleTitles = getAtcModuleTitles(nextRank);
-  const evaluationModule = getAtcEvaluationModule(nextRank);
+  const moduleTitles = getAtcModuleTitles(trainingRank);
+  const evaluationModule = getAtcEvaluationModule(trainingRank);
   const cookieStore = await cookies();
   const seenModules = parseSeenAtcModules(
-    cookieStore.get(atcProgressCookieName(nextRank))?.value,
-    nextRank,
+    cookieStore.get(atcProgressCookieName(trainingRank))?.value,
+    trainingRank,
   );
-  const evaluationUnlocked = isAtcEvaluationUnlocked(seenModules, nextRank);
-  const isS1 = nextRank === "S1";
+  const evaluationUnlocked = isAtcEvaluationUnlocked(seenModules, trainingRank);
+  const isS1 = trainingRank === "S1";
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
@@ -53,10 +57,13 @@ export default async function AtcAcademyContentPage() {
           </div>
 
           <p className="mono mt-10 text-xs uppercase tracking-[0.28em] text-sky-300/70">ATC</p>
-          <h1 className="mt-3 text-4xl font-extrabold">Contenido {nextRank}</h1>
+          <h1 className="mt-3 text-4xl font-extrabold">Contenido {trainingRank}</h1>
           <p className="mt-3 text-sm text-slate-400">
             Programa organizado en {moduleTitles.length} módulos. La evaluación se habilita después de ver los módulos anteriores.
           </p>
+          {rank === "CI" && trainingRank === "S1" ? (
+            <p className="mt-2 text-xs text-slate-500">Vista de instructor del contenido S1.</p>
+          ) : null}
         </div>
 
         {isS1 ? (
@@ -88,7 +95,7 @@ export default async function AtcAcademyContentPage() {
             if (locked) {
               return (
                 <div
-                  key={`${nextRank}-${moduleNumber}`}
+                  key={`${trainingRank}-${moduleNumber}`}
                   aria-disabled="true"
                   className="panel cursor-not-allowed rounded-3xl border-white/5 p-6 opacity-55"
                 >
@@ -110,7 +117,7 @@ export default async function AtcAcademyContentPage() {
             return (
               <Link
                 prefetch={false}
-                key={`${nextRank}-${moduleNumber}`}
+                key={`${trainingRank}-${moduleNumber}`}
                 href={`/academia/atc/contenido/${moduleNumber}`}
                 className="panel group rounded-3xl p-6 transition hover:-translate-y-0.5 hover:border-sky-400/40 hover:bg-slate-900/80"
               >
