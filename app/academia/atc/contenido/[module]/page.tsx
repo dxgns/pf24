@@ -6,15 +6,18 @@ import AtcModuleProgress from "@/components/academy/AtcModuleProgress";
 import AtcS1ExamForm from "@/components/academy/AtcS1ExamForm";
 import AtcS1ModuleContent from "@/components/academy/AtcS1ModuleContent";
 import EvaluationSubmissionCard from "@/components/academy/EvaluationSubmissionCard";
-import { nextAtcRank, type AtcRank } from "@/lib/academyRanks";
+import { type AtcRank } from "@/lib/academyRanks";
 import {
   atcProgressCookieName,
   getAtcEvaluationModule,
   getAtcModuleTitles,
   isAtcEvaluationUnlocked,
   parseSeenAtcModules,
+  resolveAtcTrainingRank,
 } from "@/lib/academy/atcS1Modules";
 import type { Metadata } from "next";
+
+const ATC_INSTRUCTIONS_ROLE_ID = "1427450636508725449";
 
 export const metadata: Metadata = {
   title: "Módulo ATC | PF24 Academia",
@@ -32,11 +35,12 @@ export default async function AtcAcademyModulePage({ params }: Props) {
   const rank = (session.user?.permissions?.atcRank ?? "NONE") as AtcRank;
   if (rank === "NONE") redirect("/access-denied");
 
-  const nextRank = nextAtcRank(rank);
-  if (!nextRank) redirect("/academia/atc");
+  const canReviewS1 = session.user?.permissions?.roles?.includes(ATC_INSTRUCTIONS_ROLE_ID) ?? false;
+  const trainingRank = resolveAtcTrainingRank(rank, canReviewS1);
+  if (!trainingRank) redirect("/academia/atc");
 
-  const moduleTitles = getAtcModuleTitles(nextRank);
-  const evaluationModule = getAtcEvaluationModule(nextRank);
+  const moduleTitles = getAtcModuleTitles(trainingRank);
+  const evaluationModule = getAtcEvaluationModule(trainingRank);
 
   const { module } = await params;
   const moduleNumber = Number(module);
@@ -45,17 +49,17 @@ export default async function AtcAcademyModulePage({ params }: Props) {
   if (moduleNumber === evaluationModule) {
     const cookieStore = await cookies();
     const seenModules = parseSeenAtcModules(
-      cookieStore.get(atcProgressCookieName(nextRank))?.value,
-      nextRank,
+      cookieStore.get(atcProgressCookieName(trainingRank))?.value,
+      trainingRank,
     );
-    if (!isAtcEvaluationUnlocked(seenModules, nextRank)) redirect("/academia/atc/contenido");
+    if (!isAtcEvaluationUnlocked(seenModules, trainingRank)) redirect("/academia/atc/contenido");
   }
 
   const title = moduleTitles[moduleNumber - 1];
   const previous = moduleNumber > 1 ? moduleNumber - 1 : null;
   const next = moduleNumber < moduleTitles.length ? moduleNumber + 1 : null;
   const evaluation = moduleNumber === evaluationModule;
-  const isS1 = nextRank === "S1";
+  const isS1 = trainingRank === "S1";
   const isS1Evaluation = evaluation && isS1;
   const applicantDiscordId = session.user?.discordId ?? session.user?.email ?? session.user?.name ?? "unknown";
 
@@ -75,9 +79,12 @@ export default async function AtcAcademyModulePage({ params }: Props) {
             <div className="mono text-sm tracking-[0.25em] text-slate-400">PF24 ACADEMIA</div>
           </div>
 
-          <p className="mono mt-10 text-xs uppercase tracking-[0.28em] text-sky-300/70">ATC · Formación {nextRank}</p>
+          <p className="mono mt-10 text-xs uppercase tracking-[0.28em] text-sky-300/70">ATC · Formación {trainingRank}</p>
           <p className="mono mt-5 text-sm uppercase tracking-[0.22em] text-sky-300">Módulo {moduleNumber} de {moduleTitles.length}</p>
           <h1 className="mt-3 max-w-4xl text-4xl font-extrabold leading-tight">{title}</h1>
+          {rank === "CI" && trainingRank === "S1" ? (
+            <p className="mt-3 text-xs text-slate-500">Vista de instructor del programa S1.</p>
+          ) : null}
         </div>
 
         {isS1Evaluation ? (
@@ -93,7 +100,7 @@ export default async function AtcAcademyModulePage({ params }: Props) {
         ) : null}
 
         {evaluation && !isS1Evaluation ? (
-          <EvaluationSubmissionCard track="atc" targetRole={nextRank} applicantDiscordId={applicantDiscordId} />
+          <EvaluationSubmissionCard track="atc" targetRole={trainingRank} applicantDiscordId={applicantDiscordId} />
         ) : null}
 
         <nav className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="Navegación entre módulos">
