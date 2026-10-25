@@ -249,6 +249,8 @@ export default function PeExamForm() {
   }
 
   if (status?.passedAt) {
+    const hasStoredReviewAnswers = Boolean(status.reviewAnswers && Object.keys(status.reviewAnswers).length > 0);
+
     return (
       <section className="mt-6 space-y-5">
         <div className="panel rounded-3xl border border-emerald-400/25 p-6 md:p-8">
@@ -275,19 +277,47 @@ export default function PeExamForm() {
 
         {reviewOpen && status.reviewAnswers ? (
           <div className="space-y-4">
+            {!hasStoredReviewAnswers ? (
+              <div className="rounded-2xl border border-amber-400/25 bg-amber-400/5 px-5 py-4 text-sm leading-6 text-amber-100">
+                Este intento fue realizado antes de que PF24 guardara las respuestas individuales. Se puede mostrar la clave correcta, pero no es posible reconstruir qué opciones marcaste en ese intento.
+              </div>
+            ) : null}
+
             {PE_EXAM_QUESTIONS.map((question, index) => {
               const value = status.reviewAnswers?.[question.id];
               const selected = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
+              const selectedSorted = [...selected].sort();
+              const correctSorted = [...question.correctAnswers].sort();
+              const questionCorrect = selectedSorted.length === correctSorted.length
+                && selectedSorted.every((answer, answerIndex) => answer === correctSorted[answerIndex]);
+
               return (
                 <div key={question.id} className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 md:p-8">
                   <div className="flex items-start justify-between gap-4">
                     <h3 className="text-base font-semibold leading-7 text-white"><span className="mr-2 text-slate-500">{index + 1}.</span>{question.prompt}</h3>
-                    <span className="shrink-0 text-xs text-slate-500">1 punto</span>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <span className="text-xs text-slate-500">1 punto</span>
+                      {hasStoredReviewAnswers ? (
+                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${questionCorrect ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : "border-red-400/30 bg-red-400/10 text-red-200"}`}>
+                          {questionCorrect ? "Correcta" : "Incorrecta"}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-5 space-y-2">
                     {question.options.map((option) => {
                       const isSelected = selected.includes(option.value);
                       const isCorrect = question.correctAnswers.includes(option.value);
+                      const answerLabel = !hasStoredReviewAnswers
+                        ? isCorrect ? "Respuesta correcta" : ""
+                        : isCorrect && isSelected
+                          ? "Tu respuesta · Correcta"
+                          : isCorrect
+                            ? "Respuesta correcta"
+                            : isSelected
+                              ? "Tu respuesta · Incorrecta"
+                              : "";
+
                       return (
                         <div
                           key={option.value}
@@ -300,9 +330,7 @@ export default function PeExamForm() {
                           }`}
                         >
                           <span>{option.label}</span>
-                          <span className="shrink-0 text-xs font-bold">
-                            {isCorrect && isSelected ? "Tu respuesta · Correcta" : isCorrect ? "Correcta" : isSelected ? "Tu respuesta" : ""}
-                          </span>
+                          <span className="shrink-0 text-xs font-bold">{answerLabel}</span>
                         </div>
                       );
                     })}
