@@ -1,5 +1,6 @@
 "use client";
 
+import S1ReferenceImage from "@/components/academy/S1ReferenceImage";
 import {
   ATC_S1_EXAM_PASSING_SCORE,
   ATC_S1_EXAM_QUESTIONS,
@@ -363,35 +364,37 @@ export default function AtcS1ExamForm() {
       {ATC_S1_EXAM_QUESTIONS.map((question, index) => {
         const currentValue = answers[question.id];
         return (
-          <fieldset id={`s1-question-${question.id}`} key={question.id} className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 md:p-8">
-            <div className="flex items-start justify-between gap-4">
-              <legend className="pr-4 text-base font-semibold leading-7 text-white"><span className="mr-2 text-slate-500">{index + 1}.</span>{question.prompt} <span className="text-red-300">*</span></legend>
-              <span className="shrink-0 text-xs text-slate-500">{question.points === 0 ? "0 puntos" : "1 punto"}</span>
-            </div>
-            {question.needsReferenceImage ? <p className="mt-2 text-xs text-amber-300/80">Esta pregunta corresponde a una imagen de referencia del formulario original.</p> : null}
-            {question.type === "multiple" ? <p className="mt-2 text-xs text-slate-500">Selecciona todas las opciones que correspondan.</p> : null}
-            <div className="mt-5 space-y-3">
-              {question.options.map((option) => {
-                const checked = question.type === "multiple"
-                  ? Array.isArray(currentValue) && currentValue.includes(option.value)
-                  : currentValue === option.value;
-                return (
-                  <label key={option.value} className="flex cursor-pointer items-start gap-3 rounded-xl px-2 py-2 text-sm leading-6 text-slate-300 transition hover:bg-white/5">
-                    <input
-                      type={question.type === "multiple" ? "checkbox" : "radio"}
-                      name={question.id}
-                      value={option.value}
-                      checked={checked}
-                      onChange={() => question.type === "multiple" ? toggleMultipleAnswer(question.id, option.value) : setSingleAnswer(question.id, option.value)}
-                      disabled={submitting}
-                      className="mt-1 h-4 w-4 accent-sky-400"
-                    />
-                    <span>{option.label}</span>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
+          <div key={question.id} className="space-y-4">
+            <S1ReferenceImage questionId={question.id} />
+            <fieldset id={`s1-question-${question.id}`} className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 md:p-8">
+              <div className="flex items-start justify-between gap-4">
+                <legend className="pr-4 text-base font-semibold leading-7 text-white"><span className="mr-2 text-slate-500">{index + 1}.</span>{question.prompt} <span className="text-red-300">*</span></legend>
+                <span className="shrink-0 text-xs text-slate-500">{question.points === 0 ? "0 puntos" : "1 punto"}</span>
+              </div>
+              {question.type === "multiple" ? <p className="mt-2 text-xs text-slate-500">Selecciona todas las opciones que correspondan.</p> : null}
+              <div className="mt-5 space-y-3">
+                {question.options.map((option) => {
+                  const checked = question.type === "multiple"
+                    ? Array.isArray(currentValue) && currentValue.includes(option.value)
+                    : currentValue === option.value;
+                  return (
+                    <label key={option.value} className="flex cursor-pointer items-start gap-3 rounded-xl px-2 py-2 text-sm leading-6 text-slate-300 transition hover:bg-white/5">
+                      <input
+                        type={question.type === "multiple" ? "checkbox" : "radio"}
+                        name={question.id}
+                        value={option.value}
+                        checked={checked}
+                        onChange={() => question.type === "multiple" ? toggleMultipleAnswer(question.id, option.value) : setSingleAnswer(question.id, option.value)}
+                        disabled={submitting}
+                        className="mt-1 h-4 w-4 accent-sky-400"
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          </div>
         );
       })}
 
