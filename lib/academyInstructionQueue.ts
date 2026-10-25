@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export type AcademyTrack = "pilot" | "atc";
-export type AcademyInstructionStatus = "pending" | "instruction";
+export type AcademyInstructionStatus = "pending" | "instruction" | "completed";
 
 export type AcademyInstructionRequest = {
   id: string;
@@ -16,6 +16,9 @@ export type AcademyInstructionRequest = {
   instructorDiscordId?: string | null;
   instructorName?: string | null;
   assumedAt?: string | null;
+  completedAt?: string | null;
+  completedByDiscordId?: string | null;
+  completedByName?: string | null;
 };
 
 const BUCKET = "academy-instruction-queue";
@@ -140,6 +143,9 @@ export async function submitAcademyInstructionRequest(input: {
     instructorDiscordId: null,
     instructorName: null,
     assumedAt: null,
+    completedAt: null,
+    completedByDiscordId: null,
+    completedByName: null,
   };
 
   const { error } = await getSupabaseAdmin().storage
@@ -192,6 +198,49 @@ export async function assumeAcademyInstructionRequest(input: {
 
   await getSupabaseAdmin().storage.from(BUCKET).remove([pendingPath]);
   return claimed;
+}
+
+export async function completeAcademyInstructionRequest(input: {
+  track: AcademyTrack;
+  requestId: string;
+  completedByDiscordId: string;
+  completedByName: string;
+}) {
+  await ensureBucket();
+  const instructionPath = objectPath(input.track, "instruction", input.requestId);
+  const completedPath = objectPath(input.track, "completed", input.requestId);
+  const request = await readRequest(instructionPath);
+
+  if (!request || request.track !== input.track) {
+    return readRequest(completedPath);
+  }
+
+  const completed: AcademyInstructionRequest = {
+    ...request,
+    status: "completed",
+    completedAt: new Date().toISOString(),
+    completedByDiscordId: input.completedByDiscordId,
+    completedByName: input.completedByName,
+  };
+
+  const { error: archiveError } = await getSupabaseAdmin().storage
+    .from(BUCKET)
+    .upload(completedPath, jsonBody(completed), {
+      contentType: "application/json",
+      upsert: false,
+    });
+
+  if (archiveError) {
+    const alreadyCompleted = await readRequest(completedPath);
+    if (!alreadyCompleted) throw archiveError;
+    const { error: cleanupError } = await getSupabaseAdmin().storage.from(BUCKET).remove([instructionPath]);
+    if (cleanupError) throw cleanupError;
+    return alreadyCompleted;
+  }
+
+  const { error: removeError } = await getSupabaseAdmin().storage.from(BUCKET).remove([instructionPath]);
+  if (removeError) throw removeError;
+  return completed;
 }
 
 export function waitingDays(submittedAt: string, now = Date.now()) {
