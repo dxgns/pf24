@@ -1,4 +1,5 @@
 import { assumeAcademyInstruction } from "@/app/actions/academyInstruction";
+import InstructionCompleteButton from "@/components/academy/InstructionCompleteButton";
 import {
   waitingDays,
   type AcademyInstructionRequest,
@@ -103,13 +104,14 @@ export default function InstructionQueueBoard({
         </div>
 
         <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="bg-slate-900/80 text-slate-400">
               <tr>
                 <th className="px-4 py-3 font-semibold">Usuario</th>
                 <th className="px-4 py-3 font-semibold">Rol</th>
                 <th className="px-4 py-3 font-semibold">Instructor</th>
                 <th className="px-4 py-3 font-semibold">En instrucción</th>
+                <th className="px-4 py-3 text-right font-semibold">Acción</th>
               </tr>
             </thead>
             <tbody>
@@ -122,11 +124,19 @@ export default function InstructionQueueBoard({
                     <td className="px-4 py-4 mono text-slate-400">
                       {daysLabel(waitingDays(request.assumedAt ?? request.submittedAt, now))}
                     </td>
+                    <td className="px-4 py-4 text-right">
+                      <InstructionCompleteButton
+                        track={track}
+                        requestId={request.id}
+                        applicantName={request.applicantName}
+                        targetRole={request.targetRole}
+                      />
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={4} className="px-4 py-10 text-center text-slate-500">No hay usuarios en instrucción actualmente.</td>
+                  <td colSpan={5} className="px-4 py-10 text-center text-slate-500">No hay usuarios en instrucción actualmente.</td>
                 </tr>
               )}
             </tbody>
