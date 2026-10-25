@@ -3,6 +3,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import AtcModuleProgress from "@/components/academy/AtcModuleProgress";
+import AtcS1ExamForm from "@/components/academy/AtcS1ExamForm";
 import EvaluationSubmissionCard from "@/components/academy/EvaluationSubmissionCard";
 import { nextAtcRank, type AtcRank } from "@/lib/academyRanks";
 import type { Metadata } from "next";
@@ -67,6 +68,7 @@ export default async function AtcAcademyModulePage({ params }: Props) {
   const previous = moduleNumber > 1 ? moduleNumber - 1 : null;
   const next = moduleNumber < MODULE_COUNT ? moduleNumber + 1 : null;
   const evaluation = moduleNumber === EVALUATION_MODULE;
+  const isS1Evaluation = evaluation && nextRank === "S1";
   const applicantDiscordId = session.user?.discordId ?? session.user?.email ?? session.user?.name ?? "unknown";
 
   return (
@@ -86,14 +88,18 @@ export default async function AtcAcademyModulePage({ params }: Props) {
 
           <p className="mono mt-10 text-xs uppercase tracking-[0.28em] text-sky-300/70">ATC · Formación {nextRank}</p>
           <p className="mono mt-5 text-sm uppercase tracking-[0.22em] text-sky-300">Módulo {moduleNumber} de {MODULE_COUNT}</p>
-          <h1 className="mt-3 text-4xl font-extrabold">{evaluation ? "Evaluación" : `Módulo ${moduleNumber}`}</h1>
+          <h1 className="mt-3 text-4xl font-extrabold">{evaluation ? `Evaluación ${nextRank}` : `Módulo ${moduleNumber}`}</h1>
         </div>
 
-        <section className="panel mt-6 min-h-[420px] rounded-3xl p-8">
-          <div className="min-h-[340px] rounded-2xl border border-white/5 bg-slate-950/30" />
-        </section>
+        {isS1Evaluation ? (
+          <AtcS1ExamForm />
+        ) : (
+          <section className="panel mt-6 min-h-[420px] rounded-3xl p-8">
+            <div className="min-h-[340px] rounded-2xl border border-white/5 bg-slate-950/30" />
+          </section>
+        )}
 
-        {evaluation ? (
+        {evaluation && !isS1Evaluation ? (
           <EvaluationSubmissionCard track="atc" targetRole={nextRank} applicantDiscordId={applicantDiscordId} />
         ) : null}
 
