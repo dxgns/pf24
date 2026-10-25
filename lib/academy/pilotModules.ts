@@ -1,3 +1,8 @@
+import {
+  isAcademyEvaluationUnlocked,
+  parseSeenAcademyModules,
+} from "@/lib/academy/moduleProgress";
+
 export const PE_MODULES = [
   "INTRODUCCIÓN A LA LICENCIA PE",
   "INFORMACIÓN METEOROLÓGICA Y Q-CODES",
@@ -15,25 +20,10 @@ export const PE_MODULES = [
 export const PILOT_EVALUATION_MODULE = PE_MODULES.length;
 export const PILOT_PROGRESS_COOKIE = "pf24_pilot_academy_seen_PE_v2";
 
-function decodeProgressCookie(value?: string) {
-  if (!value) return "";
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
 export function parseSeenPilotModules(value?: string) {
-  return new Set(
-    decodeProgressCookie(value)
-      .split(",")
-      .map((item) => Number(item))
-      .filter((item) => Number.isInteger(item) && item > 0 && item <= PE_MODULES.length),
-  );
+  return parseSeenAcademyModules(value, PILOT_EVALUATION_MODULE);
 }
 
 export function isPilotEvaluationUnlocked(seenModules: Set<number>) {
-  return Array.from({ length: PILOT_EVALUATION_MODULE - 1 }, (_, index) => index + 1)
-    .every((moduleNumber) => seenModules.has(moduleNumber));
+  return isAcademyEvaluationUnlocked(seenModules, PILOT_EVALUATION_MODULE);
 }
