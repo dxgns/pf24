@@ -5,6 +5,7 @@ import type { Session } from "next-auth";
 import { getPilotRankFromRoles, nextAtcRank, type AtcRank } from "@/lib/academyRanks";
 import {
   assumeAcademyInstructionRequest,
+  completeAcademyInstructionRequest,
   submitAcademyInstructionRequest,
   type AcademyTrack,
 } from "@/lib/academyInstructionQueue";
@@ -28,6 +29,14 @@ function sessionDiscordId(session: Session) {
   const id = session.user?.discordId?.trim();
   if (id) return id;
   return session.user?.email?.trim() || session.user?.name?.trim() || "unknown";
+}
+
+function validateInstructorAccess(track: AcademyTrack, session: Session) {
+  const instructorRole = track === "pilot" ? PILOT_INSTRUCTOR_ROLE_ID : ATC_INSTRUCTOR_ROLE_ID;
+  const roles = session.user?.permissions?.roles ?? [];
+  if (!roles.includes(instructorRole)) {
+    throw new Error("No tienes permiso para gestionar instrucciones en esta área");
+  }
 }
 
 function validateApplicantTarget(
@@ -93,17 +102,31 @@ export async function assumeAcademyInstruction(formData: FormData) {
 
   const track = readTrack(formData.get("track"));
   const requestId = readRequired(formData.get("requestId"), "Solicitud");
-  const instructorRole = track === "pilot" ? PILOT_INSTRUCTOR_ROLE_ID : ATC_INSTRUCTOR_ROLE_ID;
-  const roles = session.user?.permissions?.roles ?? [];
-  if (!roles.includes(instructorRole)) {
-    throw new Error("No tienes permiso para asumir instrucciones en esta área");
-  }
+  validateInstructorAccess(track, session);
 
   await assumeAcademyInstructionRequest({
     track,
     requestId,
     instructorDiscordId: sessionDiscordId(session),
     instructorName: session.user?.name?.trim() || "Instructor PF24",
+  });
+
+  revalidatePath(track === "pilot" ? "/academia/piloto/instrucciones" : "/academia/atc/instrucciones");
+}
+
+export async function completeAcademyInstruction(formData: FormData) {
+  const session = await auth();
+  if (!session) throw new Error("Debes iniciar sesión");
+
+  const track = readTrack(formData.get("track"));
+  const requestId = readRequired(formData.get("requestId"), "Solicitud");
+  validateInstructorAccess(track, session);
+
+  await completeAcademyInstructionRequest({
+    track,
+    requestId,
+    completedByDiscordId: sessionDiscordId(session),
+    completedByName: session.user?.name?.trim() || "Instructor PF24",
   });
 
   revalidatePath(track === "pilot" ? "/academia/piloto/instrucciones" : "/academia/atc/instrucciones");
