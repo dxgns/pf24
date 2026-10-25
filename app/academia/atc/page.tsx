@@ -1,7 +1,8 @@
 import { auth } from "@/auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { nextAtcRank, type AtcRank } from "@/lib/academyRanks";
+import { type AtcRank } from "@/lib/academyRanks";
+import { resolveAtcTrainingRank } from "@/lib/academy/atcS1Modules";
 import type { Metadata } from "next";
 
 const ATC_INSTRUCTIONS_ROLE_ID = "1427450636508725449";
@@ -18,8 +19,8 @@ export default async function AtcAcademyPage() {
   const rank = (session.user?.permissions?.atcRank ?? "NONE") as AtcRank;
   if (rank === "NONE") redirect("/access-denied");
 
-  const nextRank = nextAtcRank(rank);
   const canAccessInstructions = roles?.includes(ATC_INSTRUCTIONS_ROLE_ID) ?? false;
+  const trainingRank = resolveAtcTrainingRank(rank, canAccessInstructions);
 
   return (
     <main className="radar-grid min-h-screen bg-[#020617] px-6 py-16 text-white">
@@ -40,15 +41,18 @@ export default async function AtcAcademyPage() {
         </div>
 
         <div className="mt-6 grid gap-5 md:grid-cols-2">
-          {nextRank ? (
+          {trainingRank ? (
             <Link
               href="/academia/atc/contenido"
               className="panel group block rounded-3xl p-8 transition hover:-translate-y-1 hover:border-sky-400/60"
             >
               <p className="mono text-xs uppercase tracking-[0.25em] text-sky-300/70">Formación</p>
               <h2 className="mt-4 text-2xl font-extrabold text-white group-hover:text-sky-300">
-                Contenido {nextRank}
+                Contenido {trainingRank}
               </h2>
+              {rank === "CI" && trainingRank === "S1" ? (
+                <p className="mt-3 text-sm leading-6 text-slate-400">Vista de instructor del programa S1.</p>
+              ) : null}
               <p className="mono mt-8 text-sm text-sky-300">Abrir contenido →</p>
             </Link>
           ) : (
